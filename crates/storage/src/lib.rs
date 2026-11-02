@@ -13,6 +13,7 @@ pub mod secrets;
 pub use error::Error;
 pub use finance_core as core;
 pub use models::{Actor, Entity, Op, Source};
+pub use rusqlite;
 
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};

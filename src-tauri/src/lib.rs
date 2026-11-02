@@ -1,3 +1,4 @@
+mod bot;
 mod commands;
 mod scheduler;
 mod state;
@@ -50,12 +51,17 @@ pub fn run() {
             commands::export_xlsx,
             commands::rates_latest,
             commands::rates_refresh,
+            commands::tg_connect,
+            commands::tg_disconnect,
+            commands::tg_status,
+            commands::tg_pair_code,
         ])
         .setup(|app| {
             let state = state::init_db(app).expect("failed to open the database");
             app.manage(state);
             tray::create(app.handle())?;
             scheduler::start(app.handle().clone());
+            bot::start_polling(app.handle().clone());
             if std::env::args().any(|a| a == "--minimized") {
                 if let Some(w) = app.get_webview_window("main") {
                     let _ = w.hide();

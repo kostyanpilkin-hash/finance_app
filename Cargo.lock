@@ -1109,6 +1109,7 @@ name = "finance-app"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "chrono",
  "dirs 6.0.0",
  "finance-api",
  "finance-bot",
@@ -1124,6 +1125,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

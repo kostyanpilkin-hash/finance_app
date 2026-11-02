@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
@@ -46,6 +47,69 @@ function RatesSection() {
           {t("ui.refreshed")}: {refresh.data.updated.join(", ")}
           {refresh.data.skipped.length > 0 && ` · ${t("ui.skipped")}: ${refresh.data.skipped.join(", ")}`}
         </p>
+      )}
+    </div>
+  );
+}
+
+function TgSection() {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const [token, setToken] = useState("");
+  const status = useQuery({ queryKey: ["tg-status"], queryFn: api.tgStatus });
+  const users = useQuery({ queryKey: ["users"], queryFn: () => api.entityList<{ id: string; name: string }>("users") });
+  const [code, setCode] = useState<Record<string, string>>({});
+  const connect = useMutation({
+    mutationFn: () => api.tgConnect(token),
+    onSuccess: () => { setToken(""); queryClient.invalidateQueries({ queryKey: ["tg-status"] }); },
+  });
+  const disconnect = useMutation({
+    mutationFn: api.tgDisconnect,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["tg-status"] }),
+  });
+  const pair = useMutation({
+    mutationFn: (userId: string) => api.tgPairCode(userId),
+    onSuccess: (c, userId) => setCode((s) => ({ ...s, [userId]: c })),
+  });
+  const s = status.data;
+  return (
+    <div className="space-y-3 text-sm">
+      {!s?.enabled ? (
+        <div className="space-y-2">
+          <input className="w-full rounded border border-border bg-background px-3 py-2" type="password"
+            placeholder="Bot token (BotFather)" value={token} onChange={(e) => setToken(e.target.value)} />
+          <Button size="sm" onClick={() => connect.mutate()} disabled={!token.trim() || connect.isPending}>
+            {t("ui.connect")}
+          </Button>
+          {connect.isError && <p className="text-destructive">{String(connect.error)}</p>}
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center gap-3">
+            <span>@{s.username} — {t("ui.connected")}</span>
+            <Button size="sm" variant="outline" onClick={() => disconnect.mutate()}>{t("ui.disconnect")}</Button>
+          </div>
+          <div className="space-y-2">
+            {(users.data ?? []).map((u) => {
+              const linked = s.linked?.some(([uid]) => uid === u.id);
+              return (
+                <div key={u.id} className="flex items-center gap-3">
+                  <span className="w-32">{u.name}</span>
+                  {linked ? (
+                    <span className="text-income">{t("ui.tgLinked")}</span>
+                  ) : code[u.id] ? (
+                    <code className="rounded bg-muted px-2 py-1 text-lg font-semibold tracking-widest">{code[u.id]}</code>
+                  ) : (
+                    <Button size="sm" variant="outline" onClick={() => pair.mutate(u.id)}>{t("ui.tgPair")}</Button>
+                  )}
+                </div>
+              );
+            })}
+            {pair.isPending === false && Object.keys(code).length > 0 && (
+              <p className="text-xs text-muted-foreground">{t("ui.tgPairHint")}</p>
+            )}
+          </div>
+        </>
       )}
     </div>
   );
@@ -133,6 +197,10 @@ export function SettingsPage() {
 
       <Section title={t("settings.rates")}>
         <RatesSection />
+      </Section>
+
+      <Section title={t("settings.telegram")}>
+        <TgSection />
       </Section>
 
       <Section title={t("settings.about")}>

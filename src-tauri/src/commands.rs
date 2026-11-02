@@ -327,6 +327,29 @@ pub fn rates_latest(state: State<AppState>) -> Result<Vec<Value>, String> {
 
 /// Refreshes exchange rates from api.nbrb.by for every currency used by
 /// accounts plus USD/EUR. Currencies unknown to NBRB are skipped.
+// ---------- telegram bot ----------
+
+#[tauri::command]
+pub async fn tg_connect(state: State<'_, AppState>, token: String) -> Result<Value, String> {
+    let (username, bot_id) = crate::bot::tg_connect(&state, token).await?;
+    Ok(json!({"username": username, "botId": bot_id}))
+}
+
+#[tauri::command]
+pub fn tg_disconnect(state: State<AppState>) -> Result<(), String> {
+    crate::bot::tg_disconnect(&state)
+}
+
+#[tauri::command]
+pub fn tg_status(state: State<AppState>) -> Value {
+    crate::bot::tg_status(&state)
+}
+
+#[tauri::command]
+pub fn tg_pair_code(state: State<AppState>, user_id: String) -> Result<String, String> {
+    crate::bot::tg_pair_code(&state, &user_id)
+}
+
 #[tauri::command]
 pub async fn rates_refresh(state: State<'_, AppState>) -> Result<Value, String> {
     let currencies: Vec<String> = db(&state)

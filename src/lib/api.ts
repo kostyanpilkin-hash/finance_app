@@ -77,4 +77,8 @@ export const api = {
   ratesLatest: <T = unknown>() => invoke<T[]>("rates_latest"),
   ratesRefresh: () => invoke<{ updated: string[]; skipped: string[] }>("rates_refresh"),
   exportXlsx: (from: string, to: string) => invoke<string>("export_xlsx", { from, to }),
+  tgConnect: (token: string) => invoke<{ username: string; botId: string }>("tg_connect", { token }),
+  tgDisconnect: () => invoke<void>("tg_disconnect"),
+  tgStatus: () => invoke<{ enabled: boolean; username?: string; linked: [string, number][] }>("tg_status"),
+  tgPairCode: (userId: string) => invoke<string>("tg_pair_code", { userId }),
 };
