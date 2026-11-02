@@ -214,6 +214,16 @@ fn bt(lang: &str, key: &str) -> String {
             "Format: «-500 groceries [note]», «+1000 salary» or /menu.",
         ),
         "choose" => ("Выберите:", "Абярыце:", "Choose:"),
+        "date" => ("Дата:", "Дата:", "Date:"),
+        "today" => ("Сегодня", "Сёння", "Today"),
+        "yesterday" => ("Вчера", "Учора", "Yesterday"),
+        "other" => ("Другая дата", "Іншая дата", "Other date"),
+        "datefmt" => (
+            "Дата в формате ДД.ММ.ГГГГ:",
+            "Дата ў фармаце ДД.ММ.ГГГГ:",
+            "Date as DD.MM.YYYY:",
+        ),
+        "tamount" => ("Зачислено:", "Залічана:", "Credited:"),
         _ => ("?", "?", "?"),
     };
     match lang {
@@ -240,7 +250,7 @@ struct Ctx {
 }
 
 struct Sess {
-    state: String, // "idle"|"amount"|"account"|"category"|"to_account"|"comment"|"photo"
+    state: String, // "idle"|"amount"|"account"|"category"|"to_account"|"to_amount"|"date"|"date_text"|"comment"|"photo"
     kind: String,
     amount_minor: i64,
     account_id: String,
@@ -248,6 +258,8 @@ struct Sess {
     to_amount_minor: Option<i64>,
     category_id: Option<String>,
     comment: String,
+    occurred_at: Option<String>,
+    photo_file_id: Option<String>,
     msg_id: i64,
 }
 
@@ -262,11 +274,13 @@ impl Sess {
             to_amount_minor: None,
             category_id: None,
             comment: String::new(),
+            occurred_at: None,
+            photo_file_id: None,
             msg_id: 0,
         }
     }
     fn to_json(&self) -> String {
-        json!({"state": self.state, "kind": self.kind, "amount": self.amount_minor, "acc": self.account_id, "toAcc": self.to_account_id, "toAmt": self.to_amount_minor, "cat": self.category_id, "comment": self.comment, "msg": self.msg_id}).to_string()
+        json!({"state": self.state, "kind": self.kind, "amount": self.amount_minor, "acc": self.account_id, "toAcc": self.to_account_id, "toAmt": self.to_amount_minor, "cat": self.category_id, "comment": self.comment, "occ": self.occurred_at, "photo": self.photo_file_id, "msg": self.msg_id}).to_string()
     }
     fn from_json(s: &str) -> Self {
         let v: Value = serde_json::from_str(s).unwrap_or(json!({}));
@@ -279,6 +293,8 @@ impl Sess {
             to_amount_minor: v["toAmt"].as_i64(),
             category_id: v["cat"].as_str().map(|x| x.to_string()),
             comment: v["comment"].as_str().unwrap_or("").into(),
+            occurred_at: v["occ"].as_str().map(|x| x.to_string()),
+            photo_file_id: v["photo"].as_str().map(|x| x.to_string()),
             msg_id: v["msg"].as_i64().unwrap_or(0),
         }
     }
@@ -450,7 +466,7 @@ async fn commit_tx(
                 &state.db,
                 &actor,
                 json!({
-                    "kind": s.kind, "occurredAt": now_iso(),
+                    "kind": s.kind, "occurredAt": s.occurred_at.clone().unwrap_or_else(now_iso),
                     "accountId": s.account_id, "amountMinor": s.amount_minor,
                     "categoryId": s.category_id, "toAccountId": s.to_account_id,
                     "toAmountMinor": s.to_amount_minor, "comment": s.comment,
@@ -490,9 +506,14 @@ async fn handle_text(
         "to_amount" => {
             if let Some(v) = parse_minor(text) {
                 s.to_amount_minor = Some(v);
-                s.state = "comment".into();
+                s.state = "date".into();
                 save_sess(state, chat, &s);
-                ctx.tg.send(chat, &bt(&ctx.lang, "comment"), None).await
+                let k = vec![vec![
+                    (bt(&ctx.lang, "today"), "date:today".to_string()),
+                    (bt(&ctx.lang, "yesterday"), "date:yesterday".to_string()),
+                    (bt(&ctx.lang, "other"), "date:other".to_string()),
+                ]];
+                ctx.tg.send(chat, &bt(&ctx.lang, "date"), Some(kb(k))).await
             } else {
                 ctx.tg.send(chat, &bt(&ctx.lang, "amount"), None).await
             }
@@ -501,9 +522,35 @@ async fn handle_text(
             if text != "-" {
                 s.comment = text.into();
             }
-            commit_tx(state, ctx, &s, chat, Some(msg_id)).await?;
-            save_sess(state, chat, &Sess::idle());
-            ctx.tg.send(chat, &bt(&ctx.lang, "done"), None).await
+            s.state = "photo".into();
+            save_sess(state, chat, &s);
+            ctx.tg.send(chat, &bt(&ctx.lang, "photo"), None).await
+        }
+        "photo" => {
+            if text == "-" {
+                commit_tx(state, ctx, &s, chat, Some(msg_id)).await?;
+                save_sess(state, chat, &Sess::idle());
+                ctx.tg.send(chat, &bt(&ctx.lang, "done"), None).await
+            } else {
+                ctx.tg.send(chat, &bt(&ctx.lang, "photo"), None).await
+            }
+        }
+        "date_text" => {
+            let p: Vec<&str> = text.trim().split(['.', '/', '-']).collect();
+            if p.len() == 3 {
+                let (d, m, y) = (p[0], p[1], p[2]);
+                if let (Ok(dd), Ok(mm), Ok(yy)) =
+                    (d.parse::<u32>(), m.parse::<u32>(), y.parse::<i32>())
+                {
+                    if chrono::NaiveDate::from_ymd_opt(yy, mm, dd).is_some() {
+                        s.occurred_at = Some(format!("{:04}-{:02}-{:02}T12:00:00", yy, mm, dd));
+                        s.state = "comment".into();
+                        save_sess(state, chat, &s);
+                        return ctx.tg.send(chat, &bt(&ctx.lang, "comment"), None).await;
+                    }
+                }
+            }
+            ctx.tg.send(chat, &bt(&ctx.lang, "datefmt"), None).await
         }
         _ => {
             // Fallback one-line format: "-500 продукты молоко" | "+1000 зп" | "500"
@@ -599,13 +646,42 @@ async fn handle_callback(state: &AppState, ctx: &Ctx, cb: &TgCallback) -> Result
                     )
                     .await
             } else {
-                s.state = "comment".into();
+                s.state = "date".into();
                 save_sess(state, chat, &s);
-                ctx.tg.send(chat, &bt(&ctx.lang, "comment"), None).await
+                let k = vec![vec![
+                    (bt(&ctx.lang, "today"), "date:today".to_string()),
+                    (bt(&ctx.lang, "yesterday"), "date:yesterday".to_string()),
+                    (bt(&ctx.lang, "other"), "date:other".to_string()),
+                ]];
+                ctx.tg.send(chat, &bt(&ctx.lang, "date"), Some(kb(k))).await
             }
         }
         "cat" => {
             s.category_id = Some(v.into());
+            s.state = "date".into();
+            save_sess(state, chat, &s);
+            let k = vec![vec![
+                (bt(&ctx.lang, "today"), "date:today".to_string()),
+                (bt(&ctx.lang, "yesterday"), "date:yesterday".to_string()),
+                (bt(&ctx.lang, "other"), "date:other".to_string()),
+            ]];
+            ctx.tg.send(chat, &bt(&ctx.lang, "date"), Some(kb(k))).await
+        }
+        "date" => {
+            match v {
+                "today" => s.occurred_at = None,
+                "yesterday" => {
+                    s.occurred_at = Some(format!(
+                        "{}T12:00:00",
+                        chrono::Local::now().date_naive() - chrono::Duration::days(1)
+                    ));
+                }
+                _ => {
+                    s.state = "date_text".into();
+                    save_sess(state, chat, &s);
+                    return ctx.tg.send(chat, &bt(&ctx.lang, "datefmt"), None).await;
+                }
+            }
             s.state = "comment".into();
             save_sess(state, chat, &s);
             ctx.tg.send(chat, &bt(&ctx.lang, "comment"), None).await
@@ -739,10 +815,61 @@ async fn handle_message(state: &AppState, tg: &Tg, m: &TgMessage) -> Result<(), 
         "/balance" => send_balance(state, &ctx, chat).await,
         "/undo" => undo(state, &ctx, chat).await,
         _ => {
-            if photo.is_some() {
-                // Photo after a "comment" step or standalone → attach to last tx.
-                let _ = photo; // attachment via photo flow handled on comment step; keep simple
-                ctx.tg.send(chat, &bt(&ctx.lang, "menu"), None).await
+            if let Some(file_id) = photo {
+                // During the "photo" step the picture completes the entry.
+                let s = load_sess(state, chat);
+                if s.state == "photo" {
+                    commit_tx(state, &ctx, &s, chat, Some(m.message_id)).await?;
+                    // Download and attach the photo to the just-created transaction.
+                    if let Ok(Some(f)) = ctx
+                        .tg
+                        .call::<Value>("getFile", &json!({"file_id": file_id}))
+                        .await
+                    {
+                        if let Some(fp) = f["file_path"].as_str() {
+                            if let Ok(bytes) = ctx
+                                .tg
+                                .http
+                                .get(format!(
+                                    "https://api.telegram.org/file/bot{}/{}",
+                                    ctx.tg.token, fp
+                                ))
+                                .send()
+                                .await
+                            {
+                                if let Ok(bytes) = bytes.bytes().await {
+                                    let ext = fp.rsplit('.').next().unwrap_or("jpg");
+                                    let last_tx: Option<String> = state.db.with_conn(|c| {
+                                        c.query_row("SELECT id FROM transactions WHERE created_by_user_id=?1 ORDER BY created_at DESC LIMIT 1",
+                                            [ctx.db_user.clone().unwrap_or_default()], |r| r.get(0)).map_err(|e| e.into())
+                                    }).ok();
+                                    if let Some(tid) = last_tx {
+                                        let actor = Actor {
+                                            user_id: ctx.db_user.clone(),
+                                            device_id: Some(state.db.device_id.clone()),
+                                            source: Source::Bot,
+                                        };
+                                        let _ = state.db.with_conn(|c| {
+                                            repos::attachment_add(
+                                                c,
+                                                &state.db,
+                                                &actor,
+                                                &tid,
+                                                &format!("receipt.{ext}"),
+                                                "image/jpeg",
+                                                &bytes,
+                                            )
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    save_sess(state, chat, &Sess::idle());
+                    ctx.tg.send(chat, &bt(&ctx.lang, "done"), None).await
+                } else {
+                    ctx.tg.send(chat, &bt(&ctx.lang, "menu"), None).await
+                }
             } else {
                 handle_text(state, &ctx, chat, &text, m.message_id).await
             }
