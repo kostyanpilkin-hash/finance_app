@@ -66,6 +66,8 @@ const en: Locale = {
     account: "Account", toAccount: "To account", category: "Category", empty: "Nothing here yet",
     searchComment: "Search by comment…", noOwner: "No owner", last4: "Last 4 digits",
     includeInTotal: "Include in total", spentMonth: "Spent this month", incomeMonth: "Earned this month",
+    totalBalance: "Total balance", ratesMissing: "no rate for some accounts", pieMonth: "Expenses by category this month",
+    photo: "Receipt photo", allAccounts: "All accounts", allCategories: "All categories", refreshRates: "Refresh rates",
     expenses: "Expenses", incomes: "Income", moveToMisc: "→ to Other", noChanges: "no details",
     accountKind: { card: "Card", cash: "Cash", savings: "Savings", other: "Other" },
     txKind: { expense: "Expense", income: "Income", transfer: "Transfer" },

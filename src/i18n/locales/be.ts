@@ -66,6 +66,8 @@ const be: Locale = {
     account: "Рахунак", toAccount: "На рахунак", category: "Катэгорыя", empty: "Пакуль пуста",
     searchComment: "Пошук па каментары…", noOwner: "Без уладальніка", last4: "Апошнія 4 лічбы",
     includeInTotal: "У агульны баланс", spentMonth: "Выдаткі за месяц", incomeMonth: "Даходы за месяц",
+    totalBalance: "Агульны баланс", ratesMissing: "няма курсу для часткі рахункаў", pieMonth: "Выдаткі па катэгорыях за месяц",
+    photo: "Фота чэка", allAccounts: "Усе рахункі", allCategories: "Усе катэгорыі", refreshRates: "Абнавіць курсы",
     expenses: "Выдаткі", incomes: "Даходы", moveToMisc: "→ у Іншае", noChanges: "без дэталей",
     accountKind: { card: "Картка", cash: "Наяўныя", savings: "Зберажэнні", other: "Іншае" },
     txKind: { expense: "Выдатак", income: "Даход", transfer: "Перавод" },

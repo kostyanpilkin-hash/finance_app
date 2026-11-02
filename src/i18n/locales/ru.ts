@@ -64,6 +64,8 @@ const ru = {
     account: "Счёт", toAccount: "На счёт", category: "Категория", empty: "Пока пусто",
     searchComment: "Поиск по комментарию…", noOwner: "Без владельца", last4: "Последние 4 цифры",
     includeInTotal: "В общий баланс", spentMonth: "Расходы за месяц", incomeMonth: "Доходы за месяц",
+    totalBalance: "Общий баланс", ratesMissing: "нет курса для части счетов", pieMonth: "Расходы по категориям за месяц",
+    photo: "Фото чека", allAccounts: "Все счета", allCategories: "Все категории", refreshRates: "Обновить курсы",
     expenses: "Расходы", incomes: "Доходы", moveToMisc: "→ в Прочее", noChanges: "без деталей",
     accountKind: { card: "Карта", cash: "Наличные", savings: "Сбережения", other: "Другое" },
     txKind: { expense: "Расход", income: "Доход", transfer: "Перевод" },

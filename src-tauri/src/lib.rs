@@ -47,6 +47,7 @@ pub fn run() {
             commands::attachment_add,
             commands::attachment_path,
             commands::rates_latest,
+            commands::rates_refresh,
         ])
         .setup(|app| {
             let state = state::init_db(app).expect("failed to open the database");

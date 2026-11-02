@@ -307,3 +307,33 @@ pub fn rates_latest(state: State<AppState>) -> Result<Vec<Value>, String> {
         .with_conn(repos::rates_latest)
         .map_err(|e| e.to_string())
 }
+
+/// Refreshes exchange rates from api.nbrb.by for every currency used by
+/// accounts plus USD/EUR. Currencies unknown to NBRB are skipped.
+#[tauri::command]
+pub async fn rates_refresh(state: State<'_, AppState>) -> Result<Value, String> {
+    let currencies: Vec<String> = db(&state).with_conn(|c| {
+        let mut stmt = c.prepare("SELECT DISTINCT currency FROM accounts WHERE deleted_at IS NULL")?;
+        let mut v: Vec<String> = stmt.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?;
+        for c in ["USD", "EUR"] {
+            if !v.iter().any(|x| x == c) {
+                v.push(c.into());
+            }
+        }
+        Ok(v)
+    }).map_err(|e| e.to_string())?;
+
+    let http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).build().map_err(|e| e.to_string())?;
+    let mut updated = Vec::<String>::new();
+    let mut skipped = Vec::<String>::new();
+    for cur in currencies {
+        let url = format!("https://api.nbrb.by/exrates/rates/{cur}?parammode=2");
+        let Ok(resp) = http.get(&url).send().await else { skipped.push(cur); continue };
+        let Ok(rate) = resp.json::<finance_storage::nbrb::NbrbRate>().await else { skipped.push(cur); continue };
+        let scaled = finance_storage::nbrb::per_unit_scaled(&rate);
+        let date = finance_storage::nbrb::date_of(&rate).to_string();
+        db(&state).with_conn(|c| repos::rate_upsert(c, &state.db, &date, &cur, scaled, 1)).map_err(|e| e.to_string())?;
+        updated.push(cur);
+    }
+    Ok(json!({"updated": updated, "skipped": skipped}))
+}
