@@ -1,0 +1,10 @@
+[package]
+name = "finance-storage"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "SQLite/SQLCipher storage, migrations, audit log and sync engine for Finance"
+
+[dependencies]
+finance-core.workspace = true

@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = ["crates/core", "crates/storage", "crates/api", "crates/bot", "src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Finance"]
+license = "UNLICENSED"
+
+[workspace.dependencies]
+finance-core = { path = "crates/core" }
+finance-storage = { path = "crates/storage" }
+finance-api = { path = "crates/api" }
+finance-bot = { path = "crates/bot" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"

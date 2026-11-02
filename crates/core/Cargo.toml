@@ -1,0 +1,11 @@
+[package]
+name = "finance-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Domain logic for Finance: money, currencies, balances, periods"
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true

@@ -1,0 +1,26 @@
+[package]
+name = "finance-app"
+description = "Finance — family budget desktop app"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lib]
+name = "finance_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+finance-core.workspace = true
+finance-storage.workspace = true
+finance-api.workspace = true
+finance-bot.workspace = true
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-opener = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2.4.3"
+serde.workspace = true
+serde_json.workspace = true
