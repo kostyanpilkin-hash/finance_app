@@ -287,13 +287,11 @@ fn misc_category_id(
     actor: &crate::models::Actor,
     kind: &str,
 ) -> Result<String, Error> {
-    if let Ok(id) = conn
-        .query_row(
-            "SELECT id FROM categories WHERE kind = ?1 AND key = 'misc' AND deleted_at IS NULL LIMIT 1",
-            [kind],
-            |r| r.get::<_, String>(0),
-        )
-    {
+    if let Ok(id) = conn.query_row(
+        "SELECT id FROM categories WHERE kind = ?1 AND key = 'misc' AND deleted_at IS NULL LIMIT 1",
+        [kind],
+        |r| r.get::<_, String>(0),
+    ) {
         return Ok(id);
     }
     let v = category_upsert(
