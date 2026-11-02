@@ -36,6 +36,17 @@ jobs:
 
       - run: npm ci
 
+      # Tag the public repo's main so the release doesn't need target_commitish
+      # (GitHub 422s on it when the tag doesn't exist in the target repo yet).
+      - name: Tag public repo
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_RELEASES_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          SHA=$(gh api repos/kostyanpilkin-hash/finance_app_public/branches/main --jq '.commit.sha')
+          gh api repos/kostyanpilkin-hash/finance_app_public/git/refs \
+            -f ref="refs/tags/$TAG" -f sha="$SHA" || echo "tag $TAG may already exist"
+
       - uses: tauri-apps/tauri-action@v0
         env:
           # Fine-grained PAT with Contents: Read & Write on finance_app_public only.
@@ -46,8 +57,6 @@ jobs:
           owner: kostyanpilkin-hash
           repo: finance_app_public
           tagName: ${{ github.ref_name }}
-          # The tag doesn't exist in the public repo — create it on its main.
-          targetCommitish: main
           releaseName: "Финансы ${{ github.ref_name }}"
           releaseBody: "Установщики для Windows (.msi / -setup.exe) и macOS (.dmg, Apple Silicon + Intel). Инструкция по установке без подписи — в README."
           releaseDraft: true
