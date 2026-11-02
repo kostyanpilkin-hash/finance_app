@@ -13,17 +13,69 @@ use crate::state::AppState;
 
 pub const API_PORT: u16 = 45322;
 
-/// Start the host HTTP server (if mode == "host").
+/// Start the host HTTP server (if mode == "host") + mDNS announcement.
 pub fn start_host(app: &AppHandle) {
     let state = app.state::<AppState>();
     if state.db.mode != "host" {
         return;
     }
+    announce_mdns(&state.db.instance_id);
     let db = Arc::new(clone_db(&state.db));
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], API_PORT));
     tauri::async_runtime::spawn(async move {
         let _ = finance_api::serve(finance_api::ApiState { db }, addr).await;
     });
+}
+
+const MDNS_SERVICE: &str = "_finance._tcp.local.";
+
+fn announce_mdns(instance_id: &str) {
+    let daemon = match mdns_sd::ServiceDaemon::new() {
+        Ok(d) => d,
+        Err(_) => return,
+    };
+    let host = hostname::get()
+        .map(|h| h.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| "finance-host".into());
+    let info = mdns_sd::ServiceInfo::new(
+        MDNS_SERVICE,
+        &format!("finance-{}", &instance_id[..8]),
+        &format!("{host}.local."),
+        "",
+        API_PORT,
+        Option::<std::collections::HashMap<String, String>>::None,
+    );
+    if let Ok(info) = info {
+        let _ = daemon.register(info);
+        std::mem::forget(daemon); // keep announcing for the process lifetime
+    }
+}
+
+/// Client: browse for hosts on the LAN for ~2.5s.
+pub fn discover_hosts() -> Vec<Value> {
+    let mut out = Vec::new();
+    let Ok(daemon) = mdns_sd::ServiceDaemon::new() else {
+        return out;
+    };
+    let Ok(receiver) = daemon.browse(MDNS_SERVICE) else {
+        return out;
+    };
+    let deadline = std::time::Instant::now() + Duration::from_millis(2500);
+    while let Ok(event) =
+        receiver.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+    {
+        if let mdns_sd::ServiceEvent::ServiceResolved(info) = event {
+            for addr in info.get_addresses() {
+                out.push(json!({
+                    "name": info.get_fullname(),
+                    "host": info.get_hostname(),
+                    "url": format!("http://{addr}:{}", info.get_port()),
+                }));
+            }
+        }
+    }
+    out.dedup_by(|a, b| a["url"] == b["url"]);
+    out
 }
 
 /// Cheap clone handle for the API task (shares the same connection).
@@ -174,7 +226,20 @@ async fn sync_once(state: &AppState) -> Result<bool, String> {
                 dbm::write_row(c, e.table(), &Value::Object(row))?;
             }
             let max_seq = body["maxSeq"].as_i64().unwrap_or(last);
-            repos::setting_set(c, "last_seq", &max_seq.to_string())
+            repos::setting_set(c, "last_seq", &max_seq.to_string())?;
+            // Persist unresolved conflicts the host reported.
+            for cf in body["conflicts"].as_array().unwrap_or(&vec![]) {
+                c.execute(
+                    "INSERT OR REPLACE INTO conflicts (id, entity, entity_id, local_payload, server_payload, created_at)
+                     VALUES (?1,?2,?3,?4,?5,?6)",
+                    finance_storage::rusqlite::params![
+                        cf["id"].as_str().unwrap_or(""), cf["entity"].as_str().unwrap_or(""),
+                        cf["entityId"].as_str().unwrap_or(""), cf["local"].as_str().unwrap_or(""),
+                        cf["server"].as_str().unwrap_or(""), dbm::now_iso()
+                    ],
+                )?;
+            }
+            Ok(())
         })
         .map_err(|e| e.to_string())?;
 
@@ -229,13 +294,59 @@ pub async fn pair_client(
     Ok(())
 }
 
+/// Client: unresolved conflicts (id, entity, both versions).
+pub fn conflict_list(state: &AppState) -> Result<Vec<Value>, String> {
+    state.db.with_conn(|c| {
+        let mut st = c.prepare("SELECT id, entity, entity_id, local_payload, server_payload FROM conflicts WHERE resolved_at IS NULL")?;
+        let v = st
+            .query_map([], |r| {
+                Ok(json!({
+                    "id": r.get::<_, String>(0)?, "entity": r.get::<_, String>(1)?, "entityId": r.get::<_, String>(2)?,
+                    "local": r.get::<_, String>(3)?, "server": r.get::<_, String>(4)?
+                }))
+            })?
+            .collect::<Result<_, _>>()?;
+        Ok(v)
+    }).map_err(|e| e.to_string())
+}
+
+/// Client: pick a winner and tell the host.
+pub async fn conflict_resolve(
+    state: &AppState,
+    conflict_id: &str,
+    winner: &str,
+) -> Result<(), String> {
+    let (host, token) = client_cfg(state).map_err(|e| e.to_string())?;
+    let resp = reqwest::Client::new()
+        .post(format!("{host}/api/v1/resolve"))
+        .bearer_auth(&token)
+        .json(&json!({"conflictId": conflict_id, "winner": winner}))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("resolve {}", resp.status()));
+    }
+    state
+        .db
+        .with_conn(|c| {
+            c.execute(
+                "UPDATE conflicts SET resolved_at=?1 WHERE id=?2",
+                finance_storage::rusqlite::params![dbm::now_iso(), conflict_id],
+            )?;
+            Ok(())
+        })
+        .map_err(|e| e.to_string())
+}
+
 pub fn sync_status(state: &AppState) -> Value {
     let _ = state;
     state.db.with_conn(|c| {
         let host = repos::setting_get(c, "host_url")?;
         let seq = repos::setting_get(c, "last_seq")?;
+        let unresolved: i64 = c.query_row("SELECT COUNT(*) FROM conflicts WHERE resolved_at IS NULL", [], |r| r.get(0)).unwrap_or(0);
         let pending: i64 = c.query_row("SELECT COUNT(*) FROM outbox", [], |r| r.get(0))?;
         let devices: i64 = c.query_row("SELECT COUNT(*) FROM devices WHERE revoked_at IS NULL", [], |r| r.get(0)).unwrap_or(0);
-        Ok(json!({"mode": state.db.mode, "hostUrl": host, "lastSeq": seq, "pendingOps": pending, "pairedDevices": devices}))
+        Ok(json!({"mode": state.db.mode, "hostUrl": host, "lastSeq": seq, "pendingOps": pending, "pairedDevices": devices, "conflicts": unresolved}))
     }).unwrap_or(json!({}))
 }

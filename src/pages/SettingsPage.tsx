@@ -160,11 +160,55 @@ function SyncSection() {
             value={code} onChange={(e) => setCode(e.target.value)} />
           <input className="w-32 rounded border border-border bg-background px-3 py-2" placeholder={t("ui.deviceName")}
             value={name} onChange={(e) => setName(e.target.value)} />
+          <Button size="sm" variant="outline" onClick={async () => {
+            const hosts = await api.discoverHosts();
+            if (hosts[0]?.url) setHostUrl(hosts[0].url);
+          }}>{t("ui.findHost")}</Button>
           <Button size="sm" onClick={() => pair.mutate()} disabled={pair.isPending}>{t("ui.connect")}</Button>
         </div>
         {pair.isError && <p className="mt-1 text-destructive">{String(pair.error)}</p>}
         {s?.hostUrl && <p className="mt-1 text-xs text-muted-foreground">{s.hostUrl} · seq {s.lastSeq}</p>}
       </div>
+      <ConflictsBlock />
+    </div>
+  );
+}
+
+function ConflictsBlock() {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const list = useQuery({ queryKey: ["conflicts"], queryFn: api.conflictList, refetchInterval: 15000 });
+  const resolve = useMutation({
+    mutationFn: ({ id, winner }: { id: string; winner: "local" | "server" }) => api.conflictResolve(id, winner),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["conflicts"] });
+      queryClient.invalidateQueries({ queryKey: ["sync-status"] });
+    },
+  });
+  if (!list.data?.length) return null;
+  const short = (json: string) => {
+    try {
+      const v = JSON.parse(json);
+      const name = v.name ?? v.amountMinor ?? v.payload?.name ?? v.payload?.amountMinor ?? "";
+      return name !== "" ? String(name) : JSON.stringify(v).slice(0, 60);
+    } catch {
+      return json.slice(0, 60);
+    }
+  };
+  return (
+    <div>
+      <div className="mb-1 font-medium text-destructive">{t("ui.conflicts")}: {list.data.length}</div>
+      {list.data.map((c) => (
+        <div key={c.id} className="mb-2 space-y-1 rounded-xl border border-destructive/40 bg-card p-3">
+          <div className="text-xs text-muted-foreground">{c.entity} · {t("ui.conflictHint")}</div>
+          <div className="flex items-center gap-2">
+            <span className="flex-1 truncate">{t("ui.variantA")}: {short(c.local)}</span>
+            <Button size="sm" onClick={() => resolve.mutate({ id: c.id, winner: "local" })}>{t("ui.keepA")}</Button>
+            <span className="flex-1 truncate">{t("ui.variantB")}: {short(c.server)}</span>
+            <Button size="sm" variant="outline" onClick={() => resolve.mutate({ id: c.id, winner: "server" })}>{t("ui.keepB")}</Button>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

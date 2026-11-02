@@ -373,6 +373,25 @@ pub fn sync_status(state: State<AppState>) -> Value {
 }
 
 #[tauri::command]
+pub fn discover_hosts() -> Vec<Value> {
+    crate::sync::discover_hosts()
+}
+
+#[tauri::command]
+pub fn conflict_list(state: State<AppState>) -> Result<Vec<Value>, String> {
+    crate::sync::conflict_list(&state)
+}
+
+#[tauri::command]
+pub async fn conflict_resolve(
+    state: State<'_, AppState>,
+    conflict_id: String,
+    winner: String,
+) -> Result<(), String> {
+    crate::sync::conflict_resolve(&state, &conflict_id, &winner).await
+}
+
+#[tauri::command]
 pub async fn rates_refresh(state: State<'_, AppState>) -> Result<Value, String> {
     let currencies: Vec<String> = db(&state)
         .with_conn(|c| {

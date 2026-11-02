@@ -74,6 +74,8 @@ const en: Locale = {
     hostMode: "This device is the host", joinHost: "Pair this device to a host",
     pairDevice: "Device code", syncStatus: "devices", pendingOps: "queued",
     code: "Code", deviceName: "Device name",
+    conflicts: "Sync conflicts", conflictHint: "record changed on two devices",
+    variantA: "This device", variantB: "Host", keepA: "Keep mine", keepB: "Keep host", findHost: "Find host",
     period: { day: "Day", week: "Week", month: "Month", custom: "Period" },
     vsPrev: "vs previous", net: "Net (income − expense)", byDay: "By day",
     exportXlsx: "Export to Excel", exportPdf: "Export to PDF", openFolder: "Open folder",

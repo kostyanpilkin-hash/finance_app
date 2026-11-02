@@ -74,6 +74,8 @@ const be: Locale = {
     hostMode: "Гэтая прылада — хост", joinHost: "Падключыць гэтую прыладу да хаста",
     pairDevice: "Код для прылады", syncStatus: "прылад", pendingOps: "у чарзе",
     code: "Код", deviceName: "Імя прылады",
+    conflicts: "Канфлікты сінхранізацыі", conflictHint: "запіс зменены на дзвюх прыладах",
+    variantA: "Гэтая прылада", variantB: "Хост", keepA: "Пакінуць маё", keepB: "Пакінуць з хаста", findHost: "Знайсці хост",
     period: { day: "Дзень", week: "Тыдзень", month: "Месяц", custom: "Перыяд" },
     vsPrev: "да мінулага перыяду", net: "Вынік (даход − выдатак)", byDay: "Па днях",
     exportXlsx: "Выгрузіць у Excel", exportPdf: "Выгрузіць у PDF", openFolder: "Адкрыць тэчку",

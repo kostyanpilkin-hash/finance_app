@@ -84,6 +84,10 @@ export const api = {
   devicePairCode: (userId: string) => invoke<string>("device_pair_code", { userId }),
   pairToHost: (hostUrl: string, code: string, name: string) =>
     invoke<void>("pair_to_host", { hostUrl, code, name }),
+  discoverHosts: () => invoke<{ name: string; host: string; url: string }[]>("discover_hosts"),
+  conflictList: () => invoke<{ id: string; entity: string; entityId: string; local: string; server: string }[]>("conflict_list"),
+  conflictResolve: (conflictId: string, winner: "local" | "server") =>
+    invoke<void>("conflict_resolve", { conflictId, winner }),
   syncStatus: () =>
     invoke<{ mode: string; hostUrl?: string; lastSeq?: string; pendingOps: number; pairedDevices: number }>("sync_status"),
 };

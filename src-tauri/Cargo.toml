@@ -31,3 +31,5 @@ serde_json.workspace = true
 keyring = { version = "3", features = ["windows-native", "apple-native", "sync-secret-service"] }
 dirs = "6"
 base64 = "0.22"
+mdns-sd = "0.21.7"
+hostname = "0.4.2"

@@ -59,6 +59,9 @@ pub fn run() {
             commands::device_pair_code,
             commands::pair_to_host,
             commands::sync_status,
+            commands::discover_hosts,
+            commands::conflict_list,
+            commands::conflict_resolve,
         ])
         .setup(|app| {
             let state = state::init_db(app).expect("failed to open the database");

@@ -72,6 +72,8 @@ const ru = {
     hostMode: "Это устройство — хост", joinHost: "Подключить это устройство к хосту",
     pairDevice: "Код для устройства", syncStatus: "устройств", pendingOps: "в очереди",
     code: "Код", deviceName: "Имя устройства",
+    conflicts: "Конфликты синхронизации", conflictHint: "запись изменена на двух устройствах",
+    variantA: "Это устройство", variantB: "Хост", keepA: "Оставить моё", keepB: "Оставить с хоста", findHost: "Найти хост",
     period: { day: "День", week: "Неделя", month: "Месяц", custom: "Период" },
     vsPrev: "к прошлому периоду", net: "Итог (доход − расход)", byDay: "По дням",
     exportXlsx: "Выгрузить в Excel", exportPdf: "Выгрузить в PDF", openFolder: "Открыть папку",

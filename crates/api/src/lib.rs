@@ -29,6 +29,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/v1/pair", post(pair))
         .route("/api/v1/push", post(push))
         .route("/api/v1/pull", get(pull))
+        .route("/api/v1/resolve", post(resolve))
         .with_state(state)
 }
 
@@ -163,6 +164,51 @@ async fn push(
         Ok(())
     }).map_err(|e| if e.to_string() == "unauthorized" { StatusCode::UNAUTHORIZED } else { StatusCode::INTERNAL_SERVER_ERROR })?;
     Ok(Json(json!({"results": results})))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ResolveReq {
+    conflict_id: String,
+    /// Which side wins: "local" (client's version) or "server".
+    winner: String,
+}
+
+async fn resolve(
+    State(s): State<ApiState>,
+    headers: axum::http::HeaderMap,
+    Json(req): Json<ResolveReq>,
+) -> Result<Json<Value>, StatusCode> {
+    let token = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .unwrap_or("")
+        .to_string();
+    s.db.with_conn(|c| {
+        let (device_id, user_id) = auth(c, &token)?;
+        let (entity_s, entity_id, local, server): (String, String, String, String) = c.query_row(
+            "SELECT entity, entity_id, local_payload, server_payload FROM conflicts WHERE id=?1 AND resolved_at IS NULL",
+            [&req.conflict_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )?;
+        let entity = models::Entity::parse(&entity_s).ok_or_else(|| Error::Invalid(entity_s.clone()))?;
+        let actor = models::Actor { user_id, device_id: Some(device_id), source: Source::Sync };
+        // "local" applies the client payload (delete wins if its op was delete);
+        // "server" just drops the conflict — host state already stands.
+        if req.winner == "local" {
+            let payload: Value = serde_json::from_str(&local)?;
+            let op = if payload["op"].as_str() == Some("delete") { Op::Delete } else { Op::Upsert };
+            let p = payload["payload"].clone();
+            repos::apply(&s.db, c, &actor, entity, op, &entity_id, if p.is_null() { None } else { Some(p) })?;
+        }
+        c.execute(
+            "UPDATE conflicts SET resolved_at=?1 WHERE id=?2",
+            finance_storage::rusqlite::params![dbm::now_iso(), req.conflict_id],
+        )?;
+        let _ = server;
+        Ok(Json(json!({"ok": true})))
+    }).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 #[derive(Deserialize)]
