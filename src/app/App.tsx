@@ -16,6 +16,7 @@ import { ReportsPage } from "@/pages/ReportsPage";
 import { RemindersPage } from "@/pages/RemindersPage";
 import { GoalsPage } from "@/pages/GoalsPage";
 import { Onboarding } from "./Onboarding";
+import { PinLock } from "@/components/PinLock";
 import { PAGES, type PageId } from "./pages";
 
 export default function App() {
@@ -24,8 +25,27 @@ export default function App() {
   const [page, setPage] = useState<PageId>("dashboard");
 
   const onboarding = useQuery({ queryKey: ["onboarding"], queryFn: api.onboardingStatus });
+  const pinEnabled = useQuery({ queryKey: ["pin-enabled"], queryFn: api.pinEnabled });
+  const [unlockedOnce, setUnlockedOnce] = useState(false);
+  const locked = pinEnabled.data === true && !unlockedOnce;
 
   useEffect(() => void init(), [init]);
+
+  // Auto-lock after 10 minutes of inactivity.
+  useEffect(() => {
+    if (!pinEnabled.data) return;
+    let timer = window.setTimeout(() => setUnlockedOnce(false), 10 * 60 * 1000);
+    const reset = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setUnlockedOnce(false), 10 * 60 * 1000);
+    };
+    const events = ["mousemove", "keydown", "mousedown", "wheel", "touchstart"];
+    events.forEach((e) => window.addEventListener(e, reset));
+    return () => {
+      window.clearTimeout(timer);
+      events.forEach((e) => window.removeEventListener(e, reset));
+    };
+  }, [pinEnabled.data]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -42,6 +62,14 @@ export default function App() {
 
   if (onboarding.data && !onboarding.data.done) {
     return <Onboarding />;
+  }
+
+  if (locked) {
+    return (
+      <div className="h-screen">
+        <PinLock onUnlock={() => setUnlockedOnce(true)} />
+      </div>
+    );
   }
 
   return (

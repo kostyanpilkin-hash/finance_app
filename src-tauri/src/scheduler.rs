@@ -18,6 +18,7 @@ pub fn start(app: AppHandle) {
         while flag.load(Ordering::Relaxed) {
             refresh_once(&app).await;
             fire_reminders(&app).await;
+            auto_backup(&app);
             // Check hourly; refresh at most once per calendar day.
             tokio::time::sleep(Duration::from_secs(3600)).await;
         }
@@ -102,4 +103,48 @@ async fn fire_reminders(app: &AppHandle) {
         .collect();
     let _ =
         crate::bot::notify_linked(&state, &format!("⏰ Напоминания:\n{}", names.join("\n"))).await;
+}
+
+/// Monthly encrypted backup to <appdata>/backups, keeps the last 12.
+fn auto_backup(app: &AppHandle) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    let month = chrono::Local::now().format("%Y-%m").to_string();
+    let last = state
+        .db
+        .with_conn(|c| finance_storage::repos::setting_get(c, "auto_backup_month"))
+        .ok()
+        .flatten();
+    if last.as_deref() == Some(&month) {
+        return;
+    }
+    let dir = std::path::Path::new(&state.db.attachments_dir)
+        .join("..")
+        .join("backups");
+    let _ = std::fs::create_dir_all(&dir);
+    let name = format!("backup-{}.db", chrono::Local::now().format("%Y%m%d-%H%M%S"));
+    let ok = state
+        .db
+        .with_conn(|c| {
+            c.execute(
+                "VACUUM INTO ?1",
+                [dir.join(&name).to_string_lossy().as_ref()],
+            )?;
+            Ok(())
+        })
+        .is_ok();
+    if ok {
+        let _ = state
+            .db
+            .with_conn(|c| finance_storage::repos::setting_set(c, "auto_backup_month", &month));
+        if let Ok(mut files) = std::fs::read_dir(&dir).map(|rd| rd.flatten().collect::<Vec<_>>()) {
+            files.sort_by_key(|f| f.file_name());
+            if files.len() > 12 {
+                for f in files.drain(..files.len() - 12) {
+                    let _ = std::fs::remove_file(f.path());
+                }
+            }
+        }
+    }
 }

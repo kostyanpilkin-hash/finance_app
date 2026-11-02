@@ -298,6 +298,119 @@ pub fn reminder_resolve(
         .map_err(|e| e.to_string())
 }
 
+// ---------- security & backups ----------
+
+#[tauri::command]
+pub fn pin_set(state: State<AppState>, pin: String) -> Result<(), String> {
+    use sha2::Digest;
+    let salt = uuid::Uuid::new_v4().to_string();
+    let hash = sha2::Sha256::digest(format!("{salt}{pin}").as_bytes());
+    let hex: String = hash.iter().map(|b| format!("{b:02x}")).collect();
+    db(&state)
+        .with_conn(|c| {
+            repos::setting_set(c, "pin_salt", &salt)?;
+            repos::setting_set(c, "pin_hash", &hex)
+        })
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn pin_verify(state: State<AppState>, pin: String) -> Result<bool, String> {
+    use sha2::Digest;
+    db(&state)
+        .with_conn(|c| {
+            let salt = repos::setting_get(c, "pin_salt")?.unwrap_or_default();
+            let expect = repos::setting_get(c, "pin_hash")?;
+            match expect {
+                None => Ok(true),
+                Some(h) => {
+                    let got = sha2::Sha256::digest(format!("{salt}{pin}").as_bytes());
+                    Ok(got.iter().map(|b| format!("{b:02x}")).collect::<String>() == h)
+                }
+            }
+        })
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn pin_clear(state: State<AppState>) -> Result<(), String> {
+    db(&state)
+        .with_conn(|c| {
+            repos::setting_set(c, "pin_salt", "")?;
+            repos::setting_set(c, "pin_hash", "")
+        })
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn pin_enabled(state: State<AppState>) -> bool {
+    state
+        .db
+        .with_conn(|c| repos::setting_get(c, "pin_hash"))
+        .ok()
+        .flatten()
+        .map(|h| !h.is_empty())
+        .unwrap_or(false)
+}
+
+#[tauri::command]
+pub fn backup_create(state: State<AppState>) -> Result<String, String> {
+    let dir = std::path::Path::new(&state.db.attachments_dir)
+        .join("..")
+        .join("backups");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let name = format!("backup-{}.db", chrono::Local::now().format("%Y%m%d-%H%M%S"));
+    let dest = dir.join(&name);
+    state
+        .db
+        .with_conn(|c| {
+            c.execute("VACUUM INTO ?1", [dest.to_string_lossy().as_ref()])?;
+            Ok(())
+        })
+        .map_err(|e| e.to_string())?;
+    Ok(dest.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+pub fn backup_list(state: State<AppState>) -> Vec<String> {
+    let dir = std::path::Path::new(&state.db.attachments_dir)
+        .join("..")
+        .join("backups");
+    let mut v: Vec<String> = std::fs::read_dir(&dir)
+        .map(|rd| {
+            rd.flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default();
+    v.sort();
+    v.reverse();
+    v
+}
+
+/// Copies a backup over the live db; the app must restart afterwards.
+#[tauri::command]
+pub fn backup_restore(state: State<AppState>, name: String) -> Result<(), String> {
+    if name.contains('/') || name.contains('\\') || name.contains("..") {
+        return Err("bad name".into());
+    }
+    let base = std::path::Path::new(&state.db.attachments_dir).join("..");
+    let src = base.join("backups").join(&name);
+    if !src.exists() {
+        return Err("backup not found".into());
+    }
+    let dest = base.join("finance.db");
+    state
+        .db
+        .with_conn(|c| {
+            c.execute("PRAGMA wal_checkpoint(TRUNCATE)", [])?;
+            Ok(())
+        })
+        .map_err(|e| e.to_string())?;
+    std::fs::copy(&src, &dest).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn reminders_due(state: State<AppState>) -> Result<Vec<Value>, String> {
     let today = finance_storage::db::now_iso()[..10].to_string();

@@ -75,6 +75,13 @@ export const api = {
   reminderResolve: (id: string, status: string, createTx?: Record<string, unknown>) =>
     invoke<void>("reminder_resolve", { id, status, createTx }),
   remindersDue: <T = unknown>() => invoke<T[]>("reminders_due"),
+  pinSet: (pin: string) => invoke<void>("pin_set", { pin }),
+  pinVerify: (pin: string) => invoke<boolean>("pin_verify", { pin }),
+  pinClear: () => invoke<void>("pin_clear"),
+  pinEnabled: () => invoke<boolean>("pin_enabled"),
+  backupCreate: () => invoke<string>("backup_create"),
+  backupList: () => invoke<string[]>("backup_list"),
+  backupRestore: (name: string) => invoke<void>("backup_restore", { name }),
   attachmentAdd: <T = unknown>(transactionId: string, fileName: string, mime: string, bytesBase64: string) =>
     invoke<T>("attachment_add", { transactionId, fileName, mime, bytesBase64 }),
   attachmentPath: (sha256: string) => invoke<string>("attachment_path", { sha256 }),

@@ -213,6 +213,72 @@ function ConflictsBlock() {
   );
 }
 
+function SecuritySection() {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const enabled = useQuery({ queryKey: ["pin-enabled"], queryFn: api.pinEnabled });
+  const [pin, setPin] = useState("");
+  const set_ = useMutation({
+    mutationFn: () => api.pinSet(pin),
+    onSuccess: () => { setPin(""); qc.invalidateQueries({ queryKey: ["pin-enabled"] }); },
+  });
+  const clear = useMutation({
+    mutationFn: api.pinClear,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pin-enabled"] }),
+  });
+  return (
+    <div className="space-y-3 text-sm">
+      {enabled.data ? (
+        <div className="flex items-center gap-3">
+          <span>{t("ui.pinOn")}</span>
+          <Button size="sm" variant="outline" onClick={() => clear.mutate()}>{t("ui.pinOff")}</Button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <input className="w-36 rounded border border-border bg-background px-3 py-2" type="password" inputMode="numeric"
+            maxLength={8} placeholder="PIN (4–8)" value={pin}
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))} />
+          <Button size="sm" onClick={() => set_.mutate()} disabled={pin.length < 4 || set_.isPending}>{t("ui.setPin")}</Button>
+        </div>
+      )}
+      <p className="text-xs text-muted-foreground">{t("ui.pinHint")}</p>
+    </div>
+  );
+}
+
+function BackupSection() {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const list = useQuery({ queryKey: ["backups"], queryFn: api.backupList });
+  const create = useMutation({
+    mutationFn: api.backupCreate,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["backups"] }),
+  });
+  const restore = useMutation({ mutationFn: api.backupRestore });
+  return (
+    <div className="space-y-3 text-sm">
+      <div className="flex items-center gap-3">
+        <Button size="sm" onClick={() => create.mutate()} disabled={create.isPending}>{t("ui.backupNow")}</Button>
+        {create.data && <span className="text-xs text-muted-foreground">{create.data}</span>}
+      </div>
+      <p className="text-xs text-muted-foreground">{t("ui.backupHint")}</p>
+      <div className="space-y-1">
+        {(list.data ?? []).slice(0, 12).map((b) => (
+          <div key={b} className="flex items-center justify-between rounded-lg bg-muted px-3 py-1.5 font-mono text-xs">
+            <span>{b}</span>
+            <button className="text-primary hover:underline" onClick={() => {
+              if (window.confirm(t("ui.restoreConfirm"))) restore.mutate(b);
+            }}>{t("ui.restore")}</button>
+          </div>
+        ))}
+        {restore.isSuccess && <p className="text-xs text-primary">{t("ui.restoreRestart")}</p>}
+        {restore.isError && <p className="text-xs text-destructive">{String(restore.error)}</p>}
+        {list.data?.length === 0 && <p className="text-xs text-muted-foreground">{t("ui.noBackups")}</p>}
+      </div>
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const { t } = useTranslation();
   const { theme, language, setTheme, setLanguage } = useSettingsStore();
@@ -303,6 +369,14 @@ export function SettingsPage() {
 
       <Section title={t("settings.devices")}>
         <SyncSection />
+      </Section>
+
+      <Section title={t("settings.security")}>
+        <SecuritySection />
+      </Section>
+
+      <Section title={t("settings.backup")}>
+        <BackupSection />
       </Section>
 
       <Section title={t("settings.about")}>
