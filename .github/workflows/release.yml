@@ -46,6 +46,8 @@ jobs:
           owner: kostyanpilkin-hash
           repo: finance_app_public
           tagName: ${{ github.ref_name }}
+          # The tag doesn't exist in the public repo — create it on its main.
+          targetCommitish: main
           releaseName: "Финансы ${{ github.ref_name }}"
           releaseBody: "Установщики для Windows (.msi / -setup.exe) и macOS (.dmg, Apple Silicon + Intel). Инструкция по установке без подписи — в README."
           releaseDraft: true
