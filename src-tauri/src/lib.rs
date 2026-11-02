@@ -1,4 +1,5 @@
 mod commands;
+mod scheduler;
 mod state;
 mod tray;
 
@@ -53,6 +54,7 @@ pub fn run() {
             let state = state::init_db(app).expect("failed to open the database");
             app.manage(state);
             tray::create(app.handle())?;
+            scheduler::start(app.handle().clone());
             if std::env::args().any(|a| a == "--minimized") {
                 if let Some(w) = app.get_webview_window("main") {
                     let _ = w.hide();

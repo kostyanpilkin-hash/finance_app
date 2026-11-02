@@ -75,4 +75,5 @@ export const api = {
     invoke<T>("attachment_add", { transactionId, fileName, mime, bytesBase64 }),
   attachmentPath: (sha256: string) => invoke<string>("attachment_path", { sha256 }),
   ratesLatest: <T = unknown>() => invoke<T[]>("rates_latest"),
+  ratesRefresh: () => invoke<{ updated: string[]; skipped: string[] }>("rates_refresh"),
 };

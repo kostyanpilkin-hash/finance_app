@@ -18,6 +18,39 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+interface RateRow { currency: string; rateBynScaled: number; scale: number; date: string }
+
+function RatesSection() {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const rates = useQuery({ queryKey: ["rates"], queryFn: () => api.ratesLatest<RateRow>() });
+  const refresh = useMutation({
+    mutationFn: api.ratesRefresh,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["rates"] }),
+  });
+  return (
+    <div className="space-y-2 text-sm">
+      <Button size="sm" onClick={() => refresh.mutate()} disabled={refresh.isPending}>
+        {refresh.isPending ? "…" : t("ui.refreshRates")}
+      </Button>
+      {(rates.data ?? []).map((r) => (
+        <div key={r.currency} className="flex justify-between border-b border-border/50 pb-1">
+          <span>{r.currency}</span>
+          <span className="text-muted-foreground">
+            {(r.rateBynScaled / 1e6).toFixed(4)} BYN · {r.date}
+          </span>
+        </div>
+      ))}
+      {refresh.data && (
+        <p className="text-xs text-muted-foreground">
+          {t("ui.refreshed")}: {refresh.data.updated.join(", ")}
+          {refresh.data.skipped.length > 0 && ` · ${t("ui.skipped")}: ${refresh.data.skipped.join(", ")}`}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const { t } = useTranslation();
   const { theme, language, setTheme, setLanguage } = useSettingsStore();
@@ -96,6 +129,10 @@ export function SettingsPage() {
             <span className="block text-xs text-muted-foreground">{t("settings.autostartHint")}</span>
           </span>
         </label>
+      </Section>
+
+      <Section title={t("settings.rates")}>
+        <RatesSection />
       </Section>
 
       <Section title={t("settings.about")}>

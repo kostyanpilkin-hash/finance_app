@@ -4,7 +4,22 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { formatMinor, nowLocalIso, parseMinor, todayIso } from "@/lib/money";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import type { AccountRow, CategoryRow, TransactionRow } from "@/lib/types";
+
+interface AttachmentRow { id: string; transactionId: string; sha256: string; fileName: string }
+
+function Thumb({ txId }: { txId: string }) {
+  const atts = useQuery({ queryKey: ["attachments"], queryFn: () => api.entityList<AttachmentRow>("attachments") });
+  const att = atts.data?.find((a) => a.transactionId === txId);
+  const path = useQuery({
+    queryKey: ["attachment-path", att?.sha256],
+    queryFn: () => api.attachmentPath(att!.sha256),
+    enabled: !!att,
+  });
+  if (!path.data) return null;
+  return <img src={convertFileSrc(path.data)} alt="" className="h-8 w-8 rounded object-cover" />;
+}
 
 export function TransactionsPage() {
   const { t } = useTranslation();
@@ -152,6 +167,7 @@ export function TransactionsPage() {
               {x.kind === "transfer" ? `${x.aName} → ${x.a2Name}` : `${x.aName} · ${catName(categories.data?.find((c) => c.id === x.categoryId))}`}
             </span>
             {x.comment && <span className="truncate text-xs text-muted-foreground">{x.comment}</span>}
+            {(x.attCount ?? 0) > 0 && <Thumb txId={x.id} />}
             <span className="ml-auto whitespace-nowrap text-xs text-muted-foreground">
               {x.occurredAt.slice(0, 10)} {x.uName ? `· ${x.uName}` : ""} {x.source === "bot" ? "· 🤖" : ""}
             </span>
