@@ -69,6 +69,8 @@ const be: Locale = {
     totalBalance: "Агульны баланс", ratesMissing: "няма курсу для часткі рахункаў", pieMonth: "Выдаткі па катэгорыях за месяц",
     photo: "Фота чэка", allAccounts: "Усе рахункі", allCategories: "Усе катэгорыі", refreshRates: "Абнавіць курсы",
     refreshed: "Абноўлена", skipped: "прапушчана",
+    period: { day: "Дзень", week: "Тыдзень", month: "Месяц", custom: "Перыяд" },
+    vsPrev: "да мінулага перыяду", net: "Вынік (даход − выдатак)", byDay: "Па днях",
     expenses: "Выдаткі", incomes: "Даходы", moveToMisc: "→ у Іншае", noChanges: "без дэталей",
     accountKind: { card: "Картка", cash: "Наяўныя", savings: "Зберажэнні", other: "Іншае" },
     txKind: { expense: "Выдатак", income: "Даход", transfer: "Перавод" },

@@ -69,6 +69,8 @@ const en: Locale = {
     totalBalance: "Total balance", ratesMissing: "no rate for some accounts", pieMonth: "Expenses by category this month",
     photo: "Receipt photo", allAccounts: "All accounts", allCategories: "All categories", refreshRates: "Refresh rates",
     refreshed: "Updated", skipped: "skipped",
+    period: { day: "Day", week: "Week", month: "Month", custom: "Period" },
+    vsPrev: "vs previous", net: "Net (income − expense)", byDay: "By day",
     expenses: "Expenses", incomes: "Income", moveToMisc: "→ to Other", noChanges: "no details",
     accountKind: { card: "Card", cash: "Cash", savings: "Savings", other: "Other" },
     txKind: { expense: "Expense", income: "Income", transfer: "Transfer" },

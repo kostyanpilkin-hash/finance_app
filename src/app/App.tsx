@@ -11,6 +11,7 @@ import { AccountsPage } from "@/pages/AccountsPage";
 import { CategoriesPage } from "@/pages/CategoriesPage";
 import { TransactionsPage } from "@/pages/TransactionsPage";
 import { JournalPage } from "@/pages/JournalPage";
+import { AnalyticsPage } from "@/pages/AnalyticsPage";
 import { Onboarding } from "./Onboarding";
 import { PAGES, type PageId } from "./pages";
 
@@ -66,6 +67,7 @@ export default function App() {
           : page === "categories" ? <CategoriesPage />
           : page === "transactions" ? <TransactionsPage />
           : page === "journal" ? <JournalPage />
+          : page === "analytics" ? <AnalyticsPage />
           : <PlaceholderPage page={page} />}
       </main>
     </div>
