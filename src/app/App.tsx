@@ -6,6 +6,11 @@ import { api } from "@/lib/api";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
 import { SettingsPage } from "@/pages/SettingsPage";
+import { DashboardPage } from "@/pages/DashboardPage";
+import { AccountsPage } from "@/pages/AccountsPage";
+import { CategoriesPage } from "@/pages/CategoriesPage";
+import { TransactionsPage } from "@/pages/TransactionsPage";
+import { JournalPage } from "@/pages/JournalPage";
 import { Onboarding } from "./Onboarding";
 import { PAGES, type PageId } from "./pages";
 
@@ -55,7 +60,13 @@ export default function App() {
       </aside>
 
       <main className="flex flex-1 flex-col overflow-auto p-6">
-        {page === "settings" ? <SettingsPage /> : <PlaceholderPage page={page} />}
+        {page === "settings" ? <SettingsPage />
+          : page === "dashboard" ? <DashboardPage />
+          : page === "accounts" ? <AccountsPage />
+          : page === "categories" ? <CategoriesPage />
+          : page === "transactions" ? <TransactionsPage />
+          : page === "journal" ? <JournalPage />
+          : <PlaceholderPage page={page} />}
       </main>
     </div>
   );
