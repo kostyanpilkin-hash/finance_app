@@ -124,7 +124,7 @@ pub fn complete_onboarding(state: State<AppState>, input: OnboardingInput) -> Re
             }
             repos::setting_set(&tx, "onboarding_done", "1")?;
             repos::setting_set(&tx, "current_user_id", owner.as_deref().unwrap_or(""))?;
-            state.db.set_mode("host")?;
+            tx.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('mode', 'host')", [])?;
             tx.commit()?;
             Ok(())
         })
