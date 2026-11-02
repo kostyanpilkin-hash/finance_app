@@ -39,6 +39,7 @@ jobs:
       # Tag the public repo's main so the release doesn't need target_commitish
       # (GitHub 422s on it when the tag doesn't exist in the target repo yet).
       - name: Tag public repo
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.PUBLIC_RELEASES_TOKEN }}
           TAG: ${{ github.ref_name }}
