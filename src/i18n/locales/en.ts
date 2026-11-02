@@ -71,6 +71,8 @@ const en: Locale = {
     refreshed: "Updated", skipped: "skipped",
     period: { day: "Day", week: "Week", month: "Month", custom: "Period" },
     vsPrev: "vs previous", net: "Net (income − expense)", byDay: "By day",
+    exportXlsx: "Export to Excel", exportPdf: "Export to PDF", openFolder: "Open folder",
+    reportsHint: "Excel: transactions table and totals by category. PDF: printable report (choose “Save as PDF” in the dialog).",
     expenses: "Expenses", incomes: "Income", moveToMisc: "→ to Other", noChanges: "no details",
     accountKind: { card: "Card", cash: "Cash", savings: "Savings", other: "Other" },
     txKind: { expense: "Expense", income: "Income", transfer: "Transfer" },

@@ -1,7 +1,7 @@
 use finance_storage::{db::Db, models, repos, seed_categories, Actor, Entity, Source};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::state::AppState;
 
@@ -300,6 +300,23 @@ pub fn attachment_path(state: State<AppState>, sha256: String) -> Result<String,
 }
 
 // ---------- exchange rates ----------
+
+#[tauri::command]
+pub fn export_xlsx(
+    state: State<AppState>,
+    app: AppHandle,
+    from: String,
+    to: String,
+) -> Result<String, String> {
+    let dir = app
+        .path()
+        .document_dir()
+        .unwrap_or_else(|_| std::env::temp_dir())
+        .join("Финансы");
+    db(&state)
+        .with_conn(|c| finance_storage::export::export_xlsx(c, &dir, &from, &to))
+        .map_err(|e| e.to_string())
+}
 
 #[tauri::command]
 pub fn rates_latest(state: State<AppState>) -> Result<Vec<Value>, String> {

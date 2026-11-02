@@ -76,4 +76,5 @@ export const api = {
   attachmentPath: (sha256: string) => invoke<string>("attachment_path", { sha256 }),
   ratesLatest: <T = unknown>() => invoke<T[]>("rates_latest"),
   ratesRefresh: () => invoke<{ updated: string[]; skipped: string[] }>("rates_refresh"),
+  exportXlsx: (from: string, to: string) => invoke<string>("export_xlsx", { from, to }),
 };

@@ -47,6 +47,7 @@ pub fn run() {
             commands::goal_upsert,
             commands::attachment_add,
             commands::attachment_path,
+            commands::export_xlsx,
             commands::rates_latest,
             commands::rates_refresh,
         ])

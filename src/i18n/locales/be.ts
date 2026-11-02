@@ -71,6 +71,8 @@ const be: Locale = {
     refreshed: "Абноўлена", skipped: "прапушчана",
     period: { day: "Дзень", week: "Тыдзень", month: "Месяц", custom: "Перыяд" },
     vsPrev: "да мінулага перыяду", net: "Вынік (даход − выдатак)", byDay: "Па днях",
+    exportXlsx: "Выгрузіць у Excel", exportPdf: "Выгрузіць у PDF", openFolder: "Адкрыць тэчку",
+    reportsHint: "Excel: табліца аперацый і вынікі па катэгорыях. PDF: справаздача для друку (у дыялогу абярыце «Захаваць як PDF»).",
     expenses: "Выдаткі", incomes: "Даходы", moveToMisc: "→ у Іншае", noChanges: "без дэталей",
     accountKind: { card: "Картка", cash: "Наяўныя", savings: "Зберажэнні", other: "Іншае" },
     txKind: { expense: "Выдатак", income: "Даход", transfer: "Перавод" },

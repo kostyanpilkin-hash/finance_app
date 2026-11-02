@@ -3,6 +3,7 @@
 
 pub mod db;
 mod error;
+pub mod export;
 pub mod migrations;
 pub mod models;
 pub mod nbrb;

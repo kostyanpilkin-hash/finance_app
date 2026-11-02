@@ -69,6 +69,8 @@ const ru = {
     refreshed: "Обновлено", skipped: "пропущено",
     period: { day: "День", week: "Неделя", month: "Месяц", custom: "Период" },
     vsPrev: "к прошлому периоду", net: "Итог (доход − расход)", byDay: "По дням",
+    exportXlsx: "Выгрузить в Excel", exportPdf: "Выгрузить в PDF", openFolder: "Открыть папку",
+    reportsHint: "Excel: таблица операций и итоги по категориям. PDF: отчёт для печати (в диалоге выберите «Сохранить как PDF»).",
     expenses: "Расходы", incomes: "Доходы", moveToMisc: "→ в Прочее", noChanges: "без деталей",
     accountKind: { card: "Карта", cash: "Наличные", savings: "Сбережения", other: "Другое" },
     txKind: { expense: "Расход", income: "Доход", transfer: "Перевод" },

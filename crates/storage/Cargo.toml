@@ -17,3 +17,4 @@ chrono-tz = "0.10"
 uuid = { version = "1", features = ["v4", "v7", "serde"] }
 sha2 = "0.10"
 data-encoding = "2"
+rust_xlsxwriter = "0.80"
