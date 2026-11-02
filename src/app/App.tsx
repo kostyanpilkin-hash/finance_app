@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { api } from "@/lib/api";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
 import { SettingsPage } from "@/pages/SettingsPage";
+import { Onboarding } from "./Onboarding";
 import { PAGES, type PageId } from "./pages";
 
 export default function App() {
@@ -11,7 +14,9 @@ export default function App() {
   const init = useSettingsStore((s) => s.init);
   const [page, setPage] = useState<PageId>("dashboard");
 
-  useEffect(() => init(), [init]);
+  const onboarding = useQuery({ queryKey: ["onboarding"], queryFn: api.onboardingStatus });
+
+  useEffect(() => void init(), [init]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -25,6 +30,10 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  if (onboarding.data && !onboarding.data.done) {
+    return <Onboarding />;
+  }
 
   return (
     <div className="flex h-screen text-foreground" data-page={page}>

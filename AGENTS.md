@@ -38,3 +38,4 @@
 - MSYS path conversion: аргументы вида `/S` превращаются в пути — запускать `MSYS_NO_PATHCONV=1 ...`.
 - Длинные логи (сборка, npm) — в файл или `| tail -N`.
 - Shell — git-bash: команды в bash-форме.
+- **SQLCipher/OpenSSL:** сборка `rusqlite` с `bundled-sqlcipher-vendored-openssl` требует полноценный Perl — git-bash perl не подходит. Установлен портативный Strawberry Perl: `tools\strawberry-perl`. Перед cargo-командами: `export PATH="tools/strawberry-perl/perl/bin:$PATH"`. На GitHub runners Perl уже есть.

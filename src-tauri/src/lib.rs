@@ -1,4 +1,5 @@
 mod commands;
+mod state;
 mod tray;
 
 use tauri::{Manager, WindowEvent};
@@ -15,7 +16,6 @@ pub(crate) fn show_main_window(app: &tauri::AppHandle) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            // A second launch just focuses the already running window.
             show_main_window(app);
         }))
         .plugin(tauri_plugin_opener::init())
@@ -25,11 +25,33 @@ pub fn run() {
         ))
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
-            commands::set_tray_labels
+            commands::set_tray_labels,
+            commands::onboarding_status,
+            commands::recovery_key,
+            commands::complete_onboarding,
+            commands::set_current_user,
+            commands::get_settings,
+            commands::set_setting,
+            commands::entity_list,
+            commands::entity_delete,
+            commands::entity_restore,
+            commands::user_upsert,
+            commands::account_upsert,
+            commands::category_upsert,
+            commands::category_delete,
+            commands::transaction_upsert,
+            commands::transaction_list,
+            commands::dashboard,
+            commands::journal,
+            commands::goal_upsert,
+            commands::attachment_add,
+            commands::attachment_path,
+            commands::rates_latest,
         ])
         .setup(|app| {
+            let state = state::init_db(app).expect("failed to open the database");
+            app.manage(state);
             tray::create(app.handle())?;
-            // Started by autostart: stay in the tray.
             if std::env::args().any(|a| a == "--minimized") {
                 if let Some(w) = app.get_webview_window("main") {
                     let _ = w.hide();
@@ -38,7 +60,6 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Closing the window keeps the app running in the tray.
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();

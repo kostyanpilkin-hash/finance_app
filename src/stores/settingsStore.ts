@@ -3,24 +3,16 @@ import i18n, { isLanguage, type Language } from "@/i18n";
 import { api } from "@/lib/api";
 import { applyTheme, DEFAULT_THEME, isTheme, type Theme } from "@/lib/themes";
 
-// Local UI preferences. Stage 1 moves them into the per-device `settings` table.
-const STORAGE_KEY = "finance.ui";
+// Theme/language live in the per-device `settings` table; localStorage is
+// just a cache so the right theme applies before the DB answers.
+const CACHE_KEY = "finance.ui";
 
-interface Stored {
-  theme?: string;
-  language?: string;
-}
-
-function readStored(): Stored {
+function readCache(): { theme?: string; language?: string } {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}") as Stored;
+    return JSON.parse(localStorage.getItem(CACHE_KEY) ?? "{}");
   } catch {
     return {};
   }
-}
-
-function persist(patch: Stored) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...readStored(), ...patch }));
 }
 
 function applyLanguage(language: Language) {
@@ -33,30 +25,45 @@ function applyLanguage(language: Language) {
 interface SettingsState {
   theme: Theme;
   language: Language;
-  init: () => void;
+  loaded: boolean;
+  init: () => Promise<void>;
   setTheme: (theme: Theme) => void;
   setLanguage: (language: Language) => void;
 }
 
-export const useSettingsStore = create<SettingsState>((set) => ({
+export const useSettingsStore = create<SettingsState>((set, get) => ({
   theme: DEFAULT_THEME,
   language: "ru",
-  init: () => {
-    const s = readStored();
-    const theme = isTheme(s.theme) ? s.theme : DEFAULT_THEME;
-    const language = isLanguage(s.language) ? s.language : "ru";
-    applyTheme(theme);
-    applyLanguage(language);
-    set({ theme, language });
+  loaded: false,
+  init: async () => {
+    const cache = readCache();
+    const cachedTheme = isTheme(cache.theme) ? cache.theme : DEFAULT_THEME;
+    const cachedLang = isLanguage(cache.language) ? cache.language : "ru";
+    applyTheme(cachedTheme);
+    applyLanguage(cachedLang);
+    set({ theme: cachedTheme, language: cachedLang });
+
+    try {
+      const s = await api.getSettings();
+      const theme = isTheme(s.theme) ? (s.theme as Theme) : get().theme;
+      const language = isLanguage(s.language) ? (s.language as Language) : get().language;
+      applyTheme(theme);
+      applyLanguage(language);
+      set({ theme, language, loaded: true });
+    } catch {
+      set({ loaded: true });
+    }
   },
   setTheme: (theme) => {
     applyTheme(theme);
-    persist({ theme });
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ ...readCache(), theme }));
+    void api.setSetting("theme", theme).catch(() => undefined);
     set({ theme });
   },
   setLanguage: (language) => {
     applyLanguage(language);
-    persist({ language });
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ ...readCache(), language }));
+    void api.setSetting("language", language).catch(() => undefined);
     set({ language });
   },
 }));
