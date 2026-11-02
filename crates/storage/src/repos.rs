@@ -730,6 +730,175 @@ pub fn goal_upsert(
     get_row(conn, Entity::Goals, &id)
 }
 
+pub fn reminder_upsert(
+    conn: &Connection,
+    db: &crate::db::Db,
+    actor: &crate::models::Actor,
+    mut input: Value,
+) -> Result<Value, Error> {
+    let id = merge_existing(conn, Entity::Reminders, &mut input)?;
+    let map = input
+        .as_object_mut()
+        .ok_or_else(|| Error::Invalid("reminder payload".into()))?;
+    if req_str(map, "name")?.trim().is_empty() {
+        return Err(Error::Invalid("name is empty".into()));
+    }
+    let rule = opt_str(map, "ruleType").unwrap_or_else(|| "monthly".into());
+    if !["monthly", "weekly", "yearly"].contains(&rule.as_str()) {
+        return Err(Error::Invalid(format!("bad rule {rule}")));
+    }
+    let kind = opt_str(map, "kind").unwrap_or_else(|| "expense".into());
+    if !["expense", "income"].contains(&kind.as_str()) {
+        return Err(Error::Invalid(format!("bad kind {kind}")));
+    }
+    if let Some(d) = opt_str(map, "ruleDay") {
+        let d: i64 = d.parse().map_err(|_| Error::Invalid("ruleDay".into()))?;
+        let max = match rule.as_str() {
+            "monthly" => 31,
+            "weekly" => 7,
+            _ => 31,
+        };
+        if d < 1 || d > max {
+            return Err(Error::Invalid("ruleDay out of range".into()));
+        }
+    }
+    if let Some(a) = map.get("amountMinor").and_then(|v| v.as_i64()) {
+        if a <= 0 {
+            return Err(Error::Invalid("amount must be > 0".into()));
+        }
+    }
+    set_default(map, "currency", json!("BYN"));
+    set_default(map, "kind", json!(kind));
+    set_default(map, "ruleType", json!(rule));
+    set_default(map, "ruleDay", json!(1));
+    set_default(map, "active", json!(1));
+    if opt_str(map, "nextDue").is_none() {
+        map.insert(
+            "nextDue".into(),
+            json!(next_due(
+                &rule,
+                req_i64(map, "ruleDay").unwrap_or(1),
+                map.get("ruleMonth").and_then(|v| v.as_i64())
+            )),
+        );
+    }
+    apply(
+        db,
+        conn,
+        actor,
+        Entity::Reminders,
+        Op::Upsert,
+        &id,
+        Some(input),
+    )?;
+    get_row(conn, Entity::Reminders, &id)
+}
+
+/// Compute next due date (local) for a rule.
+pub fn next_due(rule_type: &str, rule_day: i64, rule_month: Option<i64>) -> String {
+    use chrono::Datelike;
+    let today = chrono::Local::now().date_naive();
+    match rule_type {
+        "weekly" => {
+            let target = (rule_day - 1).clamp(0, 6);
+            let cur = today.weekday().num_days_from_monday() as i64;
+            let delta = (target - cur).rem_euclid(7);
+            (today + chrono::Duration::days(delta)).to_string()
+        }
+        "yearly" => {
+            let m = rule_month.unwrap_or(1).clamp(1, 12) as u32;
+            let d = rule_day.clamp(1, 28) as u32;
+            let mut date = chrono::NaiveDate::from_ymd_opt(today.year(), m, d).unwrap();
+            if date < today {
+                date = chrono::NaiveDate::from_ymd_opt(today.year() + 1, m, d).unwrap();
+            }
+            date.to_string()
+        }
+        _ => {
+            // monthly: rule_day-th of this or next month.
+            let d = rule_day.clamp(1, 28) as u32;
+            let mut date = chrono::NaiveDate::from_ymd_opt(today.year(), today.month(), d).unwrap();
+            if date < today {
+                let (y, m) = if today.month() == 12 {
+                    (today.year() + 1, 1)
+                } else {
+                    (today.year(), today.month() + 1)
+                };
+                date = chrono::NaiveDate::from_ymd_opt(y, m, d).unwrap();
+            }
+            date.to_string()
+        }
+    }
+}
+
+/// Reminders due by `today` (inclusive). Returns reminder rows.
+pub fn reminders_due(conn: &Connection, today: &str) -> Result<Vec<Value>, Error> {
+    let mut st = conn.prepare(
+        "SELECT * FROM reminders WHERE deleted_at IS NULL AND active = 1 AND next_due <= ?1",
+    )?;
+    let cols: Vec<String> = st.column_names().iter().map(|s| s.to_string()).collect();
+    let v = st
+        .query_map([today], |r| Ok(crate::db::row_to_json(r, &cols)))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(v)
+}
+
+/// Marks the reminder done (optional tx id) or skipped; advances next_due.
+pub fn reminder_resolve(
+    conn: &Connection,
+    db: &crate::db::Db,
+    actor: &crate::models::Actor,
+    id: &str,
+    status: &str,
+    transaction_id: Option<&str>,
+) -> Result<(), Error> {
+    let mut r = get_row(conn, Entity::Reminders, id)?;
+    let rule = r["ruleType"].as_str().unwrap_or("monthly").to_string();
+    let day = r["ruleDay"].as_i64().unwrap_or(1);
+    let month = r["ruleMonth"].as_i64();
+    let due = r["nextDue"].as_str().unwrap_or("").to_string();
+    let next = next_due_after(&rule, day, month, &due);
+    let map = r.as_object_mut().unwrap();
+    map.insert("nextDue".into(), json!(next));
+    apply(db, conn, actor, Entity::Reminders, Op::Upsert, id, Some(r))?;
+    // Event record.
+    let ev_id = new_id();
+    apply(
+        db,
+        conn,
+        actor,
+        Entity::ReminderEvents,
+        Op::Upsert,
+        &ev_id,
+        Some(json!({
+            "id": ev_id, "reminderId": id, "dueDate": due, "status": status, "transactionId": transaction_id
+        })),
+    )?;
+    Ok(())
+}
+
+fn next_due_after(rule_type: &str, _rule_day: i64, _rule_month: Option<i64>, due: &str) -> String {
+    use chrono::Datelike;
+    let d = chrono::NaiveDate::parse_from_str(&due[..due.len().min(10)], "%Y-%m-%d")
+        .unwrap_or_else(|_| chrono::Local::now().date_naive());
+    match rule_type {
+        "weekly" => (d + chrono::Duration::days(7)).to_string(),
+        "yearly" => chrono::NaiveDate::from_ymd_opt(d.year() + 1, d.month(), d.day())
+            .map(|x| x.to_string())
+            .unwrap_or_else(|| d.to_string()),
+        _ => {
+            let (y, m) = if d.month() == 12 {
+                (d.year() + 1, 1)
+            } else {
+                (d.year(), d.month() + 1)
+            };
+            chrono::NaiveDate::from_ymd_opt(y, m, d.day())
+                .unwrap_or(d)
+                .to_string()
+        }
+    }
+}
+
 // ---------- journal ----------
 
 #[derive(Debug, Deserialize, Default)]

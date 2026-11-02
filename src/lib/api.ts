@@ -71,6 +71,10 @@ export const api = {
   dashboard: <T = unknown>(from: string, to: string) => invoke<T>("dashboard", { from, to }),
   journal: <T = unknown>(filter: JournalFilter) => invoke<T[]>("journal", { filter }),
   goalUpsert: <T = unknown>(input: Record<string, unknown>) => invoke<T>("goal_upsert", { input }),
+  reminderUpsert: <T = unknown>(input: Record<string, unknown>) => invoke<T>("reminder_upsert", { input }),
+  reminderResolve: (id: string, status: string, createTx?: Record<string, unknown>) =>
+    invoke<void>("reminder_resolve", { id, status, createTx }),
+  remindersDue: <T = unknown>() => invoke<T[]>("reminders_due"),
   attachmentAdd: <T = unknown>(transactionId: string, fileName: string, mime: string, bytesBase64: string) =>
     invoke<T>("attachment_add", { transactionId, fileName, mime, bytesBase64 }),
   attachmentPath: (sha256: string) => invoke<string>("attachment_path", { sha256 }),

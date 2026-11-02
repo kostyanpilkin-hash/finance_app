@@ -1031,6 +1031,29 @@ pub fn tg_status(state: &AppState) -> Value {
         .unwrap_or(json!({"enabled": false}))
 }
 
+/// Sends a message to every linked chat (reminders, notifications).
+pub async fn notify_linked(state: &AppState, text: &str) -> Result<(), String> {
+    let Some(token) = read_token() else {
+        return Ok(());
+    };
+    let tg = Tg {
+        http: reqwest::Client::new(),
+        token,
+    };
+    let chats: Vec<i64> = state
+        .db
+        .with_conn(|c| {
+            let mut st = c.prepare("SELECT chat_id FROM telegram_links")?;
+            let v: Vec<i64> = st.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?;
+            Ok(v)
+        })
+        .unwrap_or_default();
+    for chat in chats {
+        let _ = tg.send(chat, text, None).await;
+    }
+    Ok(())
+}
+
 pub fn tg_disconnect(state: &AppState) -> Result<(), String> {
     delete_token();
     state

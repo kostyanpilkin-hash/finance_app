@@ -13,6 +13,8 @@ import { TransactionsPage } from "@/pages/TransactionsPage";
 import { JournalPage } from "@/pages/JournalPage";
 import { AnalyticsPage } from "@/pages/AnalyticsPage";
 import { ReportsPage } from "@/pages/ReportsPage";
+import { RemindersPage } from "@/pages/RemindersPage";
+import { GoalsPage } from "@/pages/GoalsPage";
 import { Onboarding } from "./Onboarding";
 import { PAGES, type PageId } from "./pages";
 
@@ -70,6 +72,8 @@ export default function App() {
           : page === "journal" ? <JournalPage />
           : page === "analytics" ? <AnalyticsPage />
           : page === "reports" ? <ReportsPage />
+          : page === "reminders" ? <RemindersPage />
+          : page === "goals" ? <GoalsPage />
           : <PlaceholderPage page={page} />}
       </main>
     </div>

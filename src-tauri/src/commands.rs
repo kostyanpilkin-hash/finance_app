@@ -267,6 +267,45 @@ pub fn goal_upsert(state: State<AppState>, input: Value) -> Result<Value, String
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub fn reminder_upsert(state: State<AppState>, input: Value) -> Result<Value, String> {
+    let a = actor_or_current(&state)?;
+    db(&state)
+        .with_conn(|c| repos::reminder_upsert(c, &state.db, &a, input))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn reminder_resolve(
+    state: State<AppState>,
+    id: String,
+    status: String,
+    create_tx: Option<Value>,
+) -> Result<(), String> {
+    let a = actor_or_current(&state)?;
+    db(&state)
+        .with_conn(|c| {
+            let tx = c.unchecked_transaction()?;
+            let mut tx_id = None;
+            if let Some(v) = create_tx {
+                let row = repos::transaction_upsert(&tx, &state.db, &a, v)?;
+                tx_id = row["id"].as_str().map(|s| s.to_string());
+            }
+            repos::reminder_resolve(&tx, &state.db, &a, &id, &status, tx_id.as_deref())?;
+            tx.commit()?;
+            Ok(())
+        })
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn reminders_due(state: State<AppState>) -> Result<Vec<Value>, String> {
+    let today = finance_storage::db::now_iso()[..10].to_string();
+    db(&state)
+        .with_conn(|c| repos::reminders_due(c, &today))
+        .map_err(|e| e.to_string())
+}
+
 // ---------- attachments ----------
 
 #[tauri::command]
