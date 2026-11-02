@@ -17,7 +17,7 @@ pub use rusqlite;
 
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use db::{new_id, now_iso};
 
@@ -87,7 +87,7 @@ impl db::Db {
         let device_id = meta("device_id").unwrap();
         let instance_id = meta("instance_id").unwrap();
         Ok(Self {
-            conn: Mutex::new(conn),
+            conn: Arc::new(Mutex::new(conn)),
             mode,
             device_id,
             instance_id,

@@ -92,7 +92,7 @@ pub fn diff_json(before: &Value, after: &Value) -> Value {
 }
 
 pub struct Db {
-    pub conn: Mutex<Connection>,
+    pub conn: std::sync::Arc<Mutex<Connection>>,
     /// "host" | "client" — set by the wizard; default host.
     pub mode: String,
     /// Stable id of this device (this machine's database).
@@ -101,6 +101,19 @@ pub struct Db {
     pub instance_id: String,
     /// Files (receipt photos) live next to the db.
     pub attachments_dir: std::path::PathBuf,
+}
+
+impl Db {
+    /// Cheap handle sharing the same connection (for the API server task).
+    pub fn share(&self) -> Self {
+        Self {
+            conn: self.conn.clone(),
+            mode: self.mode.clone(),
+            device_id: self.device_id.clone(),
+            instance_id: self.instance_id.clone(),
+            attachments_dir: self.attachments_dir.clone(),
+        }
+    }
 }
 
 pub struct ApplyCtx<'a> {

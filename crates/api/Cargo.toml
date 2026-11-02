@@ -4,7 +4,15 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "HTTP API (/api/v1) for Finance: device pairing and sync; used by the LAN host and the future server"
+description = "HTTP API for LAN host/client sync (axum); reusable for the future VPS server"
 
 [dependencies]
 finance-storage.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.6", features = ["cors"] }
+uuid = { version = "1", features = ["v4"] }
+sha2 = "0.10"

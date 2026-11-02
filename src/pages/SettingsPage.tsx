@@ -115,6 +115,60 @@ function TgSection() {
   );
 }
 
+function SyncSection() {
+  const { t } = useTranslation();
+  const status = useQuery({ queryKey: ["sync-status"], queryFn: api.syncStatus, refetchInterval: 10000 });
+  const users = useQuery({ queryKey: ["users"], queryFn: () => api.entityList<{ id: string; name: string }>("users") });
+  const [hostUrl, setHostUrl] = useState("http://192.168.");
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [pairCode, setPairCode] = useState<Record<string, string>>({});
+  const queryClient = useQueryClient();
+  const pair = useMutation({
+    mutationFn: () => api.pairToHost(hostUrl, code, name),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["sync-status"] }),
+  });
+  const makeCode = useMutation({
+    mutationFn: (uid: string) => api.devicePairCode(uid),
+    onSuccess: (c, uid) => setPairCode((s) => ({ ...s, [uid]: c })),
+  });
+  const s = status.data;
+  return (
+    <div className="space-y-4 text-sm">
+      <div>
+        <div className="mb-1 font-medium">{t("ui.hostMode")}</div>
+        {(users.data ?? []).map((u) => (
+          <div key={u.id} className="flex items-center gap-3">
+            <span className="w-32">{u.name}</span>
+            {pairCode[u.id] ? (
+              <code className="rounded bg-muted px-2 py-1 text-lg font-semibold tracking-widest">{pairCode[u.id]}</code>
+            ) : (
+              <Button size="sm" variant="outline" onClick={() => makeCode.mutate(u.id)}>{t("ui.pairDevice")}</Button>
+            )}
+          </div>
+        ))}
+        <p className="mt-1 text-xs text-muted-foreground">
+          {t("ui.syncStatus")}: {s?.pairedDevices ?? 0} · {s?.pendingOps ?? 0} {t("ui.pendingOps")}
+        </p>
+      </div>
+      <div>
+        <div className="mb-1 font-medium">{t("ui.joinHost")}</div>
+        <div className="flex flex-wrap gap-2">
+          <input className="flex-1 rounded border border-border bg-background px-3 py-2" placeholder="http://192.168.1.10:45322"
+            value={hostUrl} onChange={(e) => setHostUrl(e.target.value)} />
+          <input className="w-24 rounded border border-border bg-background px-3 py-2" placeholder={t("ui.code")}
+            value={code} onChange={(e) => setCode(e.target.value)} />
+          <input className="w-32 rounded border border-border bg-background px-3 py-2" placeholder={t("ui.deviceName")}
+            value={name} onChange={(e) => setName(e.target.value)} />
+          <Button size="sm" onClick={() => pair.mutate()} disabled={pair.isPending}>{t("ui.connect")}</Button>
+        </div>
+        {pair.isError && <p className="mt-1 text-destructive">{String(pair.error)}</p>}
+        {s?.hostUrl && <p className="mt-1 text-xs text-muted-foreground">{s.hostUrl} · seq {s.lastSeq}</p>}
+      </div>
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const { t } = useTranslation();
   const { theme, language, setTheme, setLanguage } = useSettingsStore();
@@ -201,6 +255,10 @@ export function SettingsPage() {
 
       <Section title={t("settings.telegram")}>
         <TgSection />
+      </Section>
+
+      <Section title={t("settings.devices")}>
+        <SyncSection />
       </Section>
 
       <Section title={t("settings.about")}>

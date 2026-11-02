@@ -350,6 +350,28 @@ pub fn tg_pair_code(state: State<AppState>, user_id: String) -> Result<String, S
     crate::bot::tg_pair_code(&state, &user_id)
 }
 
+// ---------- LAN sync ----------
+
+#[tauri::command]
+pub fn device_pair_code(state: State<AppState>, user_id: String) -> Result<String, String> {
+    crate::sync::pair_code(&state, &user_id)
+}
+
+#[tauri::command]
+pub async fn pair_to_host(
+    state: State<'_, AppState>,
+    host_url: String,
+    code: String,
+    name: String,
+) -> Result<(), String> {
+    crate::sync::pair_client(&state, &host_url, &code, &name).await
+}
+
+#[tauri::command]
+pub fn sync_status(state: State<AppState>) -> Value {
+    crate::sync::sync_status(&state)
+}
+
 #[tauri::command]
 pub async fn rates_refresh(state: State<'_, AppState>) -> Result<Value, String> {
     let currencies: Vec<String> = db(&state)

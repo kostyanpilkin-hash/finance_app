@@ -81,4 +81,9 @@ export const api = {
   tgDisconnect: () => invoke<void>("tg_disconnect"),
   tgStatus: () => invoke<{ enabled: boolean; username?: string; linked: [string, number][] }>("tg_status"),
   tgPairCode: (userId: string) => invoke<string>("tg_pair_code", { userId }),
+  devicePairCode: (userId: string) => invoke<string>("device_pair_code", { userId }),
+  pairToHost: (hostUrl: string, code: string, name: string) =>
+    invoke<void>("pair_to_host", { hostUrl, code, name }),
+  syncStatus: () =>
+    invoke<{ mode: string; hostUrl?: string; lastSeq?: string; pendingOps: number; pairedDevices: number }>("sync_status"),
 };

@@ -2,6 +2,7 @@ mod bot;
 mod commands;
 mod scheduler;
 mod state;
+mod sync;
 mod tray;
 
 use tauri::{Manager, WindowEvent};
@@ -55,6 +56,9 @@ pub fn run() {
             commands::tg_disconnect,
             commands::tg_status,
             commands::tg_pair_code,
+            commands::device_pair_code,
+            commands::pair_to_host,
+            commands::sync_status,
         ])
         .setup(|app| {
             let state = state::init_db(app).expect("failed to open the database");
@@ -62,6 +66,8 @@ pub fn run() {
             tray::create(app.handle())?;
             scheduler::start(app.handle().clone());
             bot::start_polling(app.handle().clone());
+            sync::start_host(app.handle());
+            sync::start_client(app.handle().clone());
             if std::env::args().any(|a| a == "--minimized") {
                 if let Some(w) = app.get_webview_window("main") {
                     let _ = w.hide();
