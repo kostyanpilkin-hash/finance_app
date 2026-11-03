@@ -6,9 +6,42 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release version tag
+        required: true
+        default: v0.1.0
+        type: string
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.release.outputs.id }}
+    steps:
+      - name: Prepare public draft release
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_RELEASES_TOKEN }}
+          TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          [[ "$TAG" == v* ]] || { echo "Run this workflow on a version tag"; exit 1; }
+          REPO=kostyanpilkin-hash/finance_app_public
+          SHA=$(gh api "repos/$REPO/branches/main" --jq '.commit.sha')
+          RELEASES=$(gh api --paginate "repos/$REPO/releases?per_page=100" --jq ".[] | select(.tag_name == \"$TAG\") | .id")
+          if [[ -z "$RELEASES" ]]; then
+            gh release create "$TAG" --repo "$REPO" --target "$SHA" --draft \
+              --title "Финансы $TAG" \
+              --notes "Установщики для Windows и macOS."
+            RELEASES=$(gh api --paginate "repos/$REPO/releases?per_page=100" --jq ".[] | select(.tag_name == \"$TAG\") | .id")
+          fi
+          [[ "$RELEASES" =~ ^[0-9]+$ ]]
+          echo "id=$RELEASES" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
@@ -38,15 +71,6 @@ jobs:
 
       # Tag the public repo's main so the release doesn't need target_commitish
       # (GitHub 422s on it when the tag doesn't exist in the target repo yet).
-      - name: Tag public repo
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.PUBLIC_RELEASES_TOKEN }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          SHA=$(gh api repos/kostyanpilkin-hash/finance_app_public/branches/main --jq '.commit.sha')
-          gh api repos/kostyanpilkin-hash/finance_app_public/git/refs \
-            -f ref="refs/tags/$TAG" -f sha="$SHA" || echo "tag $TAG may already exist"
 
       - uses: tauri-apps/tauri-action@v0
         env:
@@ -57,8 +81,9 @@ jobs:
         with:
           owner: kostyanpilkin-hash
           repo: finance_app_public
-          tagName: ${{ github.ref_name }}
-          releaseName: "Финансы ${{ github.ref_name }}"
+          releaseId: ${{ needs.prepare.outputs.release_id }}
+          tagName: ${{ inputs.release_tag || github.ref_name }}
+          releaseName: "Финансы ${{ inputs.release_tag || github.ref_name }}"
           releaseBody: "Установщики для Windows (.msi / -setup.exe) и macOS (.dmg, Apple Silicon + Intel). Инструкция по установке без подписи — в README."
           releaseDraft: true
           prerelease: false
