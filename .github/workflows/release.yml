@@ -32,10 +32,10 @@ jobs:
           SHA=$(gh api "repos/$REPO/branches/main" --jq '.commit.sha')
           RELEASES=$(gh api --paginate "repos/$REPO/releases?per_page=100" --jq ".[] | select(.tag_name == \"$TAG\") | .id")
           if [[ -z "$RELEASES" ]]; then
-            gh release create "$TAG" --repo "$REPO" --target "$SHA" --draft \
-              --title "Финансы $TAG" \
-              --notes "Установщики для Windows и macOS."
-            RELEASES=$(gh api --paginate "repos/$REPO/releases?per_page=100" --jq ".[] | select(.tag_name == \"$TAG\") | .id")
+            RELEASES=$(gh api --method POST "repos/$REPO/releases" \
+              -f tag_name="$TAG" -f target_commitish="$SHA" \
+              -f name="Финансы $TAG" -f body="Установщики для Windows и macOS." \
+              -F draft=true --jq '.id')
           fi
           [[ "$RELEASES" =~ ^[0-9]+$ ]]
           echo "id=$RELEASES" >> "$GITHUB_OUTPUT"
