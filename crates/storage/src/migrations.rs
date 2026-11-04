@@ -248,6 +248,12 @@ const MIGRATIONS: &[&[&str]] = &[
         "CREATE INDEX idx_rates_seq ON exchange_rates(seq)",
         "CREATE INDEX idx_shared_seq ON shared_settings(seq)",
     ],
+    // ---- v2: income/expense entered in a currency other than the account's ----
+    // amount_minor stays in the account currency (balances); orig_* keep what was entered.
+    &[
+        "ALTER TABLE transactions ADD COLUMN orig_amount_minor INTEGER CHECK (orig_amount_minor IS NULL OR orig_amount_minor > 0)",
+        "ALTER TABLE transactions ADD COLUMN orig_currency TEXT CHECK (orig_currency IS NULL OR length(orig_currency) = 3)",
+    ],
 ];
 
 /// Applies pending migrations inside a transaction.

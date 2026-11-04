@@ -356,17 +356,55 @@ mod tests {
                 &a,
                 json!({"kind":"transfer","occurredAt":"2026-11-02T12:00:00","accountId":card["id"],"toAccountId":usd["id"],"amountMinor":33000,"toAmountMinor":10000}),
             )?;
+            // 50 BYN received on the USD account, credited as 15.00 USD by the bank.
+            let foreign = repos::transaction_upsert(
+                c,
+                &d,
+                &a,
+                json!({"kind":"income","occurredAt":"2026-11-02T13:00:00","accountId":usd["id"],"amountMinor":1500,"categoryId":cat,"origAmountMinor":5000,"origCurrency":"byn"}),
+            )?;
+            assert_eq!((foreign["origCurrency"].as_str(), foreign["origAmountMinor"].as_i64()), (Some("BYN"), Some(5000)));
+            // Same currency as the account → no original amount is stored.
+            let same = repos::transaction_upsert(
+                c,
+                &d,
+                &a,
+                json!({"kind":"expense","occurredAt":"2026-11-02T13:00:00","accountId":card["id"],"amountMinor":100,"categoryId":exp_cat,"origAmountMinor":100,"origCurrency":"BYN"}),
+            )?;
+            assert!(same["origCurrency"].is_null() && same["origAmountMinor"].is_null());
+            repos::transaction_upsert(
+                c,
+                &d,
+                &a,
+                json!({"kind":"expense","occurredAt":"2026-11-02T13:00:00","accountId":card["id"],"amountMinor":100,"categoryId":exp_cat,"origCurrency":"USD"}),
+            )
+            .unwrap_err();
+            repos::apply(&d, c, &a, Entity::Transactions, models::Op::Delete, same["id"].as_str().unwrap(), None)?;
             let dash = repos::dashboard(c, "2026-11-01", "2026-11-30")?;
             let accs = dash["accounts"].as_array().unwrap();
             let bal = |name: &str| accs.iter().find(|a| a["name"] == name).unwrap()["balance"].as_i64().unwrap();
             // 1000.00 - 30.50 - 300 - 330 = 339.50
             assert_eq!(bal("Карта"), 33950);
             assert_eq!(bal("Наличные"), 30000);
-            assert_eq!(bal("Вклад"), 10000);
+            assert_eq!(bal("Вклад"), 11500);
             // conversion: 100 USD at 3.30 BYN/USD => 33000 BYN-minor? (rate 3.30 per unit)
             repos::rate_upsert(c, &d, "2026-11-02", "USD", 3_300_000, 1)?;
             assert_eq!(repos::convert_minor(c, 10000, "USD", "BYN")?, Some(33000));
             assert_eq!(repos::convert_minor(c, 33000, "BYN", "USD")?, Some(10000));
+            // dated conversion picks the rate in effect on the operation day
+            repos::rate_upsert(c, &d, "2026-10-01", "USD", 3_000_000, 1)?;
+            repos::rate_upsert(c, &d, "2026-10-10", "RUB", 3_600_000, 100)?; // 3.60 BYN per 100 RUB
+            assert_eq!(repos::convert_minor_at(c, 10000, "USD", "BYN", "2026-10-15")?, Some(30000));
+            assert_eq!(repos::convert_minor_at(c, 10000, "USD", "BYN", "2026-11-03")?, Some(33000));
+            // exact day, nearest earlier day, identity, RUB scale, no rate at all
+            assert_eq!(repos::convert_minor_at(c, 10000, "USD", "BYN", "2026-11-02")?, Some(33000));
+            assert_eq!(repos::convert_minor_at(c, 10000, "USD", "BYN", "2026-10-02")?, Some(30000));
+            assert_eq!(repos::convert_minor_at(c, 1234, "USD", "USD", "2026-10-15")?, Some(1234));
+            assert_eq!(repos::convert_minor_at(c, 10000, "RUB", "BYN", "2026-10-15")?, Some(360));
+            assert_eq!(repos::convert_minor_at(c, 10000, "USD", "BYN", "2026-09-01")?, None);
+            assert!(repos::has_rate_on(c, "USD", "2026-10-01")?);
+            assert!(!repos::has_rate_on(c, "USD", "2026-10-02")?);
+            assert!(repos::has_rate_on(c, "BYN", "2020-01-01")?);
             Ok(())
         })
         .unwrap();

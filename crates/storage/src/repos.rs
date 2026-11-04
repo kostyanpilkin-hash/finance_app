@@ -327,6 +327,11 @@ pub struct TransactionInput {
     pub source: Option<String>,
     #[serde(default)]
     pub tg_message_id: Option<i64>,
+    /// Amount as entered, when its currency differs from the account currency.
+    #[serde(default)]
+    pub orig_amount_minor: Option<i64>,
+    #[serde(default)]
+    pub orig_currency: Option<String>,
 }
 
 pub fn transaction_upsert(
@@ -373,7 +378,33 @@ pub fn transaction_upsert(
         }
         _ => unreachable!(),
     }
+    let account_currency: String = conn.query_row(
+        "SELECT currency FROM accounts WHERE id=?1",
+        [&t.account_id],
+        |r| r.get(0),
+    )?;
+    let orig = match (t.orig_currency.as_deref(), t.orig_amount_minor) {
+        (Some(cur), _) if t.kind == "transfer" || cur.eq_ignore_ascii_case(&account_currency) => {
+            None
+        }
+        (None, _) => None,
+        (Some(cur), Some(amount)) if amount > 0 => Some((
+            Currency::new(cur).map_err(|e| Error::Invalid(e.to_string()))?,
+            amount,
+        )),
+        (Some(_), _) => return Err(Error::Invalid("original amount must be > 0".into())),
+    };
     let map = row.as_object_mut().unwrap();
+    match orig {
+        Some((cur, amount)) => {
+            map.insert("origCurrency".into(), json!(cur.code()));
+            map.insert("origAmountMinor".into(), json!(amount));
+        }
+        None => {
+            map.insert("origCurrency".into(), Value::Null);
+            map.insert("origAmountMinor".into(), Value::Null);
+        }
+    }
     set_default(map, "comment", json!(""));
     set_default(map, "source", json!("desktop"));
     set_default(
@@ -597,7 +628,7 @@ pub fn dashboard(conn: &Connection, from: &str, to: &str) -> Result<Value, Error
         .collect::<Result<Vec<_>, _>>()?;
 
     let mut stmt = conn.prepare(
-        "SELECT t.kind, a.currency, SUM(t.amount_minor)
+        "SELECT t.kind, a.currency, SUM(t.amount_minor) AS amount
          FROM transactions t JOIN accounts a ON a.id = t.account_id
          WHERE t.deleted_at IS NULL AND t.kind != 'transfer'
            AND t.occurred_at >= ?1 || 'T00:00:00' AND t.occurred_at <= ?2 || 'T23:59:59.999'
@@ -667,6 +698,52 @@ pub fn rates_latest(conn: &Connection) -> Result<Vec<Value>, Error> {
     Ok(out)
 }
 
+/// (rate_byn_scaled, scale) for `currency`: the latest stored rate on or before
+/// `date`, or the latest overall when `date` is None.
+fn rate_row(
+    conn: &Connection,
+    currency: &str,
+    date: Option<&str>,
+) -> Result<Option<(i64, i64)>, Error> {
+    if currency.eq_ignore_ascii_case("BYN") {
+        return Ok(Some((1_000_000, 1)));
+    }
+    let row = match date {
+        Some(d) => conn
+            .query_row(
+                "SELECT rate_byn_scaled, scale FROM exchange_rates
+                 WHERE currency = ?1 AND date <= ?2 ORDER BY date DESC LIMIT 1",
+                rusqlite::params![currency.to_uppercase(), d],
+                |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
+            )
+            .ok(),
+        None => conn
+            .query_row(
+                "SELECT rate_byn_scaled, scale FROM exchange_rates WHERE currency = ?1 ORDER BY date DESC LIMIT 1",
+                [currency.to_uppercase()],
+                |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
+            )
+            .ok(),
+    };
+    Ok(row)
+}
+
+fn convert_with(
+    amount_minor: i64,
+    from: Option<(i64, i64)>,
+    to: Option<(i64, i64)>,
+) -> Option<i64> {
+    match (from, to) {
+        (Some((f_rate, f_scale)), Some((t_rate, t_scale))) if f_rate > 0 && t_rate > 0 => {
+            // amount * (f_rate/f_scale) * (t_scale/t_rate)
+            let v = (amount_minor as i128) * (f_rate as i128) * (t_scale as i128)
+                / ((f_scale as i128) * (t_rate as i128));
+            Some(v as i64)
+        }
+        _ => None,
+    }
+}
+
 /// Convert `amount_minor` from `from` to `to` using latest rates (both per BYN, scaled 1e6).
 /// Returns None when a rate is missing.
 pub fn convert_minor(
@@ -678,29 +755,39 @@ pub fn convert_minor(
     if from.eq_ignore_ascii_case(to) {
         return Ok(Some(amount_minor));
     }
-    let per_unit = |cur: &str| -> Result<Option<(i64, i64)>, Error> {
-        if cur.eq_ignore_ascii_case("BYN") {
-            return Ok(Some((1_000_000, 1)));
-        }
-        Ok(conn
-            .query_row(
-                "SELECT rate_byn_scaled, scale FROM exchange_rates WHERE currency = ?1 ORDER BY date DESC LIMIT 1",
-                [cur.to_uppercase()],
-                |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
-            )
-            .ok())
-    };
-    let fr = per_unit(from)?;
-    let tr = per_unit(to)?;
-    match (fr, tr) {
-        (Some((f_rate, f_scale)), Some((t_rate, t_scale))) if f_rate > 0 && t_rate > 0 => {
-            // amount * (f_rate/f_scale) * (t_scale/t_rate)
-            let v = (amount_minor as i128) * (f_rate as i128) * (t_scale as i128)
-                / ((f_scale as i128) * (t_rate as i128));
-            Ok(Some(v as i64))
-        }
-        _ => Ok(None),
+    let fr = rate_row(conn, from, None)?;
+    let tr = rate_row(conn, to, None)?;
+    Ok(convert_with(amount_minor, fr, tr))
+}
+
+/// Same as [`convert_minor`], but uses the rate in effect on `date` (YYYY-MM-DD):
+/// the latest stored rate on or before that day.
+pub fn convert_minor_at(
+    conn: &Connection,
+    amount_minor: i64,
+    from: &str,
+    to: &str,
+    date: &str,
+) -> Result<Option<i64>, Error> {
+    if from.eq_ignore_ascii_case(to) {
+        return Ok(Some(amount_minor));
     }
+    let fr = rate_row(conn, from, Some(date))?;
+    let tr = rate_row(conn, to, Some(date))?;
+    Ok(convert_with(amount_minor, fr, tr))
+}
+
+/// True when a stored rate row exists for `currency` on `date`.
+pub fn has_rate_on(conn: &Connection, currency: &str, date: &str) -> Result<bool, Error> {
+    if currency.eq_ignore_ascii_case("BYN") {
+        return Ok(true);
+    }
+    let n: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM exchange_rates WHERE currency = ?1 AND date = ?2",
+        rusqlite::params![currency.to_uppercase(), date],
+        |r| r.get(0),
+    )?;
+    Ok(n > 0)
 }
 
 // ---------- goals / reminders (basic CRUD for now) ----------

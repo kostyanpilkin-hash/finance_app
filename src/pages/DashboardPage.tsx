@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
@@ -24,26 +24,45 @@ export function DashboardPage() {
   });
   const categories = useQuery({ queryKey: ["categories"], queryFn: () => api.entityList<CategoryRow>("categories") });
   const rates = useQuery({ queryKey: ["rates"], queryFn: () => api.ratesLatest<RateRow>() });
+  const settings = useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
+  const displayCurrency = settings.data?.display_currency || "BYN";
 
   const accounts = (dash.data?.accounts ?? []).filter((a) => !a.archived);
   const totals = dash.data?.totals ?? [];
 
+  // All stored rates are scaled by 1e6; BYN is 1.0 = 1e6 scaled.
+  const rateOf = useCallback(
+    (cur: string) => (cur === "BYN" ? 1e6 : rates.data?.find((r) => r.currency === cur)?.rateBynScaled),
+    [rates.data],
+  );
+  const toDisplay = useCallback(
+    (minor: number, cur: string): number | null => {
+      const r = rateOf(cur);
+      const target = rateOf(displayCurrency);
+      if (!r || !target) return null;
+      return Math.round(minor * (r / 1e6) / (target / 1e6));
+    },
+    [rateOf, displayCurrency],
+  );
+
   const totalByn = useMemo(() => {
-    const rateOf = (cur: string) =>
-      cur === "BYN" ? 1 : rates.data?.find((r) => r.currency === cur)?.rateBynScaled;
     let sum = 0;
     let missing = false;
-    for (const a of accounts.filter((a) => a.includeInTotal === 1)) {
-      const r = rateOf(a.currency);
-      if (r) sum += (a.balance ?? 0) * (r / 1e6);
-      else missing = true;
+    for (const a of accounts.filter((a) => a.includeInTotal !== 0)) {
+      const v = toDisplay(a.balance ?? 0, a.currency);
+      if (v == null) missing = true;
+      else sum += v;
     }
-    return { sum: Math.round(sum), missing };
-  }, [accounts, rates.data]);
+    return { sum, currency: displayCurrency, missing };
+  }, [accounts, toDisplay, displayCurrency]);
 
   const pie = useMemo(() => {
+    const curOf = new Map((dash.data?.accounts ?? []).map((a) => [a.id, a.currency]));
     const byCat = new Map<string, number>();
-    for (const x of tx.data ?? []) byCat.set(x.categoryId ?? "", (byCat.get(x.categoryId ?? "") ?? 0) + x.amountMinor);
+    for (const x of tx.data ?? []) {
+      const v = toDisplay(x.amountMinor, curOf.get(x.accountId) ?? "BYN");
+      if (v != null) byCat.set(x.categoryId ?? "", (byCat.get(x.categoryId ?? "") ?? 0) + v);
+    }
     const name = (id: string) => {
       const c = categories.data?.find((c) => c.id === id);
       return c ? (c.key ? t(`categories.${c.key}`, c.name) : c.name) : "—";
@@ -52,7 +71,7 @@ export function DashboardPage() {
     return [...byCat.entries()]
       .map(([id, v]) => ({ name: name(id), value: v, fill: color(id) }))
       .sort((a, b) => b.value - a.value);
-  }, [tx.data, categories.data, t]);
+  }, [tx.data, categories.data, dash.data?.accounts, toDisplay, t]);
 
   const card = "rounded-2xl border border-border bg-card p-4";
   const sumFor = (kind: string) => totals.filter((x) => x.kind === kind);
@@ -64,20 +83,20 @@ export function DashboardPage() {
       <div className="grid gap-3 sm:grid-cols-3">
         <div className={card}>
           <div className="text-xs text-muted-foreground">{t("ui.totalBalance")}</div>
-          <div className="font-display text-xl font-semibold">{formatMinor(totalByn.sum, "BYN")}</div>
+          <div className="font-display text-xl font-semibold">{formatMinor(totalByn.sum, totalByn.currency)}</div>
           {totalByn.missing && <div className="text-xs text-muted-foreground">{t("ui.ratesMissing")}</div>}
         </div>
         <div className={card}>
           <div className="text-xs text-muted-foreground">{t("ui.spentMonth")}</div>
           {sumFor("expense").map((x, i) => (
-            <div key={i} className="text-lg font-semibold text-expense">−{formatMinor(x["sum(t.amountMinor)"], x.currency)}</div>
+            <div key={i} className="text-lg font-semibold text-expense">−{formatMinor(x.amount, x.currency)}</div>
           ))}
           {sumFor("expense").length === 0 && <div className="text-lg font-semibold">0,00</div>}
         </div>
         <div className={card}>
           <div className="text-xs text-muted-foreground">{t("ui.incomeMonth")}</div>
           {sumFor("income").map((x, i) => (
-            <div key={i} className="text-lg font-semibold text-income">+{formatMinor(x["sum(t.amountMinor)"], x.currency)}</div>
+            <div key={i} className="text-lg font-semibold text-income">+{formatMinor(x.amount, x.currency)}</div>
           ))}
           {sumFor("income").length === 0 && <div className="text-lg font-semibold">0,00</div>}
         </div>
@@ -92,7 +111,7 @@ export function DashboardPage() {
                 <Pie data={pie} dataKey="value" nameKey="name" innerRadius="45%" outerRadius="80%" paddingAngle={2}>
                   {pie.map((p, i) => <Cell key={i} fill={p.fill} />)}
                 </Pie>
-                <Tooltip formatter={(v) => formatMinor(Number(v))} />
+                <Tooltip formatter={(v) => formatMinor(Number(v), displayCurrency)} />
                 <Legend />
               </PieChart>
             </ResponsiveContainer>

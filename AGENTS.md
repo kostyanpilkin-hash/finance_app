@@ -32,6 +32,14 @@
 - Все тексты UI и бота — через i18n на трёх языках.
 - Новые зависимости — стабильные версии, опубликованные ≥ 7 дней назад; без `latest`/`*`.
 
+## Telegram-бот
+
+- Модули `src-tauri/src/bot/`: `wizard.rs` (карточки и шаги, ревизия кнопок), `text.rs` (тексты ru/be/en, форматирование), `report.rs` (балансы, сводки), `chart.rs` (PNG-диаграмма), `notify.rs` (расписание, напоминания).
+- Callback-кнопки: колбэк редактирует активную карточку на месте; текст и команды гасят старую карточку и присылают новую внизу.
+- Ошибки бота: `<appdata>/logs/bot.log` (ротация 1 МБ). Ошибки reqwest — только через `without_url()`, чтобы токен не попал в лог.
+- Настройки уведомлений — локальная таблица `settings`: `bot_{daily,weekly,monthly,reminders}_{enabled,time}`, `bot_weekly_day`, `bot_monthly_day`, `bot_quiet_{enabled,from,to}`, `display_currency`.
+- Каталог иконок категорий — `src/lib/category-icons.json` (id lucide + эмодзи для бота), общий для фронта и Rust (`include_str!`).
+
 ## Подводные камни
 
 - `nul` — зарезервированное имя Windows: `> nul` в git-bash создаёт файл, ломающий git. Использовать `2>/dev/null`.

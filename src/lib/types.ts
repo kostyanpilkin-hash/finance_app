@@ -40,6 +40,9 @@ export interface TransactionRow {
   toAccountId?: string | null;
   toAmountMinor?: number | null;
   comment: string;
+  /** Amount as entered when its currency differs from the account currency. */
+  origAmountMinor?: number | null;
+  origCurrency?: string | null;
   createdByUserId?: string | null;
   source: string;
   aName?: string;
@@ -71,5 +74,5 @@ export interface AuditRow {
 
 export interface DashboardData {
   accounts: AccountRow[];
-  totals: { kind: string; currency: string; "sum(t.amountMinor)": number; [k: string]: unknown }[];
+  totals: { kind: string; currency: string; amount: number }[];
 }

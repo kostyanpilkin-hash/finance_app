@@ -61,6 +61,7 @@ pub fn run() {
             commands::attachment_path,
             commands::export_xlsx,
             commands::rates_latest,
+            commands::convert_at,
             commands::rates_refresh,
             commands::tg_connect,
             commands::tg_disconnect,
@@ -78,6 +79,7 @@ pub fn run() {
             app.manage(state);
             tray::create(app.handle())?;
             scheduler::start(app.handle().clone());
+            scheduler::start_notifications(app.handle().clone());
             bot::start_polling(app.handle().clone());
             sync::start_host(app.handle());
             sync::start_client(app.handle().clone());

@@ -1,4 +1,5 @@
-//! Periodic background tasks: exchange-rate refresh (daily) and, later, reminders/backups.
+//! Periodic background tasks: exchange-rate refresh (daily), monthly backups and
+//! minute-level bot notifications.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -17,10 +18,22 @@ pub fn start(app: AppHandle) {
         tokio::time::sleep(Duration::from_secs(10)).await;
         while flag.load(Ordering::Relaxed) {
             refresh_once(&app).await;
-            fire_reminders(&app).await;
             auto_backup(&app);
             // Check hourly; refresh at most once per calendar day.
             tokio::time::sleep(Duration::from_secs(3600)).await;
+        }
+    });
+}
+
+/// Bot notifications (summaries, reminders) are checked every minute.
+pub fn start_notifications(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(15)).await;
+        loop {
+            if let Some(state) = app.try_state::<AppState>() {
+                crate::bot::notify::tick(&state).await;
+            }
+            tokio::time::sleep(Duration::from_secs(60)).await;
         }
     });
 }
@@ -50,59 +63,6 @@ async fn refresh_once(app: &AppHandle) {
     // Reuse the same code path as the manual command.
     let state = app.state::<AppState>();
     let _ = crate::commands::rates_refresh(state).await;
-}
-
-/// Notifies linked Telegram chats about due reminders (once per day).
-async fn fire_reminders(app: &AppHandle) {
-    let Some(state) = app.try_state::<AppState>() else {
-        return;
-    };
-    let today = finance_storage::db::now_iso()[..10].to_string();
-    // Only fire once per day.
-    let last = state
-        .db
-        .with_conn(|c| finance_storage::repos::setting_get(c, "reminders_fired"))
-        .ok()
-        .flatten();
-    if last.as_deref() == Some(&today) {
-        return;
-    }
-    let due = match state
-        .db
-        .with_conn(|c| finance_storage::repos::reminders_due(c, &today))
-    {
-        Ok(v) => v,
-        Err(_) => return,
-    };
-    if due.is_empty() {
-        return;
-    }
-    let _ = state
-        .db
-        .with_conn(|c| finance_storage::repos::setting_set(c, "reminders_fired", &today));
-    let names: Vec<String> = due
-        .iter()
-        .map(|r| {
-            let amt = r["amountMinor"]
-                .as_i64()
-                .map(|a| {
-                    format!(
-                        " {:.2} {}",
-                        a as f64 / 100.0,
-                        r["currency"].as_str().unwrap_or("")
-                    )
-                })
-                .unwrap_or_default();
-            format!(
-                "• {}{} ({})",
-                r["name"].as_str().unwrap_or("?"),
-                amt,
-                r["nextDue"].as_str().unwrap_or("")
-            )
-        })
-        .collect();
-    let _ =
-        crate::bot::notify_linked(&state, &format!("⏰ Напоминания:\n{}", names.join("\n"))).await;
 }
 
 /// Monthly encrypted backup to <appdata>/backups, keeps the last 12.

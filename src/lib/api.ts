@@ -87,10 +87,16 @@ export const api = {
   attachmentPath: (sha256: string) => invoke<string>("attachment_path", { sha256 }),
   ratesLatest: <T = unknown>() => invoke<T[]>("rates_latest"),
   ratesRefresh: () => invoke<{ updated: string[]; skipped: string[] }>("rates_refresh"),
+  convertAt: (amountMinor: number, from: string, to: string, date: string) =>
+    invoke<number | null>("convert_at", { amountMinor, from, to, date }),
   exportXlsx: (from: string, to: string) => invoke<string>("export_xlsx", { from, to }),
   tgConnect: (token: string) => invoke<{ username: string; botId: string }>("tg_connect", { token }),
   tgDisconnect: () => invoke<void>("tg_disconnect"),
-  tgStatus: () => invoke<{ enabled: boolean; username?: string; linked: [string, number][] }>("tg_status"),
+  tgStatus: () => invoke<{
+    enabled: boolean; username?: string; linked: [string, number][];
+    health: "ok" | "offline" | "stopped"; logPath?: string | null;
+    status?: { running: boolean; lastPoll?: string | null; lastMessage?: string | null; lastError?: string | null; lastErrorAt?: string | null };
+  }>("tg_status"),
   tgPairCode: (userId: string) => invoke<string>("tg_pair_code", { userId }),
   devicePairCode: (userId: string) => invoke<string>("device_pair_code", { userId }),
   pairToHost: (hostUrl: string, code: string, name: string) =>

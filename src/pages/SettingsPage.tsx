@@ -56,7 +56,7 @@ function TgSection() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [token, setToken] = useState("");
-  const status = useQuery({ queryKey: ["tg-status"], queryFn: api.tgStatus });
+  const status = useQuery({ queryKey: ["tg-status"], queryFn: api.tgStatus, refetchInterval: 15000 });
   const users = useQuery({ queryKey: ["users"], queryFn: () => api.entityList<{ id: string; name: string }>("users") });
   const [code, setCode] = useState<Record<string, string>>({});
   const connect = useMutation({
@@ -72,8 +72,26 @@ function TgSection() {
     onSuccess: (c, userId) => setCode((s) => ({ ...s, [userId]: c })),
   });
   const s = status.data;
+  const stamp = (iso?: string | null) => (iso ? new Date(iso).toLocaleString() : "—");
+  const health = s?.health ?? "stopped";
   return (
     <div className="space-y-3 text-sm">
+      {s?.enabled && (
+        <div className="space-y-1 rounded-xl bg-muted/60 p-3">
+          <div className="flex items-center gap-2 font-medium">
+            <span className={cn("h-2.5 w-2.5 rounded-full",
+              health === "ok" ? "bg-income" : health === "offline" ? "bg-amber-500" : "bg-muted-foreground")} />
+            {t(`settings.bot.status.${health}`)}
+          </div>
+          <div className="text-xs text-muted-foreground">{t("settings.bot.lastMessage")}: {stamp(s.status?.lastMessage)}</div>
+          {s.status?.lastError && (
+            <div className="text-xs text-destructive">
+              {t("settings.bot.lastError")} ({stamp(s.status.lastErrorAt)}): {s.status.lastError}
+            </div>
+          )}
+          {s.logPath && <div className="break-all text-xs text-muted-foreground">{t("settings.bot.log")}: {s.logPath}</div>}
+        </div>
+      )}
       {!s?.enabled ? (
         <div className="space-y-2">
           <input className="w-full rounded border border-border bg-background px-3 py-2" type="password"
@@ -111,6 +129,86 @@ function TgSection() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function useLocalSettings() {
+  const qc = useQueryClient();
+  const settings = useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
+  const set = useMutation({
+    mutationFn: ({ key, value }: { key: string; value: string }) => api.setSetting(key, value),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["settings"] }),
+  });
+  const get = (key: string, fallback: string) => settings.data?.[key] || fallback;
+  return { get, set: (key: string, value: string) => set.mutate({ key, value }) };
+}
+
+const DISPLAY_CURRENCIES = ["BYN", "USD", "EUR"];
+
+function DisplayCurrency() {
+  const { t } = useTranslation();
+  const { get, set } = useLocalSettings();
+  const current = get("display_currency", "BYN");
+  return (
+    <div className="mt-4">
+      <div className="mb-2 text-sm font-medium">{t("settings.displayCurrency")}</div>
+      <div className="flex flex-wrap gap-2">
+        {DISPLAY_CURRENCIES.map((c) => (
+          <Button key={c} size="sm" variant={current === c ? "default" : "outline"} onClick={() => set("display_currency", c)}>{c}</Button>
+        ))}
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">{t("settings.displayCurrencyHint")}</p>
+    </div>
+  );
+}
+
+function BotNotifySection() {
+  const { t } = useTranslation();
+  const { get, set } = useLocalSettings();
+  const input = "rounded border border-border bg-background px-2 py-1 text-sm";
+  const toggle = (key: string, fallback: string, label: string) => (
+    <label className="flex min-w-52 cursor-pointer items-center gap-2 font-medium">
+      <input type="checkbox" className="h-4 w-4 accent-[var(--primary)]" checked={get(key, fallback) === "1"}
+        onChange={(e) => set(key, e.target.checked ? "1" : "0")} />
+      {label}
+    </label>
+  );
+  const time = (key: string, fallback: string) => (
+    <input type="time" className={input} value={get(key, fallback)}
+      onChange={(e) => e.target.value && set(key, e.target.value)} />
+  );
+  const row = (children: React.ReactNode, hint?: string) => (
+    <div className="space-y-1 border-b border-border/50 pb-3 last:border-0">
+      <div className="flex flex-wrap items-center gap-3">{children}</div>
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+    </div>
+  );
+  return (
+    <div className="space-y-3 text-sm">
+      {row(<>{toggle("bot_daily_enabled", "1", t("settings.bot.daily"))}<span>{t("settings.bot.at")}</span>{time("bot_daily_time", "23:00")}</>)}
+      {row(<>
+        {toggle("bot_weekly_enabled", "0", t("settings.bot.weekly"))}
+        <select className={input} value={get("bot_weekly_day", "7")} onChange={(e) => set("bot_weekly_day", e.target.value)}>
+          {[1, 2, 3, 4, 5, 6, 7].map((d) => <option key={d} value={d}>{t(`ui.wd.${d}`)}</option>)}
+        </select>
+        <span>{t("settings.bot.at")}</span>{time("bot_weekly_time", "20:00")}
+      </>, t("settings.bot.weeklyHint"))}
+      {row(<>
+        {toggle("bot_monthly_enabled", "0", t("settings.bot.monthly"))}
+        <select className={input} value={get("bot_monthly_day", "1")} onChange={(e) => set("bot_monthly_day", e.target.value)}>
+          {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <span>{t("settings.bot.day")}</span>
+        <span>{t("settings.bot.at")}</span>{time("bot_monthly_time", "20:00")}
+      </>, t("settings.bot.monthlyHint"))}
+      {row(<>{toggle("bot_reminders_enabled", "1", t("settings.bot.reminders"))}<span>{t("settings.bot.at")}</span>{time("bot_reminders_time", "10:00")}</>,
+        t("settings.bot.remindersHint"))}
+      {row(<>
+        {toggle("bot_quiet_enabled", "0", t("settings.bot.quiet"))}
+        <span>{t("settings.bot.from")}</span>{time("bot_quiet_from", "23:30")}
+        <span>{t("settings.bot.to")}</span>{time("bot_quiet_to", "08:00")}
+      </>, t("settings.bot.quietHint"))}
     </div>
   );
 }
@@ -311,6 +409,7 @@ export function SettingsPage() {
             </Button>
           ))}
         </div>
+        <DisplayCurrency />
       </Section>
 
       <Section title={t("settings.theme")}>
@@ -365,6 +464,10 @@ export function SettingsPage() {
 
       <Section title={t("settings.telegram")}>
         <TgSection />
+      </Section>
+
+      <Section title={t("settings.bot.notify")}>
+        <BotNotifySection />
       </Section>
 
       <Section title={t("settings.devices")}>

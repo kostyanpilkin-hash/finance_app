@@ -3,9 +3,12 @@ import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { CategoryIcon } from "@/components/ui/category-icon";
 import { formatMinor, nowLocalIso, parseMinor, todayIso } from "@/lib/money";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { AccountRow, CategoryRow, TransactionRow } from "@/lib/types";
+
+const ENTRY_CURRENCIES = ["BYN", "USD", "EUR", "RUB"];
 
 interface AttachmentRow { id: string; transactionId: string; sha256: string; fileName: string }
 
@@ -29,6 +32,7 @@ export function TransactionsPage() {
   const [categoryId, setCategoryId] = useState("");
   const [editing, setEditing] = useState<Partial<TransactionRow> | null>(null);
   const [photo, setPhoto] = useState<File | null>(null);
+  const [accKey, setAccKey] = useState(0);
 
   const accounts = useQuery({ queryKey: ["accounts"], queryFn: () => api.entityList<AccountRow>("accounts") });
   const categories = useQuery({ queryKey: ["categories"], queryFn: () => api.entityList<CategoryRow>("categories") });
@@ -64,14 +68,38 @@ export function TransactionsPage() {
 
   const submit = () => {
     if (!editing) return;
+    const accCur = (accounts.data ?? []).find((a) => a.id === editing.accountId)?.currency;
+    const isForeign = editing.kind !== "transfer" && !!editing.origCurrency && editing.origCurrency !== accCur;
+    const amount = isForeign ? editing.amountMinor : editing.origCurrency ? editing.origAmountMinor ?? editing.amountMinor : editing.amountMinor;
     void save.mutateAsync({
       ...editing,
       occurredAt: editing.occurredAt ?? nowLocalIso(),
-      amountMinor: typeof editing.amountMinor === "number" ? editing.amountMinor : 0,
+      amountMinor: typeof amount === "number" ? amount : 0,
+      origCurrency: isForeign ? editing.origCurrency : null,
+      origAmountMinor: isForeign ? editing.origAmountMinor : null,
     });
   };
 
   const kindLabel = (k: string) => t(`ui.txKind.${k}`);
+
+  const accCurrency = (accounts.data ?? []).find((a) => a.id === editing?.accountId)?.currency;
+  const foreign = editing?.kind !== "transfer" && !!editing?.origCurrency && editing.origCurrency !== accCurrency;
+  const entryCurrencies = [...new Set([accCurrency, ...ENTRY_CURRENCIES].filter(Boolean) as string[])];
+  const setCurrency = (cur: string) => {
+    if (!editing) return;
+    if (cur === accCurrency) {
+      setEditing({ ...editing, origCurrency: null, origAmountMinor: null, amountMinor: editing.origAmountMinor ?? editing.amountMinor });
+    } else {
+      setEditing({ ...editing, origCurrency: cur, origAmountMinor: editing.origAmountMinor ?? editing.amountMinor, amountMinor: 0 });
+    }
+  };
+  const opDate = (editing?.occurredAt ?? "").slice(0, 10) || todayIso();
+  const conv = useQuery({
+    queryKey: ["convertAt", editing?.origAmountMinor, editing?.origCurrency, accCurrency, opDate],
+    queryFn: () => api.convertAt(editing!.origAmountMinor!, editing!.origCurrency!, accCurrency!, opDate),
+    enabled: foreign && !!editing?.origAmountMinor && !!accCurrency,
+  });
+  const suggestion = conv.data ?? null;
 
   return (
     <div className="animate-fade-up mx-auto w-full max-w-4xl space-y-4">
@@ -104,9 +132,20 @@ export function TransactionsPage() {
             ))}
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <input className="rounded border border-border bg-background px-3 py-2 text-sm" placeholder={t("ui.amount")}
-              inputMode="decimal"
-              onChange={(e) => setEditing({ ...editing, amountMinor: parseMinor(e.target.value) ?? 0 })} />
+            <div className="flex gap-2">
+              <input className="min-w-0 flex-1 rounded border border-border bg-background px-3 py-2 text-sm" placeholder={t("ui.amount")}
+                inputMode="decimal"
+                onChange={(e) => {
+                  const v = parseMinor(e.target.value) ?? 0;
+                  setEditing(foreign ? { ...editing, origAmountMinor: v } : { ...editing, amountMinor: v });
+                }} />
+              {editing.kind !== "transfer" && accCurrency && (
+                <select className="rounded border border-border bg-background px-2 py-2 text-sm" aria-label={t("ui.currency")}
+                  value={foreign ? editing.origCurrency ?? accCurrency : accCurrency} onChange={(e) => setCurrency(e.target.value)}>
+                  {entryCurrencies.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              )}
+            </div>
             <input className="rounded border border-border bg-background px-3 py-2 text-sm" type="date"
               defaultValue={todayIso()}
               onChange={(e) => setEditing({ ...editing, occurredAt: `${e.target.value}T${nowLocalIso().slice(11)}` })} />
@@ -117,6 +156,20 @@ export function TransactionsPage() {
                 <option key={a.id} value={a.id}>{a.name}{a.last4 ? ` ·${a.last4}` : ""} ({a.currency})</option>
               ))}
             </select>
+            {foreign && (
+              <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
+                <span className="text-sm text-muted-foreground">{t("ui.accountAmount")} ({accCurrency})</span>
+                <input key={`acc-${editing.origCurrency}-${accKey}`} className="w-36 rounded border border-border bg-background px-3 py-2 text-sm"
+                  inputMode="decimal" placeholder="0,00"
+                  defaultValue={editing.amountMinor ? formatMinor(editing.amountMinor).replace(/\u00a0/g, "") : ""}
+                  onChange={(e) => setEditing({ ...editing, amountMinor: parseMinor(e.target.value) ?? 0 })} />
+                {suggestion !== null && (
+                  <Button size="sm" variant="outline" onClick={() => { setEditing({ ...editing, amountMinor: suggestion }); setAccKey((k) => k + 1); }}>
+                    ≈ {formatMinor(suggestion, accCurrency)} · {t("ui.byRate")}
+                  </Button>
+                )}
+              </div>
+            )}
             {editing.kind === "transfer" ? (
               <select className="rounded border border-border bg-background px-3 py-2 text-sm"
                 value={editing.toAccountId ?? ""} onChange={(e) => setEditing({ ...editing, toAccountId: e.target.value })}>
@@ -156,6 +209,7 @@ export function TransactionsPage() {
           <div key={x.id}>
             {day !== prev && <div className="pt-3 pb-1 text-xs font-semibold text-muted-foreground">{day}</div>}
           <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-3 py-2 text-sm">
+            {x.kind !== "transfer" && <CategoryIcon icon={x.cIcon} color={x.cColor} size={26} />}
             <span className={x.kind === "transfer" ? "text-muted-foreground" : x.kind === "income" ? "text-income" : "text-expense"}>
               {x.kind === "income" ? "+" : x.kind === "expense" ? "−" : "⇄"}
             </span>
@@ -163,6 +217,9 @@ export function TransactionsPage() {
               {formatMinor(x.amountMinor, x.aCurrency)}
               {x.kind === "transfer" && x.toAmountMinor ? ` → ${formatMinor(x.toAmountMinor, x.a2Currency)}` : ""}
             </span>
+            {x.origCurrency && x.origAmountMinor && (
+              <span className="text-xs text-muted-foreground">({formatMinor(x.origAmountMinor, x.origCurrency)})</span>
+            )}
             <span className="text-muted-foreground">
               {x.kind === "transfer" ? `${x.aName} → ${x.a2Name}` : `${x.aName} · ${catName(categories.data?.find((c) => c.id === x.categoryId))}`}
             </span>
