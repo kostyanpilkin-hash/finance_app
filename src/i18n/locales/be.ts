@@ -95,6 +95,7 @@ const be: Locale = {
     connect: "Падключыць", connected: "падключаны", disconnect: "Адключыць",
     tgLinked: "прывязаны", tgPair: "Прывязаць", tgPairHint: "Адпраўце код боту — ён дзейнічае 10 хвілін.",
     hostMode: "Гэтая прылада — хост", joinHost: "Падключыць гэтую прыладу да хаста",
+    hostAddress: "Адрас гэтага хаста — увядзіце на падключаемай прыладзе",
     pairDevice: "Код для прылады", syncStatus: "прылад", pendingOps: "у чарзе",
     code: "Код", deviceName: "Імя прылады",
     locked: "Прыкладанне заблакіравана", wrongPin: "Няправільны PIN", unlock: "Разблакаваць",

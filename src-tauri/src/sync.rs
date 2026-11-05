@@ -246,6 +246,40 @@ pub(crate) async fn sync_once(state: &AppState) -> Result<bool, String> {
     Ok(!ops.is_empty() || !body["changes"].as_array().unwrap_or(&vec![]).is_empty())
 }
 
+/// Candidate URLs clients can reach this host at — shown in Settings so the
+/// user doesn't have to run ipconfig/ifconfig. LAN-looking ranges first.
+pub fn host_urls() -> Vec<String> {
+    use std::net::Ipv4Addr;
+    let mut ips: Vec<Ipv4Addr> = Vec::new();
+    let mut push = |ip: Ipv4Addr| {
+        if !ips.contains(&ip) {
+            ips.push(ip);
+        }
+    };
+    if let Ok(std::net::IpAddr::V4(ip)) = local_ip_address::local_ip() {
+        push(ip);
+    }
+    if let Ok(ifas) = local_ip_address::list_afinet_netifas() {
+        for (_, addr) in ifas {
+            if let std::net::IpAddr::V4(ip) = addr {
+                if ip.is_loopback() || ip.is_link_local() || ip.is_unspecified() {
+                    continue;
+                }
+                push(ip);
+            }
+        }
+    }
+    ips.sort_by_key(|ip| match ip.octets() {
+        [192, 168, ..] => 0,
+        [10, ..] => 1,
+        [172, b, ..] if (16..=31).contains(&b) => 2,
+        _ => 3,
+    });
+    ips.into_iter()
+        .map(|ip| format!("http://{ip}:{API_PORT}"))
+        .collect()
+}
+
 // ---------- commands ----------
 
 /// Host: create a 6-digit pairing code for a device (valid 10 min).

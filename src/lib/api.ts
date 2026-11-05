@@ -102,6 +102,7 @@ export const api = {
   pairToHost: (hostUrl: string, code: string, name: string) =>
     invoke<void>("pair_to_host", { hostUrl, code, name }),
   discoverHosts: () => invoke<{ name: string; host: string; url: string }[]>("discover_hosts"),
+  hostAddresses: () => invoke<string[]>("host_addresses"),
   conflictList: () => invoke<{ id: string; entity: string; entityId: string; local: string; server: string }[]>("conflict_list"),
   conflictResolve: (conflictId: string, winner: "local" | "server") =>
     invoke<void>("conflict_resolve", { conflictId, winner }),

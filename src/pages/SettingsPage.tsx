@@ -222,6 +222,7 @@ function SyncSection() {
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [pairCode, setPairCode] = useState<Record<string, string>>({});
+  const addresses = useQuery({ queryKey: ["host-addresses"], queryFn: api.hostAddresses });
   const queryClient = useQueryClient();
   const pair = useMutation({
     mutationFn: () => api.pairToHost(hostUrl, code, name),
@@ -236,6 +237,14 @@ function SyncSection() {
     <div className="space-y-4 text-sm">
       <div>
         <div className="mb-1 font-medium">{t("ui.hostMode")}</div>
+        {(addresses.data ?? []).length > 0 && (
+          <div className="mb-2">
+            <div className="text-xs text-muted-foreground">{t("ui.hostAddress")}:</div>
+            {(addresses.data ?? []).map((a, i) => (
+              <code key={a} className={`block text-sm ${i === 0 ? "font-semibold" : "text-muted-foreground"}`}>{a}</code>
+            ))}
+          </div>
+        )}
         {(users.data ?? []).map((u) => (
           <div key={u.id} className="flex items-center gap-3">
             <span className="w-32">{u.name}</span>

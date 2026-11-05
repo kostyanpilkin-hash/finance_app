@@ -73,6 +73,7 @@ pub fn run() {
             commands::pair_to_host,
             commands::sync_status,
             commands::discover_hosts,
+            commands::host_addresses,
             commands::conflict_list,
             commands::conflict_resolve,
             commands::join_host,

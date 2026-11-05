@@ -95,6 +95,7 @@ const en: Locale = {
     connect: "Connect", connected: "connected", disconnect: "Disconnect",
     tgLinked: "linked", tgPair: "Link", tgPairHint: "Send the code to the bot — valid for 10 minutes.",
     hostMode: "This device is the host", joinHost: "Pair this device to a host",
+    hostAddress: "This host's address — enter it on the connecting device",
     pairDevice: "Device code", syncStatus: "devices", pendingOps: "queued",
     code: "Code", deviceName: "Device name",
     locked: "Application locked", wrongPin: "Wrong PIN", unlock: "Unlock",

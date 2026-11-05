@@ -570,6 +570,12 @@ pub fn discover_hosts() -> Vec<Value> {
     crate::sync::discover_hosts()
 }
 
+/// LAN URLs this device can be reached at when it acts as a host.
+#[tauri::command]
+pub fn host_addresses() -> Vec<String> {
+    crate::sync::host_urls()
+}
+
 #[tauri::command]
 pub fn conflict_list(state: State<AppState>) -> Result<Vec<Value>, String> {
     crate::sync::conflict_list(&state)
