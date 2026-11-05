@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { api } from "@/lib/api";
 import { LANGUAGES } from "@/i18n";
 import { Button } from "@/components/ui/button";
 import { useSettingsStore } from "@/stores/settingsStore";
 
-type Step = "language" | "users" | "accounts" | "key";
+type Step = "language" | "mode" | "join" | "users" | "accounts" | "key";
 
 export function Onboarding() {
   const { t } = useTranslation();
@@ -17,8 +18,18 @@ export function Onboarding() {
   const [current, setCurrent] = useState(0);
   const [starter, setStarter] = useState<string[]>(["cash"]);
   const [savedKey, setSavedKey] = useState(false);
+  const [hostUrl, setHostUrl] = useState("http://");
+  const [joinCode, setJoinCode] = useState("");
+  const [deviceName, setDeviceName] = useState("");
 
   const recKey = useQuery({ queryKey: ["recovery-key"], queryFn: api.recoveryKey });
+  const hosts = useQuery({
+    queryKey: ["discover-hosts"],
+    queryFn: api.discoverHosts,
+    enabled: step === "join",
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
 
   const finish = useMutation({
     mutationFn: () =>
@@ -28,6 +39,14 @@ export function Onboarding() {
         starterAccounts: starter,
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["onboarding"] }),
+  });
+
+  const join = useMutation({
+    mutationFn: () => api.joinHost(hostUrl.trim(), joinCode.trim(), deviceName.trim() || "device"),
+    onSuccess: async () => {
+      await new Promise((r) => setTimeout(r, 1200));
+      await relaunch();
+    },
   });
 
   const toggle = (kind: string) =>
@@ -49,7 +68,87 @@ export function Onboarding() {
                 </Button>
               ))}
             </div>
-            <Button className="w-full" onClick={() => setStep("users")}>{t("onboarding.next")}</Button>
+            <Button className="w-full" onClick={() => setStep("mode")}>{t("onboarding.next")}</Button>
+          </div>
+        )}
+
+        {step === "mode" && (
+          <div>
+            <h2 className="mb-3 font-medium">{t("onboarding.modeTitle")}</h2>
+            <button
+              className="mb-2 w-full rounded-lg border border-border p-3 text-left hover:border-primary"
+              onClick={() => setStep("users")}
+            >
+              <div className="font-medium">{t("onboarding.modeNew")}</div>
+              <div className="text-xs text-muted-foreground">{t("onboarding.modeNewHint")}</div>
+            </button>
+            <button
+              className="w-full rounded-lg border border-border p-3 text-left hover:border-primary"
+              onClick={() => setStep("join")}
+            >
+              <div className="font-medium">{t("onboarding.modeJoin")}</div>
+              <div className="text-xs text-muted-foreground">{t("onboarding.modeJoinHint")}</div>
+            </button>
+            <Button className="mt-6 w-full" variant="outline" onClick={() => setStep("language")}>
+              {t("onboarding.back")}
+            </Button>
+          </div>
+        )}
+
+        {step === "join" && (
+          <div>
+            <h2 className="mb-1 font-medium">{t("onboarding.joinTitle")}</h2>
+            <p className="mb-3 text-sm text-muted-foreground">{t("onboarding.joinHint")}</p>
+            {hosts.isPending && <p className="mb-2 text-xs text-muted-foreground">{t("onboarding.joinSearch")}</p>}
+            {(hosts.data ?? []).map((h) => (
+              <button
+                key={h.url}
+                className={`mb-2 w-full rounded-lg border p-2 text-left text-sm ${
+                  hostUrl === h.url ? "border-primary" : "border-border"
+                }`}
+                onClick={() => setHostUrl(h.url)}
+              >
+                {h.host} · {h.url}
+              </button>
+            ))}
+            {hosts.isSuccess && hosts.data.length === 0 && (
+              <p className="mb-2 text-xs text-muted-foreground">{t("onboarding.joinNone")}</p>
+            )}
+            <input
+              className="mb-2 w-full rounded-[var(--input-radius)] border border-border bg-background px-3 py-2 text-sm"
+              placeholder={t("onboarding.joinUrl")}
+              value={hostUrl}
+              onChange={(e) => setHostUrl(e.target.value)}
+            />
+            <div className="mb-4 flex gap-2">
+              <input
+                className="w-28 rounded-[var(--input-radius)] border border-border bg-background px-3 py-2 text-sm tracking-widest"
+                placeholder={t("onboarding.joinCode")}
+                value={joinCode}
+                onChange={(e) => setJoinCode(e.target.value)}
+              />
+              <input
+                className="flex-1 rounded-[var(--input-radius)] border border-border bg-background px-3 py-2 text-sm"
+                placeholder={t("onboarding.joinName")}
+                value={deviceName}
+                onChange={(e) => setDeviceName(e.target.value)}
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setStep("mode")}>{t("onboarding.back")}</Button>
+              <Button
+                className="flex-1"
+                disabled={!hostUrl.includes(":") || !joinCode.trim() || join.isPending || join.isSuccess}
+                onClick={() => join.mutate()}
+              >
+                {join.isSuccess
+                  ? t("onboarding.joinDone")
+                  : join.isPending
+                    ? t("onboarding.joinWorking")
+                    : t("onboarding.joinBtn")}
+              </Button>
+            </div>
+            {join.isError && <p className="mt-2 text-sm text-destructive">{String(join.error)}</p>}
           </div>
         )}
 
@@ -79,7 +178,7 @@ export function Onboarding() {
               + {t("onboarding.addUser")}
             </Button>
             <div className="mt-6 flex gap-2">
-              <Button variant="outline" onClick={() => setStep("language")}>{t("onboarding.back")}</Button>
+              <Button variant="outline" onClick={() => setStep("mode")}>{t("onboarding.back")}</Button>
               <Button className="flex-1" disabled={!names.some((n) => n.trim())} onClick={() => setStep("accounts")}>
                 {t("onboarding.next")}
               </Button>

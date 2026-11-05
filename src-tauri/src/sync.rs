@@ -115,7 +115,7 @@ fn client_cfg(state: &AppState) -> Result<(String, String), Error> {
     })
 }
 
-async fn sync_once(state: &AppState) -> Result<bool, String> {
+pub(crate) async fn sync_once(state: &AppState) -> Result<bool, String> {
     let (host, token) = client_cfg(state).map_err(|e| e.to_string())?;
     let http = reqwest::Client::new();
 
@@ -265,12 +265,13 @@ pub fn pair_code(state: &AppState, user_id: &str) -> Result<String, String> {
 }
 
 /// Client: pair with a host using URL + code → store token + switch mode.
+/// Returns the host-side user id this device paired as.
 pub async fn pair_client(
     state: &AppState,
     host: &str,
     code: &str,
     name: &str,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let http = reqwest::Client::new();
     let resp: Value = http
         .post(format!("{host}/api/v1/pair"))
@@ -282,16 +283,39 @@ pub async fn pair_client(
         .await
         .map_err(|e| e.to_string())?;
     let token = resp["token"].as_str().ok_or("pairing failed")?;
+    let user_id = resp["userId"].as_str().unwrap_or("").to_string();
     state
         .db
         .with_conn(|c| {
             repos::setting_set(c, "host_url", host)?;
             repos::setting_set(c, "device_token", token)?;
-            repos::setting_set(c, "last_seq", "0")
+            repos::setting_set(c, "last_seq", "0")?;
+            if !user_id.is_empty() {
+                repos::setting_set(c, "current_user_id", &user_id)?;
+            }
+            Ok(())
         })
         .map_err(|e| e.to_string())?;
     state.db.set_mode("client").map_err(|e| e.to_string())?;
-    Ok(())
+    Ok(user_id)
+}
+
+/// Onboarding join: pair + drain the host journal + mark onboarding done.
+/// The app must relaunch afterwards — `db.mode` is read once at open, so the
+/// process keeps running as "host" (server + no client loop) until restart.
+pub async fn join_host(state: &AppState, host: &str, code: &str, name: &str) -> Result<(), String> {
+    pair_client(state, host, code, name).await?;
+    for _ in 0..50 {
+        match sync_once(state).await {
+            Ok(true) => continue,
+            Ok(false) => break,
+            Err(e) => return Err(format!("sync failed: {e}")),
+        }
+    }
+    state
+        .db
+        .with_conn(|c| repos::setting_set(c, "onboarding_done", "1"))
+        .map_err(|e| e.to_string())
 }
 
 /// Client: unresolved conflicts (id, entity, both versions).

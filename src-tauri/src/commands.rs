@@ -524,7 +524,40 @@ pub async fn pair_to_host(
     code: String,
     name: String,
 ) -> Result<(), String> {
-    crate::sync::pair_client(&state, &host_url, &code, &name).await
+    crate::sync::pair_client(&state, &host_url, &code, &name)
+        .await
+        .map(|_| ())
+}
+
+/// Onboarding "join existing host": pair, pull the whole journal, mark done.
+/// The frontend relaunches the app afterwards to restart cleanly in client mode.
+#[tauri::command]
+pub async fn join_host(
+    state: State<'_, AppState>,
+    host_url: String,
+    code: String,
+    name: String,
+) -> Result<(), String> {
+    crate::sync::join_host(&state, &host_url, &code, &name).await
+}
+
+/// Works without AppState — reports whether the db opened or is waiting for a
+/// recovery key (init failed with db_locked → nothing is managed).
+#[tauri::command]
+pub fn db_status(app: AppHandle) -> &'static str {
+    if app.try_state::<AppState>().is_some() {
+        "ready"
+    } else {
+        "locked"
+    }
+}
+
+/// Accepts a recovery key from the lock screen, verifies it opens the db and
+/// stores it in the OS keyring. The frontend relaunches on success.
+#[tauri::command]
+pub fn unlock_db(app: AppHandle, recovery: String) -> Result<(), String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    crate::state::unlock_with_recovery(&dir, &recovery)
 }
 
 #[tauri::command]

@@ -17,6 +17,7 @@ import { RemindersPage } from "@/pages/RemindersPage";
 import { GoalsPage } from "@/pages/GoalsPage";
 import { Onboarding } from "./Onboarding";
 import { PinLock } from "@/components/PinLock";
+import { DbUnlock } from "@/components/DbUnlock";
 import { UpdateNotifier } from "@/components/UpdateNotifier";
 import { PAGES, type PageId } from "./pages";
 
@@ -25,8 +26,10 @@ export default function App() {
   const init = useSettingsStore((s) => s.init);
   const [page, setPage] = useState<PageId>("dashboard");
 
-  const onboarding = useQuery({ queryKey: ["onboarding"], queryFn: api.onboardingStatus });
-  const pinEnabled = useQuery({ queryKey: ["pin-enabled"], queryFn: api.pinEnabled });
+  const dbStatus = useQuery({ queryKey: ["db-status"], queryFn: api.dbStatus });
+  const ready = dbStatus.data === "ready";
+  const onboarding = useQuery({ queryKey: ["onboarding"], queryFn: api.onboardingStatus, enabled: ready });
+  const pinEnabled = useQuery({ queryKey: ["pin-enabled"], queryFn: api.pinEnabled, enabled: ready });
   const [unlockedOnce, setUnlockedOnce] = useState(false);
   const locked = pinEnabled.data === true && !unlockedOnce;
 
@@ -60,6 +63,10 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  if (dbStatus.data === "locked") {
+    return <DbUnlock />;
+  }
 
   if (onboarding.data && !onboarding.data.done) {
     return <Onboarding />;

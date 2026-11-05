@@ -266,6 +266,7 @@ function SyncSection() {
           <Button size="sm" onClick={() => pair.mutate()} disabled={pair.isPending}>{t("ui.connect")}</Button>
         </div>
         {pair.isError && <p className="mt-1 text-destructive">{String(pair.error)}</p>}
+        {pair.isSuccess && <p className="mt-1 text-xs text-muted-foreground">{t("ui.restoreRestart")}</p>}
         {s?.hostUrl && <p className="mt-1 text-xs text-muted-foreground">{s.hostUrl} · seq {s.lastSeq}</p>}
       </div>
       <ConflictsBlock />

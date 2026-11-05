@@ -75,9 +75,21 @@ pub fn run() {
             commands::discover_hosts,
             commands::conflict_list,
             commands::conflict_resolve,
+            commands::join_host,
+            commands::db_status,
+            commands::unlock_db,
         ])
         .setup(|app| {
-            let state = state::init_db(app).expect("failed to open the database");
+            let state = match state::init_db(app) {
+                Ok(s) => s,
+                Err(e) if e == "db_locked" => {
+                    // Db exists but the keyring lost its key — the window shows
+                    // the recovery-key screen; no state is managed.
+                    show_main_window(app.handle());
+                    return Ok(());
+                }
+                Err(e) => panic!("failed to open the database: {e}"),
+            };
             app.manage(state);
             tray::create(app.handle())?;
             scheduler::start(app.handle().clone());

@@ -107,4 +107,8 @@ export const api = {
     invoke<void>("conflict_resolve", { conflictId, winner }),
   syncStatus: () =>
     invoke<{ mode: string; hostUrl?: string; lastSeq?: string; pendingOps: number; pairedDevices: number }>("sync_status"),
+  joinHost: (hostUrl: string, code: string, name: string) =>
+    invoke<void>("join_host", { hostUrl, code, name }),
+  dbStatus: () => invoke<"ready" | "locked">("db_status"),
+  unlockDb: (recovery: string) => invoke<void>("unlock_db", { recovery }),
 };

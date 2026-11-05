@@ -76,15 +76,16 @@ pub fn init_db(app: &tauri::App) -> Result<AppState, String> {
     })
 }
 
-/// Second-chance open after the user typed their recovery key.
-#[allow(dead_code)]
-pub fn open_with_recovery(dir: &std::path::Path, recovery: &str) -> Result<AppState, String> {
+/// Verify a typed recovery key against the existing db and commit it to the
+/// keyring on success. Called from the db_locked screen; the app relaunches after.
+/// The key is stored only AFTER it proves it can open the db — otherwise a
+/// wrong key would poison the keyring and lock the user out for good.
+pub fn unlock_with_recovery(dir: &std::path::Path, recovery: &str) -> Result<(), String> {
     install_key_store();
-    let key = Db::adopt_recovery_key("primary", recovery).map_err(|e| e.to_string())?;
-    let db = Db::open(&dir.join("finance.db"), Some(&key)).map_err(|e| e.to_string())?;
-    Ok(AppState {
-        db,
-        db_existed: true,
-        new_recovery_key: None,
-    })
+    let key = secrets::decode_recovery(recovery).map_err(|e| e.to_string())?;
+    if key.len() != 32 {
+        return Err("recovery key must decode to 32 bytes".into());
+    }
+    Db::open(&dir.join("finance.db"), Some(&key)).map_err(|_| "wrong recovery key".to_string())?;
+    keyring_write("primary", &key)
 }
