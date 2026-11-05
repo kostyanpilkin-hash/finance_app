@@ -87,4 +87,44 @@ jobs:
           releaseBody: "Установщики для Windows (.msi / -setup.exe) и macOS (.dmg, Apple Silicon + Intel). Инструкция по установке без подписи — в README."
           releaseDraft: true
           prerelease: false
+          includeUpdaterJson: false
           args: ${{ matrix.args }}
+
+  # Both matrix builds only produce their own platform's .sig assets; merge
+  # them into a single latest.json so the updater sees all platforms.
+  manifest:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assemble and upload latest.json
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_RELEASES_TOKEN }}
+          TAG: ${{ inputs.release_tag || github.ref_name }}
+          REPO: kostyanpilkin-hash/finance_app_public
+        run: |
+          set -euo pipefail
+          mkdir -p sig
+          gh release download "$TAG" --repo "$REPO" --pattern "*.sig" --dir sig --clobber
+          NSIS_SIG=$(ls sig/*-setup.exe.sig | head -1)
+          APP_SIG=$(ls sig/*.app.tar.gz.sig | head -1)
+          NSIS=$(basename "$NSIS_SIG" .sig)
+          APP=$(basename "$APP_SIG" .sig)
+          BASE="https://github.com/$REPO/releases/download/$TAG"
+          enc() { jq -rn --arg s "$1" '$s|@uri'; }
+          # Universal macOS binary: each arch slice asks for its own target
+          # key, so all three point at the same universal payload.
+          jq -n \
+            --arg v "$TAG" \
+            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg wsig "$(cat "$NSIS_SIG")" \
+            --arg wurl "$BASE/$(enc "$NSIS")" \
+            --arg msig "$(cat "$APP_SIG")" \
+            --arg murl "$BASE/$(enc "$APP")" \
+            '{version:$v, notes:"", pub_date:$date, platforms:{
+              "windows-x86_64": {signature:$wsig, url:$wurl},
+              "darwin-universal": {signature:$msig, url:$murl},
+              "darwin-aarch64": {signature:$msig, url:$murl},
+              "darwin-x86_64": {signature:$msig, url:$murl}}}' \
+            > latest.json
+          cat latest.json
+          gh release upload "$TAG" latest.json --repo "$REPO" --clobber

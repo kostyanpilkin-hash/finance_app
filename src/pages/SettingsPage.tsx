@@ -9,6 +9,7 @@ import { THEMES, type ThemeKind } from "@/lib/themes";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useUpdateStore } from "@/stores/updateStore";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -377,6 +378,19 @@ function BackupSection() {
   );
 }
 
+function UpdateCheckButton() {
+  const { t } = useTranslation();
+  const { phase, checkNow } = useUpdateStore();
+  return (
+    <span className="flex items-center gap-2">
+      <Button size="sm" variant="outline" onClick={() => void checkNow(true)} disabled={phase === "checking" || phase === "downloading"}>
+        {phase === "checking" ? t("update.checking") : t("update.check")}
+      </Button>
+      {phase === "uptodate" && <span className="text-xs text-income">{t("update.upToDate")}</span>}
+    </span>
+  );
+}
+
 export function SettingsPage() {
   const { t } = useTranslation();
   const { theme, language, setTheme, setLanguage } = useSettingsStore();
@@ -483,10 +497,13 @@ export function SettingsPage() {
       </Section>
 
       <Section title={t("settings.about")}>
-        <p className="text-sm text-muted-foreground">
-          {t("app.title")} · {t("settings.version")} {info.data?.version ?? "—"}
-          {info.data && ` · ${info.data.platform}`}
-        </p>
+        <div className="flex items-center gap-3">
+          <p className="text-sm text-muted-foreground">
+            {t("app.title")} · {t("settings.version")} {info.data?.version ?? "—"}
+            {info.data && ` · ${info.data.platform}`}
+          </p>
+          <UpdateCheckButton />
+        </div>
       </Section>
     </div>
   );

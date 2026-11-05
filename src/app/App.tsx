@@ -17,6 +17,7 @@ import { RemindersPage } from "@/pages/RemindersPage";
 import { GoalsPage } from "@/pages/GoalsPage";
 import { Onboarding } from "./Onboarding";
 import { PinLock } from "@/components/PinLock";
+import { UpdateNotifier } from "@/components/UpdateNotifier";
 import { PAGES, type PageId } from "./pages";
 
 export default function App() {
@@ -104,6 +105,7 @@ export default function App() {
           : page === "goals" ? <GoalsPage />
           : <PlaceholderPage page={page} />}
       </main>
+      <UpdateNotifier />
     </div>
   );
 }
