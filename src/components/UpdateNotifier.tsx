@@ -4,18 +4,24 @@ import { Button } from "@/components/ui/button";
 import { useUpdateStore } from "@/stores/updateStore";
 
 const CHECK_DELAY_MS = 15_000;
+const RECHECK_MS = 30 * 60_000;
 
-/** Floating update card: checks once shortly after launch, then offers to install. */
+/** Floating update card: checks shortly after launch, then every 30 min. */
 export function UpdateNotifier() {
   const { t } = useTranslation();
-  const { phase, version, progress, dismissed, checkNow, install, restart, dismiss } = useUpdateStore();
+  const { phase, version, progress, dismissedFor, checkNow, install, restart, dismiss } = useUpdateStore();
 
   useEffect(() => {
-    const timer = setTimeout(() => void checkNow(false), CHECK_DELAY_MS);
-    return () => clearTimeout(timer);
+    const first = setTimeout(() => void checkNow(false), CHECK_DELAY_MS);
+    const every = setInterval(() => void checkNow(false), RECHECK_MS);
+    return () => {
+      clearTimeout(first);
+      clearInterval(every);
+    };
   }, [checkNow]);
 
-  const visible = !dismissed && ["available", "downloading", "ready", "error"].includes(phase);
+  const visible =
+    ["available", "downloading", "ready", "error"].includes(phase) && dismissedFor !== version;
   if (!visible) return null;
 
   return (

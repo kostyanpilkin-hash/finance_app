@@ -16,7 +16,8 @@ interface UpdateState {
   update: Update | null;
   version: string | null;
   progress: number;
-  dismissed: boolean;
+  /** Version the user clicked "Later" on — it won't re-prompt, the next one will. */
+  dismissedFor: string | null;
   /** `manual` surfaces "uptodate"/"error" so the settings button gives feedback. */
   checkNow: (manual?: boolean) => Promise<void>;
   install: () => Promise<void>;
@@ -29,14 +30,15 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
   update: null,
   version: null,
   progress: 0,
-  dismissed: false,
+  dismissedFor: null,
   checkNow: async (manual = false) => {
-    set({ phase: "checking", dismissed: false });
+    set({ phase: "checking" });
     try {
       const update = await check();
       if (update) set({ phase: "available", update, version: update.version });
       else set({ phase: manual ? "uptodate" : "idle" });
-    } catch {
+    } catch (e) {
+      console.warn("update check failed", e);
       set({ phase: manual ? "error" : "idle" });
     }
   },
@@ -60,5 +62,5 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
     }
   },
   restart: () => relaunch(),
-  dismiss: () => set({ dismissed: true }),
+  dismiss: () => set({ dismissedFor: get().version }),
 }));
