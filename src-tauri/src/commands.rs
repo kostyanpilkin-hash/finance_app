@@ -248,6 +248,17 @@ pub fn transaction_list(state: State<AppState>, filter: Value) -> Result<Vec<Val
 }
 
 #[tauri::command]
+pub fn transaction_days(
+    state: State<AppState>,
+    from: String,
+    to: String,
+) -> Result<Vec<String>, String> {
+    db(&state)
+        .with_conn(|c| repos::transaction_days(c, &from, &to))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn dashboard(state: State<AppState>, from: String, to: String) -> Result<Value, String> {
     db(&state)
         .with_conn(|c| repos::dashboard(c, &from, &to))

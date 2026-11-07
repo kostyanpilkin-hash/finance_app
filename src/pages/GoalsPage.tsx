@@ -3,28 +3,40 @@ import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { TxForm } from "@/components/transactions/TxForm";
 import { formatMinor, parseMinor } from "@/lib/money";
+import type { AccountRow } from "@/lib/types";
 
 interface GoalRow {
   id: string; name: string; targetMinor: number; currentMinor: number;
   currency: string; deadline?: string | null; color: string; archived: number;
+  accountId?: string | null;
 }
 
 export function GoalsPage() {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const list = useQuery({ queryKey: ["goals"], queryFn: () => api.entityList<GoalRow>("goals", true) });
+  const accounts = useQuery({ queryKey: ["accounts"], queryFn: () => api.entityList<AccountRow>("accounts") });
   const [editing, setEditing] = useState<Partial<GoalRow> | null>(null);
+  const [depositing, setDepositing] = useState<GoalRow | null>(null);
   const [targetStr, setTargetStr] = useState("");
   const [currentStr, setCurrentStr] = useState("");
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["goals"] });
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["goals"] });
+    qc.invalidateQueries({ queryKey: ["accounts"] });
+  };
   const save = useMutation({
     mutationFn: (g: Record<string, unknown>) => api.goalUpsert(g),
     onSuccess: () => { invalidate(); setEditing(null); },
   });
   const del = useMutation({ mutationFn: (id: string) => api.entityDelete("goals", id), onSuccess: invalidate });
   const restore = useMutation({ mutationFn: (id: string) => api.entityRestore("goals", id), onSuccess: invalidate });
+
+  const balanceOf = (id?: string | null) =>
+    id ? accounts.data?.find((a) => a.id === id)?.balance ?? 0 : null;
+  const currentOf = (g: GoalRow) => balanceOf(g.accountId) ?? g.currentMinor;
 
   const open = (g?: GoalRow) => {
     setEditing(g ?? { currency: "BYN", color: "#059669", currentMinor: 0 });
@@ -52,14 +64,37 @@ export function GoalsPage() {
               value={editing.deadline ?? ""} onChange={(e) => setEditing({ ...editing, deadline: e.target.value || null })} />
             <input className="rounded border border-border bg-background px-3 py-2 text-sm" placeholder={t("ui.goalTarget")}
               inputMode="decimal" value={targetStr} onChange={(e) => setTargetStr(e.target.value)} />
-            <input className="rounded border border-border bg-background px-3 py-2 text-sm" placeholder={t("ui.goalCurrent")}
-              inputMode="decimal" value={currentStr} onChange={(e) => setCurrentStr(e.target.value)} />
+            {editing.accountId ? (
+              <div className="flex items-center rounded border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                {t("ui.goalCurrent")}: {formatMinor(balanceOf(editing.accountId) ?? 0, editing.currency)}
+              </div>
+            ) : (
+              <input className="rounded border border-border bg-background px-3 py-2 text-sm" placeholder={t("ui.goalCurrent")}
+                inputMode="decimal" value={currentStr} onChange={(e) => setCurrentStr(e.target.value)} />
+            )}
             <select className="rounded border border-border bg-background px-3 py-2 text-sm"
-              value={editing.currency ?? "BYN"} onChange={(e) => setEditing({ ...editing, currency: e.target.value })}>
+              value={editing.currency ?? "BYN"} onChange={(e) => setEditing({ ...editing, currency: e.target.value })}
+              disabled={!!editing.accountId}>
               {["BYN", "USD", "EUR", "RUB"].map((c) => <option key={c}>{c}</option>)}
+            </select>
+            <select className="rounded border border-border bg-background px-3 py-2 text-sm"
+              value={editing.accountId ?? ""}
+              onChange={(e) => {
+                const acc = (accounts.data ?? []).find((a) => a.id === e.target.value);
+                setEditing({
+                  ...editing,
+                  accountId: e.target.value || null,
+                  currency: acc?.currency ?? editing.currency,
+                });
+              }}>
+              <option value="">{t("ui.goalAccountNone")}</option>
+              {(accounts.data ?? []).filter((a) => !a.archived).map((a) => (
+                <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>
+              ))}
             </select>
             <input type="color" value={editing.color ?? "#059669"} onChange={(e) => setEditing({ ...editing, color: e.target.value })} />
           </div>
+          {editing.accountId && <p className="text-xs text-muted-foreground">{t("ui.goalAccountHint")}</p>}
           <div className="flex gap-2">
             <Button size="sm" onClick={submit} disabled={save.isPending}>{t("ui.save")}</Button>
             <Button size="sm" variant="outline" onClick={() => setEditing(null)}>{t("ui.cancel")}</Button>
@@ -67,24 +102,47 @@ export function GoalsPage() {
         </div>
       )}
 
+      {depositing && (
+        <TxForm
+          initial={{
+            kind: "transfer",
+            toAccountId: depositing.accountId ?? undefined,
+            comment: depositing.name,
+          }}
+          onDone={() => {
+            setDepositing(null);
+            invalidate();
+          }}
+        />
+      )}
+
       <div className="grid gap-3 sm:grid-cols-2">
         {(list.data ?? []).map((g) => {
-          const pct = g.targetMinor > 0 ? Math.min(100, Math.round((g.currentMinor / g.targetMinor) * 100)) : 0;
+          const current = currentOf(g);
+          const pct = g.targetMinor > 0 ? Math.min(100, Math.round((current / g.targetMinor) * 100)) : 0;
           return (
             <div key={g.id} className="rounded-2xl border border-border bg-card p-4">
               <div className="mb-1 flex items-center gap-2">
                 <span className="h-3 w-3 rounded-full" style={{ background: g.color }} />
                 <span className="font-medium">{g.name}</span>
+                {g.accountId && (
+                  <span className="text-xs text-muted-foreground">
+                    · {(accounts.data ?? []).find((a) => a.id === g.accountId)?.name}
+                  </span>
+                )}
                 {g.deadline && <span className="ml-auto text-xs text-muted-foreground">{t("ui.till")} {g.deadline}</span>}
               </div>
               <div className="mb-2 h-2 rounded-full bg-muted">
                 <div className="h-2 rounded-full bg-primary" style={{ width: `${pct}%` }} />
               </div>
               <div className="flex items-center text-sm">
-                <span>{formatMinor(g.currentMinor, g.currency)} / {formatMinor(g.targetMinor, g.currency)} · {pct}%</span>
+                <span>{formatMinor(current, g.currency)} / {formatMinor(g.targetMinor, g.currency)} · {pct}%</span>
                 <div className="ml-auto flex gap-1">
                   {g.archived === 0 ? (
                     <>
+                      {g.accountId && (
+                        <Button size="sm" variant="ghost" onClick={() => setDepositing(g)}>{t("ui.deposit")}</Button>
+                      )}
                       <Button size="sm" variant="ghost" onClick={() => open(g)}>{t("ui.edit")}</Button>
                       <Button size="sm" variant="ghost" onClick={() => del.mutate(g.id)}>{t("ui.archive")}</Button>
                     </>

@@ -254,6 +254,13 @@ const MIGRATIONS: &[&[&str]] = &[
         "ALTER TABLE transactions ADD COLUMN orig_amount_minor INTEGER CHECK (orig_amount_minor IS NULL OR orig_amount_minor > 0)",
         "ALTER TABLE transactions ADD COLUMN orig_currency TEXT CHECK (orig_currency IS NULL OR length(orig_currency) = 3)",
     ],
+    // ---- v3: card details for the bank-card look ----
+    &[
+        "ALTER TABLE accounts ADD COLUMN bank TEXT",
+        "ALTER TABLE accounts ADD COLUMN payment_system TEXT CHECK (payment_system IS NULL OR payment_system IN ('visa','mastercard','belkart','mir','unionpay'))",
+    ],
+    // ---- v4: a goal can be linked to an account; progress = account balance ----
+    &["ALTER TABLE goals ADD COLUMN account_id TEXT"],
 ];
 
 /// Applies pending migrations inside a transaction.

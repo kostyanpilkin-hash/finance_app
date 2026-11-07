@@ -15,6 +15,12 @@ export function parseMinor(s: string): number | null {
   return Number(i) * 100 + Number(f.padEnd(2, "0"));
 }
 
+/** Local YYYY-MM-DD for an arbitrary Date. */
+export function isoOf(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 export function todayIso(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;

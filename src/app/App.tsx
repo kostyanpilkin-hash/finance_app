@@ -1,25 +1,28 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
-import { SettingsPage } from "@/pages/SettingsPage";
-import { DashboardPage } from "@/pages/DashboardPage";
-import { AccountsPage } from "@/pages/AccountsPage";
-import { CategoriesPage } from "@/pages/CategoriesPage";
-import { TransactionsPage } from "@/pages/TransactionsPage";
-import { JournalPage } from "@/pages/JournalPage";
-import { AnalyticsPage } from "@/pages/AnalyticsPage";
-import { ReportsPage } from "@/pages/ReportsPage";
-import { RemindersPage } from "@/pages/RemindersPage";
-import { GoalsPage } from "@/pages/GoalsPage";
 import { Onboarding } from "./Onboarding";
 import { PinLock } from "@/components/PinLock";
 import { DbUnlock } from "@/components/DbUnlock";
 import { UpdateNotifier } from "@/components/UpdateNotifier";
+import { Toaster } from "@/components/ui/toaster";
 import { PAGES, type PageId } from "./pages";
+
+const SettingsPage = lazy(() => import("@/pages/SettingsPage").then((m) => ({ default: m.SettingsPage })));
+const DashboardPage = lazy(() => import("@/pages/DashboardPage").then((m) => ({ default: m.DashboardPage })));
+const AccountsPage = lazy(() => import("@/pages/AccountsPage").then((m) => ({ default: m.AccountsPage })));
+const CategoriesPage = lazy(() => import("@/pages/CategoriesPage").then((m) => ({ default: m.CategoriesPage })));
+const TransactionsPage = lazy(() => import("@/pages/TransactionsPage").then((m) => ({ default: m.TransactionsPage })));
+const JournalPage = lazy(() => import("@/pages/JournalPage").then((m) => ({ default: m.JournalPage })));
+const AnalyticsPage = lazy(() => import("@/pages/AnalyticsPage").then((m) => ({ default: m.AnalyticsPage })));
+const ReportsPage = lazy(() => import("@/pages/ReportsPage").then((m) => ({ default: m.ReportsPage })));
+const RemindersPage = lazy(() => import("@/pages/RemindersPage").then((m) => ({ default: m.RemindersPage })));
+const GoalsPage = lazy(() => import("@/pages/GoalsPage").then((m) => ({ default: m.GoalsPage })));
 
 export default function App() {
   const { t } = useTranslation();
@@ -100,6 +103,13 @@ export default function App() {
       </aside>
 
       <main className="flex flex-1 flex-col overflow-auto p-6">
+        <Suspense
+          fallback={
+            <div className="flex flex-1 items-center justify-center">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          }
+        >
         {page === "settings" ? <SettingsPage />
           : page === "dashboard" ? <DashboardPage />
           : page === "accounts" ? <AccountsPage />
@@ -111,8 +121,10 @@ export default function App() {
           : page === "reminders" ? <RemindersPage />
           : page === "goals" ? <GoalsPage />
           : <PlaceholderPage page={page} />}
+        </Suspense>
       </main>
       <UpdateNotifier />
+      <Toaster />
     </div>
   );
 }

@@ -46,6 +46,7 @@ pub fn run() {
             commands::category_delete,
             commands::transaction_upsert,
             commands::transaction_list,
+            commands::transaction_days,
             commands::dashboard,
             commands::journal,
             commands::goal_upsert,

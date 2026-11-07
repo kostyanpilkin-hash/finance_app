@@ -68,6 +68,7 @@ export const api = {
   categoryDelete: (id: string, moveTo?: string) => invoke<void>("category_delete", { id, moveTo }),
   transactionUpsert: <T = unknown>(input: Record<string, unknown>) => invoke<T>("transaction_upsert", { input }),
   transactionList: <T = unknown>(filter: TransactionFilter) => invoke<T[]>("transaction_list", { filter }),
+  transactionDays: (from: string, to: string) => invoke<string[]>("transaction_days", { from, to }),
   dashboard: <T = unknown>(from: string, to: string) => invoke<T>("dashboard", { from, to }),
   journal: <T = unknown>(filter: JournalFilter) => invoke<T[]>("journal", { filter }),
   goalUpsert: <T = unknown>(input: Record<string, unknown>) => invoke<T>("goal_upsert", { input }),

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { TxForm } from "@/components/transactions/TxForm";
 import { formatMinor, parseMinor, nowLocalIso } from "@/lib/money";
 import type { AccountRow, CategoryRow } from "@/lib/types";
 
@@ -20,6 +21,7 @@ export function RemindersPage() {
   const accounts = useQuery({ queryKey: ["accounts"], queryFn: () => api.entityList<AccountRow>("accounts") });
   const categories = useQuery({ queryKey: ["categories"], queryFn: () => api.entityList<CategoryRow>("categories") });
   const [editing, setEditing] = useState<Partial<ReminderRow> | null>(null);
+  const [paying, setPaying] = useState<ReminderRow | null>(null);
   const [amountStr, setAmountStr] = useState("");
 
   const invalidate = () => { qc.invalidateQueries({ queryKey: ["reminders"] }); qc.invalidateQueries({ queryKey: ["reminders-due"] }); };
@@ -40,15 +42,6 @@ export function RemindersPage() {
     return `${t("ui.rule.monthly")} · ${r.ruleDay}`;
   };
 
-  const markDone = (r: ReminderRow) => {
-    const tx = r.amountMinor && r.accountId ? {
-      kind: r.kind, occurredAt: nowLocalIso(), accountId: r.accountId,
-      amountMinor: r.amountMinor, categoryId: r.categoryId ?? undefined,
-      comment: r.name, source: "reminder",
-    } : undefined;
-    resolve.mutate({ id: r.id, status: "done", tx });
-  };
-
   return (
     <div className="animate-fade-up mx-auto w-full max-w-4xl space-y-5">
       <div className="flex items-center justify-between">
@@ -66,12 +59,31 @@ export function RemindersPage() {
               <span className="font-medium">{r.name}</span>
               {r.amountMinor != null && <span>{formatMinor(r.amountMinor, r.currency)}</span>}
               <div className="ml-auto flex gap-1">
-                <Button size="sm" onClick={() => markDone(r)}>{t("ui.markDone")}</Button>
+                <Button size="sm" onClick={() => setPaying(r)}>{t("ui.record")}</Button>
                 <Button size="sm" variant="outline" onClick={() => resolve.mutate({ id: r.id, status: "skipped" })}>{t("ui.skip")}</Button>
               </div>
             </div>
           ))}
         </div>
+      )}
+
+      {paying && (
+        <TxForm
+          initial={{
+            kind: paying.kind === "income" ? "income" : "expense",
+            amountMinor: paying.amountMinor ?? 0,
+            accountId: paying.accountId ?? undefined,
+            categoryId: paying.categoryId ?? undefined,
+            comment: paying.name,
+            occurredAt: nowLocalIso(),
+            source: "reminder",
+          }}
+          onDone={(saved) => {
+            const id = paying.id;
+            setPaying(null);
+            if (saved) resolve.mutate({ id, status: "done" });
+          }}
+        />
       )}
 
       {editing && (

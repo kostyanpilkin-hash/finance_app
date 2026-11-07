@@ -161,8 +161,27 @@ pub fn account_upsert(
             map.insert("last4".into(), Value::Null);
         }
     }
+    if let Some(ps) = opt_str(map, "paymentSystem") {
+        if !ps.is_empty()
+            && !["visa", "mastercard", "belkart", "mir", "unionpay"].contains(&ps.as_str())
+        {
+            return Err(Error::Invalid(format!("bad payment system {ps}")));
+        }
+        if ps.is_empty() {
+            map.insert("paymentSystem".into(), Value::Null);
+        }
+    }
+    if let Some(b) = opt_str(map, "bank") {
+        let b = b.trim();
+        map.insert(
+            "bank".into(),
+            if b.is_empty() { Value::Null } else { json!(b) },
+        );
+    }
     if kind != "card" {
         map.insert("last4".into(), Value::Null);
+        map.insert("bank".into(), Value::Null);
+        map.insert("paymentSystem".into(), Value::Null);
     }
     set_default(map, "kind", json!(kind));
     set_default(map, "color", json!("#059669"));
@@ -533,6 +552,22 @@ pub fn transaction_list(conn: &Connection, f: &TransactionFilter) -> Result<Vec<
         })?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
+}
+
+/// Distinct days (YYYY-MM-DD) that have at least one non-deleted transaction in the range.
+pub fn transaction_days(conn: &Connection, from: &str, to: &str) -> Result<Vec<String>, Error> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT substr(occurred_at, 1, 10) AS d
+         FROM transactions
+         WHERE deleted_at IS NULL
+           AND occurred_at >= ?1 || 'T00:00:00'
+           AND occurred_at <= ?2 || 'T23:59:59.999'
+         ORDER BY d",
+    )?;
+    let days = stmt
+        .query_map(rusqlite::params![from, to], |r| r.get(0))?
+        .collect::<Result<Vec<String>, _>>()?;
+    Ok(days)
 }
 
 // ---------- attachments ----------

@@ -4,11 +4,15 @@ export interface UserRow {
   color: string;
 }
 
+export type PaymentSystem = "visa" | "mastercard" | "belkart" | "mir" | "unionpay";
+
 export interface AccountRow {
   id: string;
   name: string;
   kind: "card" | "cash" | "savings" | "other";
   last4?: string | null;
+  bank?: string | null;
+  paymentSystem?: PaymentSystem | null;
   currency: string;
   color: string;
   ownerUserId?: string | null;

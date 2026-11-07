@@ -1,49 +1,51 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
 import { api } from "@/lib/api";
-import { formatMinor, todayIso } from "@/lib/money";
-import type { CategoryRow, DashboardData, TransactionRow } from "@/lib/types";
+import { formatMinor, isoOf, todayIso } from "@/lib/money";
+import { useDisplayMoney, useEnsureRates } from "@/lib/useDisplayMoney";
+import { DonutChart, type DonutItem } from "@/components/ui/donut-chart";
+import { AccountCard } from "@/components/accounts/AccountCard";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
+import type { CategoryRow, DashboardData, TransactionRow, UserRow } from "@/lib/types";
 
-function monthRange() {
-  const d = new Date();
-  const from = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
-  return { from, to: todayIso() };
+type DashPeriod = "week" | "month" | "days30";
+const PERIODS: DashPeriod[] = ["week", "month", "days30"];
+
+function rangeFor(p: DashPeriod) {
+  const now = new Date();
+  const start = new Date(now);
+  if (p === "week") start.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+  else if (p === "days30") start.setDate(now.getDate() - 29);
+  else start.setDate(1);
+  return { from: isoOf(start), to: todayIso() };
 }
 
-interface RateRow { currency: string; rateBynScaled: number; scale: number; date: string }
+const FALLBACK_COLOR = "#9ca3af";
 
 export function DashboardPage() {
   const { t } = useTranslation();
-  const { from, to } = monthRange();
+  const [period, setPeriod] = useState<DashPeriod>("month");
+  const { from, to } = useMemo(() => rangeFor(period), [period]);
+
   const dash = useQuery({ queryKey: ["dashboard", from, to], queryFn: () => api.dashboard<DashboardData>(from, to) });
   const tx = useQuery({
-    queryKey: ["transactions", "month", from, to],
-    queryFn: () => api.transactionList<TransactionRow>({ from, to, kind: "expense", limit: 2000 }),
+    queryKey: ["transactions", "dash", from, to],
+    queryFn: () => api.transactionList<TransactionRow>({ from, to, limit: 2000 }),
   });
   const categories = useQuery({ queryKey: ["categories"], queryFn: () => api.entityList<CategoryRow>("categories") });
-  const rates = useQuery({ queryKey: ["rates"], queryFn: () => api.ratesLatest<RateRow>() });
+  const users = useQuery({ queryKey: ["users"], queryFn: () => api.entityList<UserRow>("users") });
   const settings = useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
-  const displayCurrency = settings.data?.display_currency || "BYN";
+  const { displayCurrency, toDisplay } = useDisplayMoney();
+  const chartOn = useCallback(
+    (key: string) => (settings.data?.[key] ?? "1") === "1",
+    [settings.data],
+  );
 
   const accounts = (dash.data?.accounts ?? []).filter((a) => !a.archived);
   const totals = dash.data?.totals ?? [];
-
-  // All stored rates are scaled by 1e6; BYN is 1.0 = 1e6 scaled.
-  const rateOf = useCallback(
-    (cur: string) => (cur === "BYN" ? 1e6 : rates.data?.find((r) => r.currency === cur)?.rateBynScaled),
-    [rates.data],
-  );
-  const toDisplay = useCallback(
-    (minor: number, cur: string): number | null => {
-      const r = rateOf(cur);
-      const target = rateOf(displayCurrency);
-      if (!r || !target) return null;
-      return Math.round(minor * (r / 1e6) / (target / 1e6));
-    },
-    [rateOf, displayCurrency],
-  );
+  useEnsureRates([displayCurrency, ...accounts.map((a) => a.currency)]);
 
   const totalByn = useMemo(() => {
     let sum = 0;
@@ -56,81 +58,156 @@ export function DashboardPage() {
     return { sum, currency: displayCurrency, missing };
   }, [accounts, toDisplay, displayCurrency]);
 
-  const pie = useMemo(() => {
+  // Transactions converted to the display currency once; charts group the result.
+  const converted = useMemo(() => {
     const curOf = new Map((dash.data?.accounts ?? []).map((a) => [a.id, a.currency]));
-    const byCat = new Map<string, number>();
+    const out: { x: TransactionRow; v: number }[] = [];
     for (const x of tx.data ?? []) {
       const v = toDisplay(x.amountMinor, curOf.get(x.accountId) ?? "BYN");
-      if (v != null) byCat.set(x.categoryId ?? "", (byCat.get(x.categoryId ?? "") ?? 0) + v);
+      if (v != null) out.push({ x, v });
     }
+    return out;
+  }, [tx.data, dash.data?.accounts, toDisplay]);
+
+  const catSlices = useCallback((kind: "expense" | "income"): DonutItem[] => {
+    const byCat = new Map<string, number>();
+    for (const { x, v } of converted) {
+      if (x.kind !== kind) continue;
+      const id = x.categoryId ?? "";
+      byCat.set(id, (byCat.get(id) ?? 0) + v);
+    }
+    const catOf = (id: string) => categories.data?.find((c) => c.id === id);
     const name = (id: string) => {
-      const c = categories.data?.find((c) => c.id === id);
-      return c ? (c.key ? t(`categories.${c.key}`, c.name) : c.name) : "—";
+      const c = catOf(id);
+      return c ? (c.key ? t(`categories.${c.key}`, c.name) : c.name) : t("ui.noCategory");
     };
-    const color = (id: string) => categories.data?.find((c) => c.id === id)?.color ?? "#9ca3af";
     return [...byCat.entries()]
-      .map(([id, v]) => ({ name: name(id), value: v, fill: color(id) }))
+      .map(([id, v]) => ({
+        name: name(id),
+        value: v,
+        fill: catOf(id)?.color ?? FALLBACK_COLOR,
+        iconId: catOf(id)?.icon,
+      }))
       .sort((a, b) => b.value - a.value);
-  }, [tx.data, categories.data, dash.data?.accounts, toDisplay, t]);
+  }, [converted, categories.data, t]);
+
+  const peopleSlices = useCallback((kind: "expense" | "income"): DonutItem[] => {
+    const userColor = new Map((users.data ?? []).map((u) => [u.id, u.color]));
+    const userName = new Map((users.data ?? []).map((u) => [u.id, u.name]));
+    const byUser = new Map<string, { value: number; name: string }>();
+    for (const { x, v } of converted) {
+      if (x.kind !== kind) continue;
+      const id = x.createdByUserId ?? "";
+      const g = byUser.get(id) ?? { value: 0, name: id ? (x.uName ?? userName.get(id) ?? "") : "" };
+      g.value += v;
+      byUser.set(id, g);
+    }
+    return [...byUser.entries()]
+      .map(([id, g]) => {
+        const name = g.name || (id ? "?" : t("ui.noAuthor"));
+        return {
+          name,
+          value: g.value,
+          fill: id ? userColor.get(id) ?? FALLBACK_COLOR : FALLBACK_COLOR,
+          initial: name[0]?.toUpperCase(),
+        };
+      })
+      .sort((a, b) => b.value - a.value);
+  }, [converted, users.data, t]);
 
   const card = "rounded-2xl border border-border bg-card p-4";
   const sumFor = (kind: string) => totals.filter((x) => x.kind === kind);
+  const loading = dash.isLoading || tx.isLoading;
 
   return (
     <div className="animate-fade-up mx-auto w-full max-w-4xl space-y-5">
-      <h2 className="font-display text-2xl font-semibold tracking-tight">{t("nav.dashboard")}</h2>
-
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className={card}>
-          <div className="text-xs text-muted-foreground">{t("ui.totalBalance")}</div>
-          <div className="font-display text-xl font-semibold">{formatMinor(totalByn.sum, totalByn.currency)}</div>
-          {totalByn.missing && <div className="text-xs text-muted-foreground">{t("ui.ratesMissing")}</div>}
-        </div>
-        <div className={card}>
-          <div className="text-xs text-muted-foreground">{t("ui.spentMonth")}</div>
-          {sumFor("expense").map((x, i) => (
-            <div key={i} className="text-lg font-semibold text-expense">−{formatMinor(x.amount, x.currency)}</div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="font-display text-2xl font-semibold tracking-tight">{t("nav.dashboard")}</h2>
+        <div className="flex gap-1 rounded-xl border border-border bg-card p-1">
+          {PERIODS.map((p) => (
+            <button
+              key={p}
+              type="button"
+              className={cn(
+                "rounded-lg px-3 py-1 text-xs font-medium transition-colors",
+                period === p ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+              )}
+              onClick={() => setPeriod(p)}
+            >
+              {t(`ui.period.${p}`)}
+            </button>
           ))}
-          {sumFor("expense").length === 0 && <div className="text-lg font-semibold">0,00</div>}
-        </div>
-        <div className={card}>
-          <div className="text-xs text-muted-foreground">{t("ui.incomeMonth")}</div>
-          {sumFor("income").map((x, i) => (
-            <div key={i} className="text-lg font-semibold text-income">+{formatMinor(x.amount, x.currency)}</div>
-          ))}
-          {sumFor("income").length === 0 && <div className="text-lg font-semibold">0,00</div>}
         </div>
       </div>
 
-      {pie.length > 0 && (
-        <div className={card}>
-          <div className="mb-2 text-sm font-medium">{t("ui.pieMonth")}</div>
-          <div className="h-64">
-            <ResponsiveContainer>
-              <PieChart>
-                <Pie data={pie} dataKey="value" nameKey="name" innerRadius="45%" outerRadius="80%" paddingAngle={2}>
-                  {pie.map((p, i) => <Cell key={i} fill={p.fill} />)}
-                </Pie>
-                <Tooltip formatter={(v) => formatMinor(Number(v), displayCurrency)} />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
+      {loading ? (
+        <>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Skeleton className="h-20" />
+            <Skeleton className="h-20" />
+            <Skeleton className="h-20" />
           </div>
-        </div>
-      )}
-
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {accounts.map((a) => (
-          <div key={a.id} className={card}>
-            <div className="mb-1 flex items-center gap-2 text-sm">
-              <span className="h-3 w-3 rounded-full" style={{ background: a.color }} />
-              <span className="font-medium">{a.name}</span>
-              {a.last4 && <span className="text-xs text-muted-foreground">·{a.last4}</span>}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Skeleton className="h-64" />
+            <Skeleton className="h-64" />
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className={card}>
+              <div className="text-xs text-muted-foreground">{t("ui.totalBalance")}</div>
+              <div className="font-display text-xl font-semibold">{formatMinor(totalByn.sum, totalByn.currency)}</div>
+              {totalByn.missing && <div className="text-xs text-muted-foreground">{t("ui.ratesMissing")}</div>}
             </div>
-            <div className="font-display text-xl font-semibold">{formatMinor(a.balance, a.currency)}</div>
+            <div className={card}>
+              <div className="text-xs text-muted-foreground">{t("ui.spentMonth")}</div>
+              {sumFor("expense").map((x, i) => (
+                <div key={i} className="text-lg font-semibold text-expense">−{formatMinor(x.amount, x.currency)}</div>
+              ))}
+              {sumFor("expense").length === 0 && <div className="text-lg font-semibold">0,00</div>}
+            </div>
+            <div className={card}>
+              <div className="text-xs text-muted-foreground">{t("ui.incomeMonth")}</div>
+              {sumFor("income").map((x, i) => (
+                <div key={i} className="text-lg font-semibold text-income">+{formatMinor(x.amount, x.currency)}</div>
+              ))}
+              {sumFor("income").length === 0 && <div className="text-lg font-semibold">0,00</div>}
+            </div>
           </div>
-        ))}
-      </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className={card}>
+              <div className="mb-2 text-sm font-medium">{t("ui.pieMonth")}</div>
+              <DonutChart data={catSlices("expense")} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.other")} />
+            </div>
+            {chartOn("dash_chart_income_cat") && (
+              <div className={card}>
+                <div className="mb-2 text-sm font-medium">{t("ui.incomeByCat")}</div>
+                <DonutChart data={catSlices("income")} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.other")} />
+              </div>
+            )}
+            {chartOn("dash_chart_expense_people") && (
+              <div className={card}>
+                <div className="mb-2 text-sm font-medium">{t("ui.expenseByPeople")}</div>
+                <DonutChart data={peopleSlices("expense")} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.other")} />
+              </div>
+            )}
+            {chartOn("dash_chart_income_people") && (
+              <div className={card}>
+                <div className="mb-2 text-sm font-medium">{t("ui.incomeByPeople")}</div>
+                <DonutChart data={peopleSlices("income")} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.other")} />
+              </div>
+            )}
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {accounts.map((a) => (
+              <AccountCard key={a.id} a={a} ownerName={a.ownerName ?? undefined} compact />
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }

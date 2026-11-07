@@ -2,7 +2,17 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
-import { Check } from "lucide-react";
+import {
+  Check,
+  Coins,
+  Database,
+  Info,
+  MonitorSmartphone,
+  Palette,
+  Send,
+  ShieldCheck,
+  SlidersHorizontal,
+} from "lucide-react";
 import { LANGUAGES } from "@/i18n";
 import { api } from "@/lib/api";
 import { THEMES, type ThemeKind } from "@/lib/themes";
@@ -160,6 +170,35 @@ function DisplayCurrency() {
         ))}
       </div>
       <p className="mt-1 text-xs text-muted-foreground">{t("settings.displayCurrencyHint")}</p>
+    </div>
+  );
+}
+
+const DASH_CHARTS: { key: string; label: string }[] = [
+  { key: "dash_chart_income_cat", label: "settings.dashChartIncomeCat" },
+  { key: "dash_chart_expense_people", label: "settings.dashChartExpensePeople" },
+  { key: "dash_chart_income_people", label: "settings.dashChartIncomePeople" },
+];
+
+function DashboardCharts() {
+  const { t } = useTranslation();
+  const { get, set } = useLocalSettings();
+  return (
+    <div className="mt-4 border-t border-border/50 pt-4">
+      <div className="mb-2 text-sm font-medium">{t("settings.dashCharts")}</div>
+      <div className="flex flex-wrap gap-x-6 gap-y-2">
+        {DASH_CHARTS.map(({ key, label }) => (
+          <label key={key} className="flex cursor-pointer items-center gap-2 text-sm font-medium">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-[var(--primary)]"
+              checked={get(key, "1") === "1"}
+              onChange={(e) => set(key, e.target.checked ? "1" : "0")}
+            />
+            {t(label)}
+          </label>
+        ))}
+      </div>
     </div>
   );
 }
@@ -401,10 +440,24 @@ function UpdateCheckButton() {
   );
 }
 
+const SECTIONS = [
+  { id: "general", icon: SlidersHorizontal },
+  { id: "appearance", icon: Palette },
+  { id: "rates", icon: Coins },
+  { id: "telegram", icon: Send },
+  { id: "devices", icon: MonitorSmartphone },
+  { id: "security", icon: ShieldCheck },
+  { id: "data", icon: Database },
+  { id: "about", icon: Info },
+] as const;
+
+type SettingsSectionId = (typeof SECTIONS)[number]["id"];
+
 export function SettingsPage() {
   const { t } = useTranslation();
   const { theme, language, setTheme, setLanguage } = useSettingsStore();
   const queryClient = useQueryClient();
+  const [section, setSection] = useState<SettingsSectionId>("general");
 
   const info = useQuery({ queryKey: ["app-info"], queryFn: api.appInfo });
   const autostart = useQuery({ queryKey: ["autostart"], queryFn: isEnabled });
@@ -416,105 +469,137 @@ export function SettingsPage() {
   const kinds: ThemeKind[] = ["light", "dark"];
 
   return (
-    <div className="animate-fade-up mx-auto w-full max-w-4xl space-y-5">
+    <div className="animate-fade-up mx-auto w-full max-w-4xl">
       <h2 className="font-display text-2xl font-semibold tracking-tight">{t("nav.settings")}</h2>
-
-      <Section title={t("settings.general")}>
-        <div className="mb-2 text-sm font-medium">{t("settings.language")}</div>
-        <div className="flex flex-wrap gap-2">
-          {LANGUAGES.map((l) => (
+      <div className="mt-5 flex items-start gap-6">
+        <nav className="flex w-52 shrink-0 flex-col gap-1">
+          {SECTIONS.map(({ id, icon: Icon }) => (
             <Button
-              key={l.id}
+              key={id}
               size="sm"
-              variant={language === l.id ? "default" : "outline"}
-              onClick={() => setLanguage(l.id)}
+              variant={section === id ? "default" : "ghost"}
+              className="h-auto min-h-8 w-full px-3 py-2"
+              onClick={() => setSection(id)}
             >
-              {l.label}
+              <Icon className="h-4 w-4 shrink-0" />
+              <span className="flex-1 truncate text-left">{t(`settings.sections.${id}`)}</span>
             </Button>
           ))}
-        </div>
-        <DisplayCurrency />
-      </Section>
+        </nav>
+        <div className="min-w-0 flex-1 space-y-5">
+          {section === "general" && (
+            <Section title={t("settings.general")}>
+              <div className="mb-2 text-sm font-medium">{t("settings.language")}</div>
+              <div className="flex flex-wrap gap-2">
+                {LANGUAGES.map((l) => (
+                  <Button
+                    key={l.id}
+                    size="sm"
+                    variant={language === l.id ? "default" : "outline"}
+                    onClick={() => setLanguage(l.id)}
+                  >
+                    {l.label}
+                  </Button>
+                ))}
+              </div>
+              <DisplayCurrency />
+              <DashboardCharts />
+              <label className="mt-4 flex cursor-pointer items-start gap-3 border-t border-border/50 pt-4">
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 accent-[var(--primary)]"
+                  checked={autostart.data ?? false}
+                  disabled={autostart.isPending || toggleAutostart.isPending}
+                  onChange={(e) => toggleAutostart.mutate(e.target.checked)}
+                />
+                <span>
+                  <span className="block text-sm font-medium">{t("settings.autostart")}</span>
+                  <span className="block text-xs text-muted-foreground">{t("settings.autostartHint")}</span>
+                </span>
+              </label>
+            </Section>
+          )}
 
-      <Section title={t("settings.theme")}>
-        {kinds.map((kind) => (
-          <div key={kind} className="mb-4 last:mb-0">
-            <div className="mb-2 text-sm font-medium text-muted-foreground">{t(`settings.themeKinds.${kind}`)}</div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-              {THEMES.filter((th) => th.kind === kind).map((th) => (
-                <button
-                  key={th.id}
-                  type="button"
-                  onClick={() => setTheme(th.id)}
-                  className={cn(
-                    `theme-${th.id}`,
-                    "flex items-center gap-2 rounded-[var(--radius-lg)] border bg-[var(--bg)] p-2 text-left text-sm text-[var(--fg)] transition hover:opacity-90",
-                    theme === th.id ? "border-[var(--primary)] ring-2 ring-[var(--primary)]" : "border-[var(--border)]",
-                  )}
-                >
-                  <span className="flex shrink-0 gap-0.5">
-                    <span className="h-5 w-3 rounded-sm bg-[var(--primary)]" />
-                    <span className="h-5 w-3 rounded-sm bg-[var(--accent)]" />
-                    <span className="h-5 w-3 rounded-sm bg-[var(--card)] ring-1 ring-[var(--border)]" />
-                  </span>
-                  <span className="flex-1 truncate">{t(`settings.themes.${th.id}`)}</span>
-                  {theme === th.id && <Check className="h-4 w-4 text-[var(--primary)]" />}
-                </button>
+          {section === "appearance" && (
+            <Section title={t("settings.theme")}>
+              {kinds.map((kind) => (
+                <div key={kind} className="mb-4 last:mb-0">
+                  <div className="mb-2 text-sm font-medium text-muted-foreground">{t(`settings.themeKinds.${kind}`)}</div>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+                    {THEMES.filter((th) => th.kind === kind).map((th) => (
+                      <button
+                        key={th.id}
+                        type="button"
+                        onClick={() => setTheme(th.id)}
+                        className={cn(
+                          `theme-${th.id}`,
+                          "flex items-center gap-2 rounded-[var(--radius-lg)] border bg-[var(--bg)] p-2 text-left text-sm text-[var(--fg)] transition hover:opacity-90",
+                          theme === th.id ? "border-[var(--primary)] ring-2 ring-[var(--primary)]" : "border-[var(--border)]",
+                        )}
+                      >
+                        <span className="flex shrink-0 gap-0.5">
+                          <span className="h-5 w-3 rounded-sm bg-[var(--primary)]" />
+                          <span className="h-5 w-3 rounded-sm bg-[var(--accent)]" />
+                          <span className="h-5 w-3 rounded-sm bg-[var(--card)] ring-1 ring-[var(--border)]" />
+                        </span>
+                        <span className="flex-1 truncate">{t(`settings.themes.${th.id}`)}</span>
+                        {theme === th.id && <Check className="h-4 w-4 text-[var(--primary)]" />}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               ))}
-            </div>
-          </div>
-        ))}
-      </Section>
+            </Section>
+          )}
 
-      <Section title={t("settings.system")}>
-        <label className="flex cursor-pointer items-start gap-3">
-          <input
-            type="checkbox"
-            className="mt-1 h-4 w-4 accent-[var(--primary)]"
-            checked={autostart.data ?? false}
-            disabled={autostart.isPending || toggleAutostart.isPending}
-            onChange={(e) => toggleAutostart.mutate(e.target.checked)}
-          />
-          <span>
-            <span className="block text-sm font-medium">{t("settings.autostart")}</span>
-            <span className="block text-xs text-muted-foreground">{t("settings.autostartHint")}</span>
-          </span>
-        </label>
-      </Section>
+          {section === "rates" && (
+            <Section title={t("settings.rates")}>
+              <RatesSection />
+            </Section>
+          )}
 
-      <Section title={t("settings.rates")}>
-        <RatesSection />
-      </Section>
+          {section === "telegram" && (
+            <>
+              <Section title={t("settings.telegram")}>
+                <TgSection />
+              </Section>
+              <Section title={t("settings.bot.notify")}>
+                <BotNotifySection />
+              </Section>
+            </>
+          )}
 
-      <Section title={t("settings.telegram")}>
-        <TgSection />
-      </Section>
+          {section === "devices" && (
+            <Section title={t("settings.devices")}>
+              <SyncSection />
+            </Section>
+          )}
 
-      <Section title={t("settings.bot.notify")}>
-        <BotNotifySection />
-      </Section>
+          {section === "security" && (
+            <Section title={t("settings.security")}>
+              <SecuritySection />
+            </Section>
+          )}
 
-      <Section title={t("settings.devices")}>
-        <SyncSection />
-      </Section>
+          {section === "data" && (
+            <Section title={t("settings.backup")}>
+              <BackupSection />
+            </Section>
+          )}
 
-      <Section title={t("settings.security")}>
-        <SecuritySection />
-      </Section>
-
-      <Section title={t("settings.backup")}>
-        <BackupSection />
-      </Section>
-
-      <Section title={t("settings.about")}>
-        <div className="flex items-center gap-3">
-          <p className="text-sm text-muted-foreground">
-            {t("app.title")} · {t("settings.version")} {info.data?.version ?? "—"}
-            {info.data && ` · ${info.data.platform}`}
-          </p>
-          <UpdateCheckButton />
+          {section === "about" && (
+            <Section title={t("settings.about")}>
+              <div className="flex items-center gap-3">
+                <p className="text-sm text-muted-foreground">
+                  {t("app.title")} · {t("settings.version")} {info.data?.version ?? "—"}
+                  {info.data && ` · ${info.data.platform}`}
+                </p>
+                <UpdateCheckButton />
+              </div>
+            </Section>
+          )}
         </div>
-      </Section>
+      </div>
     </div>
   );
 }
