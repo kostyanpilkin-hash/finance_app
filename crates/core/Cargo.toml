@@ -10,5 +10,4 @@ description = "Domain logic for Finance: money, currencies, balances, periods"
 serde.workspace = true
 thiserror.workspace = true
 chrono = { version = "0.4", features = ["serde"] }
-chrono-tz = "0.10"
 ts-rs = "12.0.1"

@@ -2,18 +2,8 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import "./i18n";
 import "./index.css";
-// Brand-alike fonts for themes (bundled, offline).
-import "@fontsource-variable/inter";
-import "@fontsource-variable/noto-sans";
-import "@fontsource-variable/figtree";
-import "@fontsource-variable/mona-sans";
-import "@fontsource-variable/jetbrains-mono";
-import "@fontsource/lato/400.css";
-import "@fontsource/lato/700.css";
-import "@fontsource/lato/900.css";
-import "@fontsource-variable/lora";
-import "@fontsource-variable/roboto-flex";
-import "@fontsource-variable/outfit";
+// Theme fonts (bundled, offline) — latin + cyrillic subsets only.
+import "./fonts.css";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./app/App";
 import { ErrorBoundary, AppCrash } from "./components/ErrorBoundary";

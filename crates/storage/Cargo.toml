@@ -11,10 +11,17 @@ finance-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl"] }
 chrono = { version = "0.4", features = ["serde"] }
-chrono-tz = "0.10"
 uuid = { version = "1", features = ["v4", "v7", "serde"] }
 sha2 = "0.10"
 data-encoding = "2"
-rust_xlsxwriter = "0.80"
+rust_xlsxwriter = "0.102"
+
+# Windows/Linux build OpenSSL from source; macOS links CommonCrypto instead.
+[target.'cfg(not(target_os = "macos"))'.dependencies.rusqlite]
+version = "0.32"
+features = ["bundled-sqlcipher-vendored-openssl"]
+
+[target.'cfg(target_os = "macos")'.dependencies.rusqlite]
+version = "0.32"
+features = ["bundled-sqlcipher"]

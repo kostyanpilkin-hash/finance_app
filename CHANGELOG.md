@@ -36,6 +36,15 @@
 - Контрастность: во все 29 тем добавлен `--border-strong` (токен `field-border`) — рамки полей ≥ 3:1 к фону; подтянуты `muted-fg`, `primary`, `destructive`, `income`, `expense` до ≥ 4,5:1 (аудит скриптом по каждой теме). Тема `notion` пересобрана на контрастной палитре. Всем темам прописан `color-scheme: light/dark` для системных контролов (скроллбары, дата-пикеры).
 - Типографика: `tabular-nums` для всех цифр глобально; единый типографский минус `−`; `formatMinor` локализован через `Intl.NumberFormat` (ru/be — неразрывные пробелы и запятая, en — точка), `parseMinor` понимает оба разделителя и знаки `-`/`−`; даты форматируются через `toLocaleString/toLocaleDateString(i18n.language)`. Минимальный размер шрифта поднят до 12 px (карточки счетов, календарь, легенды диаграмм).
 
+### Сжатие размера и очистка зависимостей
+- В `[profile.release]` включены `lto`, `codegen-units = 1`, `opt-level = "s"`, `strip` — исполняемый файл ужался с 24,4 МБ до **17,3 МБ (−29%)**.
+- Убраны неиспользуемые зависимости: `chrono-tz` (core/storage), `tower-http` и `thiserror` (api), `dirs`/`finance-core`/`finance-bot` (src-tauri); пустой пакет `crates/bot` удалён из workspace. `thiserror` остался в core/storage — там он реально используется.
+- `reqwest` выровнен до единственной 0.13 (была пара 0.12 + 0.13 у updater'а), `rust_xlsxwriter` 0.80 → 0.102 — теперь один `zip` 9.3 на всё дерево вместо 2.6 + 9.3.
+- Под macOS SQLCipher собирается через `bundled-sqlcipher` и линкует CommonCrypto; OpenSSL собирается из исходников только под Windows/Linux.
+- Шрифты: Outfit/Figtree/Mona Sans/Lato заменены на кириллические Manrope/Onest/Golos Text; в бандл входят только `.woff2` сабсетов `latin` + `cyrillic` (8 гарнитур × 2 файла = 433 КБ вместо ~60 файлов с vietnamese/greek/latin-ext/math и .woff-фолбэками). Сами `@font-face` собраны в `fonts.css` вручную с `unicode-range`.
+- Переводы i18next грузятся лениво: локали ru/be/en — отдельные чанки, в основной бандл входит только активный язык (`loadLanguage` в `settingsStore`).
+- CSS: вычищены мёртвые стили от проекта-донора (`[data-item-avatar]`, `[data-item-card]` — squircle-аватары, play-кнопка, grab-handle); убрано глобальное `content-visibility: auto`, из-за которого обрезались выпадающие списки и ломалась прокрутка.
+
 ## 0.1.7 — 2026-11-07
 
 ### Настройки: секционная навигация

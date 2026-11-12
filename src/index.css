@@ -30,7 +30,7 @@
   --input-radius: var(--radius-md);
   --sidebar-bg: color-mix(in oklab, var(--card) 85%, transparent);
   --card-shadow: 0 1px 3px rgb(0 0 0 / 0.1);
-  --font-display: "Outfit Variable", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Manrope Variable", "Segoe UI", system-ui, sans-serif;
   --font-sans: "Inter Variable", "Segoe UI", system-ui, sans-serif;
 }
 
@@ -768,8 +768,8 @@ html.theme-spotify {
   --input-radius: 0.25rem;
   --sidebar-bg: #000000;
   --card-shadow: 0 8px 24px rgb(0 0 0 / 0.6);
-  --font-sans: "CircularSp", "Figtree Variable", "Segoe UI", system-ui, sans-serif;
-  --font-display: "CircularSp", "Figtree Variable", "Segoe UI", system-ui, sans-serif;
+  --font-sans: "CircularSp", "Onest Variable", "Segoe UI", system-ui, sans-serif;
+  --font-display: "CircularSp", "Onest Variable", "Segoe UI", system-ui, sans-serif;
 }
 html.theme-spotify .font-display { font-weight: 900; letter-spacing: -0.04em; }
 html.theme-spotify body { background: var(--bg); }
@@ -784,8 +784,8 @@ html.theme-github {
   --input-radius: 0.375rem;
   --sidebar-bg: #010409;
   --card-shadow: 0 8px 24px rgb(0 0 0 / 0.5);
-  --font-sans: "Mona Sans Variable", -apple-system, "Segoe UI", system-ui, sans-serif;
-  --font-display: "Mona Sans Variable", -apple-system, "Segoe UI", system-ui, sans-serif;
+  --font-sans: "Golos Text Variable", -apple-system, "Segoe UI", system-ui, sans-serif;
+  --font-display: "Golos Text Variable", -apple-system, "Segoe UI", system-ui, sans-serif;
 }
 html.theme-github body { background: var(--bg); letter-spacing: -0.011em; }
 html.theme-github .font-mono, html.theme-github code { font-family: "JetBrains Mono Variable", ui-monospace, monospace; }
@@ -818,8 +818,8 @@ html.theme-slack {
   --input-radius: 0.375rem;
   --sidebar-bg: #350d36;
   --card-shadow: 0 4px 16px rgb(0 0 0 / 0.35);
-  --font-sans: "Lato", "Segoe UI", system-ui, sans-serif;
-  --font-display: "Lato", "Segoe UI", system-ui, sans-serif;
+  --font-sans: "Golos Text Variable", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Golos Text Variable", "Segoe UI", system-ui, sans-serif;
 }
 html.theme-slack body { background: var(--bg); }
 html.theme-slack ::-webkit-scrollbar { width: 8px; }
@@ -863,7 +863,7 @@ html.theme-material {
   --sidebar-bg: #f8f9fa;
   --card-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 2px 6px 2px rgb(0 0 0 / 0.15);
   --font-sans: "Roboto Flex Variable", "Roboto", "Segoe UI", system-ui, sans-serif;
-  --font-display: "Outfit Variable", "Google Sans", "Roboto Flex Variable", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Manrope Variable", "Google Sans", "Roboto Flex Variable", "Segoe UI", system-ui, sans-serif;
 }
 html.theme-material .font-display { font-weight: 500; letter-spacing: 0; }
 html.theme-material body { background: var(--bg); }
@@ -1136,7 +1136,7 @@ html.theme-cupertino body:has([data-page="dashboard"]) {
    Brand signature touches
    ========================================================================= */
 
-/* Discord: server-rail pill on nav, squircle student avatars, online dot */
+/* Discord: server-rail pill on nav, channel-hash page titles */
 html.theme-discord aside nav button { position: relative; }
 html.theme-discord aside nav button::before {
   content: ""; position: absolute; left: -16px; top: 50%; width: 4px; height: 8px;
@@ -1145,29 +1145,12 @@ html.theme-discord aside nav button::before {
 }
 html.theme-discord aside nav button:hover::before { opacity: 1; height: 20px; }
 html.theme-discord aside nav button.bg-primary::before { opacity: 1; height: 32px; }
-html.theme-discord [data-item-avatar] {
-  border-radius: 50%; transition: border-radius .2s ease, background-color .2s ease;
-}
-html.theme-discord [data-item-card]:hover [data-item-avatar] { border-radius: 30%; }
-html.theme-discord [data-item-avatar]::after {
-  content: ""; position: absolute; right: -2px; bottom: -2px; width: 12px; height: 12px;
-  border-radius: 50%; background: #23a559; border: 3px solid var(--card);
-}
 html.theme-discord main h2.font-display::before { content: "#"; opacity: .45; margin-right: .35em; font-weight: 500; }
 
 /* Spotify: gradient header from accent, play-button on card hover, bold 900 */
 html.theme-spotify main {
   background: linear-gradient(180deg, rgb(29 185 84 / 0.22) 0%, var(--bg) 320px);
 }
-html.theme-spotify [data-item-card] { position: relative; overflow: hidden; }
-html.theme-spotify [data-item-card]::after {
-  content: ""; position: absolute; right: 14px; bottom: 14px; width: 44px; height: 44px; border-radius: 50%;
-  background: #1ed760 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23000'%3E%3Cpath d='M8 5v14l11-7z'/%3E%3C/svg%3E") center/22px no-repeat;
-  box-shadow: 0 8px 16px rgb(0 0 0 / 0.5); opacity: 0; transform: translateY(8px);
-  transition: opacity .2s ease, transform .2s ease;
-}
-html.theme-spotify [data-item-card]:hover::after { opacity: 1; transform: translateY(0); }
-html.theme-spotify [data-item-card]:hover { background: #282828; }
 html.theme-spotify main h2.font-display { font-size: 2rem; }
 
 /* GitHub: orange underline tabs, label-style chips, contribution-style heat cells */
@@ -1209,15 +1192,8 @@ html.theme-slack aside nav button svg { display: none; }
 html.theme-slack main h2.font-display { font-weight: 900; }
 
 /* Notion: dotted dividers, grab-handle on hover, soft focus */
-html.theme-notion [data-item-card], html.theme-notion .rounded-xl.border { border-style: solid; }
-html.theme-notion [data-item-card]:hover { background: rgb(55 53 47 / 0.04); }
-html.theme-notion [data-item-card]::before {
-  content: "⋮⋮"; position: absolute; left: -18px; top: 50%; transform: translateY(-50%);
-  color: rgb(55 53 47 / 0.35); letter-spacing: -2px; opacity: 0; transition: opacity .15s;
-}
-html.theme-notion [data-item-card] { position: relative; }
-html.theme-notion [data-item-card]:hover::before { opacity: 1; }
+html.theme-notion .rounded-xl.border { border-style: solid; }
 
 /* Perf: cap list-item entrance animations and defer offscreen rendering. */
 .animate-fade-up:nth-child(n+50) { animation: none; }
-.space-y-1 > *, .space-y-2 > *, [data-item-card] { content-visibility: auto; contain-intrinsic-size: auto 48px; }
+/* Perf: only cap list-item entrance animations — content-visibility clipped dropdowns. */

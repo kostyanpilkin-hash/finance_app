@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import i18n, { isLanguage, type Language } from "@/i18n";
+import i18n, { isLanguage, loadLanguage, type Language } from "@/i18n";
 import { api } from "@/lib/api";
 import { applyTheme, DEFAULT_THEME, isTheme, type Theme } from "@/lib/themes";
 
@@ -16,10 +16,12 @@ function readCache(): { theme?: string; language?: string } {
 }
 
 function applyLanguage(language: Language) {
-  void i18n.changeLanguage(language);
   document.documentElement.lang = language;
-  const t = i18n.getFixedT(language);
-  void api.setTrayLabels(t("tray.open"), t("tray.quit"), t("app.title")).catch(() => undefined);
+  void loadLanguage(language).then(() => {
+    void i18n.changeLanguage(language);
+    const t = i18n.getFixedT(language);
+    void api.setTrayLabels(t("tray.open"), t("tray.quit"), t("app.title")).catch(() => undefined);
+  });
 }
 
 interface SettingsState {
