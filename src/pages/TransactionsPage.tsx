@@ -9,6 +9,7 @@ import { TxForm } from "@/components/transactions/TxForm";
 import { DayCalendar } from "@/components/transactions/DayCalendar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/stores/toast";
+import { useDebounced } from "@/lib/useDebounced";
 import { cn } from "@/lib/utils";
 import { formatMinor, nowLocalIso, todayIso } from "@/lib/money";
 import { convertFileSrc } from "@tauri-apps/api/core";
@@ -47,13 +48,15 @@ export function TransactionsPage() {
   const accounts = useQuery({ queryKey: ["accounts"], queryFn: () => api.entityList<AccountRow>("accounts") });
   const categories = useQuery({ queryKey: ["categories"], queryFn: () => api.entityList<CategoryRow>("categories") });
 
-  const searching = search.trim().length > 0;
+  // Debounced so a keystroke doesn't hit the whole history every time.
+  const q = useDebounced(search.trim());
+  const searching = q.length > 0;
   const tx = useQuery({
-    queryKey: ["transactions", "page", searching ? `search:${search.trim()}` : `day:${day}`, accountId, categoryId],
+    queryKey: ["transactions", "page", searching ? `search:${q}` : `day:${day}`, accountId, categoryId],
     queryFn: () =>
       api.transactionList<TransactionRow>(
         searching
-          ? { search: search.trim(), accountId: accountId || undefined, categoryId: categoryId || undefined, limit: 500 }
+          ? { search: q, accountId: accountId || undefined, categoryId: categoryId || undefined, limit: 500 }
           : { from: day, to: day, accountId: accountId || undefined, categoryId: categoryId || undefined, limit: 500 },
       ),
   });

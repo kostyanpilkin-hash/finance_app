@@ -168,6 +168,12 @@ const en: Locale = {
     entity: { users: "user", accounts: "account", categories: "category", transactions: "transaction", attachments: "photo", goals: "goal", reminders: "reminder", reminder_events: "reminder", audit_log: "journal", exchange_rates: "rate", shared_settings: "setting" },
     action: { create: "created", update: "updated", delete: "deleted", restore: "restored", conflict_resolved: "conflict", merge_category: "moved" },
     undo: "Undo", txDeleted: "Transaction deleted", record: "Record", deposit: "Set aside",
+    err: {
+      amount: "Enter an amount greater than zero", account: "Choose an account",
+      toAccount: "Choose the destination account", sameAccount: "A transfer needs a different destination account",
+      category: "Choose a category", photoSize: "Photo is over {{mb}} MB — pick a smaller file",
+      generic: "Couldn't save the transaction",
+    },
     goalAccountNone: "No linked account", goalAccountHint: "Progress is tracked automatically from the linked account balance.",
     all: "All", yes: "Yes", no: "No",
     field: {

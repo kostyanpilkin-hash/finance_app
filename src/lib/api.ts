@@ -83,8 +83,15 @@ export const api = {
   backupCreate: () => invoke<string>("backup_create"),
   backupList: () => invoke<string[]>("backup_list"),
   backupRestore: (name: string) => invoke<void>("backup_restore", { name }),
-  attachmentAdd: <T = unknown>(transactionId: string, fileName: string, mime: string, bytesBase64: string) =>
-    invoke<T>("attachment_add", { transactionId, fileName, mime, bytesBase64 }),
+  /** Sends photo bytes as a raw IPC payload (no base64); metadata rides in headers. */
+  attachmentAdd: <T = unknown>(transactionId: string, fileName: string, mime: string, bytes: Uint8Array) =>
+    invoke<T>("attachment_add", bytes, {
+      headers: {
+        "x-transaction-id": transactionId,
+        "x-file-name": encodeURIComponent(fileName),
+        "x-mime": mime,
+      },
+    }),
   attachmentPath: (sha256: string) => invoke<string>("attachment_path", { sha256 }),
   ratesLatest: <T = unknown>() => invoke<T[]>("rates_latest"),
   ratesRefresh: () => invoke<{ updated: string[]; skipped: string[] }>("rates_refresh"),

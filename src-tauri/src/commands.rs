@@ -419,24 +419,70 @@ pub fn reminders_due(state: State<AppState>) -> Result<Vec<Value>, String> {
 
 // ---------- attachments ----------
 
+/// Receipts are capped: they go over IPC raw, get hashed and written to disk.
+const MAX_ATTACHMENT_BYTES: usize = 15 * 1024 * 1024;
+
+/// Decodes `encodeURIComponent` output — header values are ASCII-only, so the
+/// file name travels percent-encoded.
+fn unescape(s: &str) -> Option<String> {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' {
+            out.push(u8::from_str_radix(s.get(i + 1..i + 3)?, 16).ok()?);
+            i += 3;
+        } else {
+            out.push(b[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).ok()
+}
+
+/// The photo goes as a raw `Uint8Array` body — metadata rides in headers.
 #[tauri::command]
-pub fn attachment_add(
-    state: State<AppState>,
-    transaction_id: String,
-    file_name: String,
-    mime: String,
-    bytes_base64: String,
+pub async fn attachment_add(
+    state: State<'_, AppState>,
+    request: tauri::ipc::Request<'_>,
 ) -> Result<Value, String> {
-    use base64::Engine;
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(bytes_base64)
-        .map_err(|e| e.to_string())?;
-    let a = actor_or_current(&state)?;
-    db(&state)
-        .with_conn(|c| {
-            repos::attachment_add(c, &state.db, &a, &transaction_id, &file_name, &mime, &bytes)
+    let headers = request.headers();
+    let header = |k: &str| {
+        headers
+            .get(k)
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string())
+    };
+    let transaction_id = header("x-transaction-id").ok_or("missing transaction id")?;
+    let file_name = header("x-file-name")
+        .and_then(|n| unescape(&n))
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| "receipt".into());
+    let mime = header("x-mime")
+        .filter(|m| !m.is_empty() && m.len() <= 100)
+        .unwrap_or_else(|| "image/jpeg".into());
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("expected raw photo bytes".into());
+    };
+    if bytes.is_empty() || bytes.len() > MAX_ATTACHMENT_BYTES {
+        return Err("attachment size out of range".into());
+    }
+    let bytes = bytes.clone();
+    let db = state.db.share();
+    tauri::async_runtime::spawn_blocking(move || {
+        db.with_conn(|c| {
+            let uid = repos::setting_get(c, "current_user_id")?;
+            let actor = Actor {
+                user_id: uid,
+                device_id: Some(db.device_id.clone()),
+                source: Source::Desktop,
+            };
+            repos::attachment_add(c, &db, &actor, &transaction_id, &file_name, &mime, &bytes)
         })
         .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Attachment file names are sha256 hex digests — reject anything else so a
@@ -756,6 +802,19 @@ pub async fn convert_at(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unescape_decodes_percent_encoded_utf8() {
+        assert_eq!(unescape("receipt.jpg"), Some("receipt.jpg".to_string()));
+        assert_eq!(
+            unescape("%D1%87%D0%B5%D0%BA%2012%20%D0%BC%D0%B0%D1%8F.png"),
+            Some("чек 12 мая.png".to_string())
+        );
+        assert_eq!(unescape("100%25.jpg"), Some("100%.jpg".to_string()));
+        assert_eq!(unescape("truncated%"), None);
+        assert_eq!(unescape("%zz"), None);
+        assert_eq!(unescape("%ff%ff"), None); // invalid UTF-8
+    }
 
     #[test]
     fn attachment_hash_validation() {

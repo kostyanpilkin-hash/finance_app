@@ -168,6 +168,12 @@ const be: Locale = {
     entity: { users: "карыстальнік", accounts: "рахунак", categories: "катэгорыя", transactions: "аперацыя", attachments: "фота", goals: "мэта", reminders: "напамін", reminder_events: "напамін", audit_log: "журнал", exchange_rates: "курс", shared_settings: "налада" },
     action: { create: "створана", update: "зменена", delete: "выдалена", restore: "адноўлена", conflict_resolved: "канфлікт", merge_category: "перанос" },
     undo: "Адмяніць", txDeleted: "Аперацыя выдалена", record: "Унесці", deposit: "Адкласці",
+    err: {
+      amount: "Увядзіце суму большую за нуль", account: "Абярыце рахунак",
+      toAccount: "Абярыце рахунак атрымальніка", sameAccount: "Пераклад на той жа рахунак немагчымы",
+      category: "Абярыце катэгорыю", photoSize: "Фота больш за {{mb}} МБ — абярыце файл паменш",
+      generic: "Не атрымалася захаваць аперацыю",
+    },
     goalAccountNone: "Без прывязкі да рахунку", goalAccountHint: "Назапашана лічыцца па балансе выбранага рахунку аўтаматычна.",
     all: "Усе", yes: "Так", no: "Не",
     field: {

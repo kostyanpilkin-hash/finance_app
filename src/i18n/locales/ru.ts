@@ -166,6 +166,12 @@ const ru = {
     entity: { users: "пользователь", accounts: "счёт", categories: "категория", transactions: "операция", attachments: "фото", goals: "цель", reminders: "напоминание", reminder_events: "напоминание", audit_log: "журнал", exchange_rates: "курс", shared_settings: "настройка" },
     action: { create: "создано", update: "изменено", delete: "удалено", restore: "восстановлено", conflict_resolved: "конфликт", merge_category: "перенос" },
     undo: "Отменить", txDeleted: "Операция удалена", record: "Внести", deposit: "Отложить",
+    err: {
+      amount: "Введите сумму больше нуля", account: "Выберите счёт",
+      toAccount: "Выберите счёт получателя", sameAccount: "Перевод на тот же счёт невозможен",
+      category: "Выберите категорию", photoSize: "Фото больше {{mb}} МБ — выберите файл поменьше",
+      generic: "Не удалось сохранить операцию",
+    },
     goalAccountNone: "Без привязки к счёту", goalAccountHint: "Накоплено считается по балансу выбранного счёта автоматически.",
     all: "Все", yes: "Да", no: "Нет",
     field: {
