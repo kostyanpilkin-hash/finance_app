@@ -2,23 +2,42 @@
 //! an old client pushing a row without the v3 columns must not wipe them.
 
 use axum::body::{to_bytes, Body};
+use axum::extract::connect_info::MockConnectInfo;
 use axum::http::{Request, StatusCode};
-use finance_api::{router, ApiState};
+use finance_api::{router, ApiState, PairingHub};
 use finance_storage::db as dbm;
 use finance_storage::migrations::SCHEMA_VERSION;
 use finance_storage::{repos, Actor, Entity, Source};
 use serde_json::{json, Value};
+use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use tower::ServiceExt;
 
 // Key store and tests share the process — install once.
 static INIT: Mutex<()> = Mutex::new(());
 
+/// All test traffic pretends to come from a LAN peer.
+fn lan_req(req: Request<Body>) -> Request<Body> {
+    let mut req = req;
+    req.extensions_mut()
+        .insert(MockConnectInfo(SocketAddr::from((
+            Ipv4Addr::new(192, 168, 1, 50),
+            40000,
+        ))));
+    req
+}
+
 fn app() -> (axum::Router, Arc<dbm::Db>) {
     let _g = INIT.lock().unwrap();
     finance_storage::secrets::install_key_store(|_| Ok(Some(vec![7u8; 32])), |_, _| Ok(()));
     let db = Arc::new(dbm::Db::open_memory(Some(&[7u8; 32])).unwrap());
-    (router(ApiState { db: db.clone() }), db)
+    (
+        router(ApiState {
+            db: db.clone(),
+            hub: Arc::new(PairingHub::new()),
+        }),
+        db,
+    )
 }
 
 fn hex(b: &[u8]) -> String {
@@ -58,13 +77,13 @@ fn seed_account(db: &dbm::Db) -> Value {
 
 async fn post_push(app: axum::Router, body: Value) -> (StatusCode, Value) {
     let resp = app
-        .oneshot(
+        .oneshot(lan_req(
             Request::post("/api/v1/push")
                 .header("authorization", "Bearer tok")
                 .header("content-type", "application/json")
                 .body(Body::from(body.to_string()))
                 .unwrap(),
-        )
+        ))
         .await
         .unwrap();
     let status = resp.status();
@@ -133,7 +152,9 @@ async fn push_schema_gate() {
 async fn hello_reports_schema_version() {
     let (app, _db) = app();
     let resp = app
-        .oneshot(Request::get("/api/v1/hello").body(Body::empty()).unwrap())
+        .oneshot(lan_req(
+            Request::get("/api/v1/hello").body(Body::empty()).unwrap(),
+        ))
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);

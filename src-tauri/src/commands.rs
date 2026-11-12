@@ -439,8 +439,17 @@ pub fn attachment_add(
         .map_err(|e| e.to_string())
 }
 
+/// Attachment file names are sha256 hex digests — reject anything else so a
+/// crafted name can't wander the filesystem under the asset protocol.
+pub(crate) fn valid_attachment_hash(sha256: &str) -> bool {
+    sha256.len() == 64 && sha256.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
 #[tauri::command]
 pub fn attachment_path(state: State<AppState>, sha256: String) -> Result<String, String> {
+    if !valid_attachment_hash(&sha256) {
+        return Err("invalid attachment id".into());
+    }
     let p = state.db.attachments_dir.join(&sha256);
     if p.exists() {
         Ok(p.to_string_lossy().into_owned())
@@ -508,8 +517,46 @@ pub fn tg_pair_code(state: State<AppState>, user_id: String) -> Result<String, S
 // ---------- LAN sync ----------
 
 #[tauri::command]
-pub fn device_pair_code(state: State<AppState>, user_id: String) -> Result<String, String> {
-    crate::sync::pair_code(&state, &user_id)
+pub fn device_pair_code<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    user_id: String,
+) -> Result<String, String> {
+    crate::sync::pair_code(&app, &state, &user_id)
+}
+
+/// The pairing_requests payload for a given hub (None = client mode,
+/// locked/error screens). Split out so it can be tested without an AppHandle.
+pub(crate) fn pairing_report(hub: Option<&finance_api::PairingHub>) -> Value {
+    match hub {
+        Some(hub) => {
+            let pending = hub.pending();
+            json!({
+                "requests": pending,
+                "locked": hub.locked(),
+                "failures": hub.failures(),
+            })
+        }
+        None => json!({"requests": [], "locked": false, "failures": 0}),
+    }
+}
+
+/// Pending pairing requests for the host UI.
+#[tauri::command]
+pub fn pairing_requests<R: tauri::Runtime>(app: AppHandle<R>) -> Value {
+    pairing_report(crate::sync::hub(&app).as_deref())
+}
+
+#[tauri::command]
+pub fn pairing_decide<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    request_id: String,
+    allow: bool,
+) -> Result<(), String> {
+    let hub = crate::sync::hub(&app).ok_or("pairing unavailable")?;
+    hub.decide(&state.db, &request_id, allow)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -704,4 +751,48 @@ pub async fn convert_at(
         .db
         .with_conn(|c| repos::convert_minor_at(c, amount_minor, &from, &to, &date))
         .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn attachment_hash_validation() {
+        let good = "a".repeat(64);
+        assert!(valid_attachment_hash(&good));
+        assert!(valid_attachment_hash(&("Ab0123".repeat(10) + "abcd")));
+        for bad in [
+            "",
+            &"a".repeat(63),
+            &"a".repeat(65),
+            "../etc/passwd",
+            "not-hex!",
+            "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+        ] {
+            assert!(!valid_attachment_hash(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn asset_scope_is_limited_to_attachments() {
+        let conf: Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let scope = &conf["app"]["security"]["assetProtocol"]["scope"];
+        assert_eq!(scope["allow"], json!(["$APPDATA/attachments/**"]));
+        let deny: Vec<&str> = scope["deny"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        for expected in [
+            "$APPDATA/*.db",
+            "$APPDATA/*.db-*",
+            "$APPDATA/*.restore*",
+            "$APPDATA/backups/**",
+            "$APPDATA/logs/**",
+        ] {
+            assert!(deny.contains(&expected), "missing deny {expected}");
+        }
+    }
 }

@@ -71,6 +71,8 @@ pub fn run() {
             commands::tg_status,
             commands::tg_pair_code,
             commands::device_pair_code,
+            commands::pairing_requests,
+            commands::pairing_decide,
             commands::pair_to_host,
             commands::sync_status,
             commands::discover_hosts,

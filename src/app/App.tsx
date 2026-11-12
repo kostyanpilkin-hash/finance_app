@@ -12,6 +12,7 @@ import { DbUnlock } from "@/components/DbUnlock";
 import { DbError } from "@/components/DbError";
 import { ErrorBoundary, PageCrash } from "@/components/ErrorBoundary";
 import { UpdateNotifier } from "@/components/UpdateNotifier";
+import { PairingPrompt } from "@/components/PairingPrompt";
 import { Toaster } from "@/components/ui/toaster";
 import { PAGES, type PageId } from "./pages";
 
@@ -142,6 +143,7 @@ export default function App() {
         </Suspense>
       </main>
       <UpdateNotifier />
+      <PairingPrompt />
       <Toaster />
     </div>
   );

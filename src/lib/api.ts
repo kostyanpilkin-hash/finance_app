@@ -102,6 +102,14 @@ export const api = {
   devicePairCode: (userId: string) => invoke<string>("device_pair_code", { userId }),
   pairToHost: (hostUrl: string, code: string, name: string) =>
     invoke<void>("pair_to_host", { hostUrl, code, name }),
+  pairingRequests: () =>
+    invoke<{
+      requests: { id: string; userId: string; name: string; platform: string; ip: string; createdAt: string }[];
+      locked: boolean;
+      failures: number;
+    }>("pairing_requests"),
+  pairingDecide: (requestId: string, allow: boolean) =>
+    invoke<void>("pairing_decide", { requestId, allow }),
   discoverHosts: () => invoke<{ name: string; host: string; url: string }[]>("discover_hosts"),
   hostAddresses: () => invoke<string[]>("host_addresses"),
   conflictList: () => invoke<{ id: string; entity: string; entityId: string; local: string; server: string }[]>("conflict_list"),

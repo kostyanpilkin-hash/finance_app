@@ -30,3 +30,28 @@ export function syncErrorText(t: TFunction, e: SyncLastError | string | null | u
   const message = typeof e === "string" ? e : e.message;
   return t("ui.syncError", { message: message ?? code });
 }
+
+/**
+ * Localized text for a pairing error (pair_to_host / join_host). The backend
+ * returns short codes like "bad_code:3" or "pairing_locked"; anything
+ * unrecognised is shown raw.
+ */
+export function pairErrorText(t: TFunction, err: string): string {
+  if (err.startsWith("bad_code:")) {
+    const left = err.slice("bad_code:".length);
+    return t("pairing.badCode", { left });
+  }
+  if (err.includes("client_outdated") || err.includes("host_outdated")) {
+    return syncErrorText(t, err) ?? err;
+  }
+  const key = (
+    {
+      pairing_locked: "pairing.lockedClient",
+      pair_denied: "pairing.denied",
+      pair_expired: "pairing.expired",
+      pair_timeout: "pairing.expired",
+      not_lan: "pairing.notLan",
+    } as Record<string, string>
+  )[err];
+  return key ? t(key) : err;
+}

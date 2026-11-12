@@ -70,7 +70,50 @@ pub fn migrate_device_token(state: &AppState) {
     }
 }
 
+/// RFC1918 only: loopback, link-local, unspecified and public/CGNAT
+/// addresses can never host the sync API. Sorted for stable UI/tests.
+pub(crate) fn lan_ipv4s(
+    all: impl IntoIterator<Item = std::net::Ipv4Addr>,
+) -> Vec<std::net::Ipv4Addr> {
+    let mut ips: Vec<std::net::Ipv4Addr> = all.into_iter().filter(|ip| ip.is_private()).collect();
+    ips.sort();
+    ips.dedup();
+    ips
+}
+
+/// All IPv4 addresses currently assigned to local interfaces.
+fn current_ipv4s() -> Vec<std::net::Ipv4Addr> {
+    let mut ips: Vec<std::net::Ipv4Addr> = Vec::new();
+    if let Ok(std::net::IpAddr::V4(ip)) = local_ip_address::local_ip() {
+        ips.push(ip);
+    }
+    if let Ok(ifas) = local_ip_address::list_afinet_netifas() {
+        for (_, addr) in ifas {
+            if let std::net::IpAddr::V4(ip) = addr {
+                ips.push(ip);
+            }
+        }
+    }
+    ips
+}
+
+/// The pairing hub shared by the host API server and the pairing commands.
+/// Managed as `Arc<PairingHub>` — every lookup must go through `hub()`; the
+/// plain `PairingHub` type is never registered.
+pub(crate) fn manage_hub<R: tauri::Runtime>(app: &AppHandle<R>) -> Arc<finance_api::PairingHub> {
+    let hub = Arc::new(finance_api::PairingHub::new());
+    app.manage(hub.clone());
+    hub
+}
+
+pub(crate) fn hub<R: tauri::Runtime>(app: &AppHandle<R>) -> Option<Arc<finance_api::PairingHub>> {
+    app.try_state::<Arc<finance_api::PairingHub>>()
+        .map(|h| h.inner().clone())
+}
+
 /// Start the host HTTP server (if mode == "host") + mDNS announcement.
+/// Binds one listener per private IPv4 — never 0.0.0.0 — and re-reads the
+/// interface list every 30 s so network changes pick up/drop listeners.
 pub fn start_host(app: &AppHandle) {
     let state = app.state::<AppState>();
     if state.db.mode != "host" {
@@ -78,9 +121,46 @@ pub fn start_host(app: &AppHandle) {
     }
     announce_mdns(&state.db.instance_id);
     let db = Arc::new(clone_db(&state.db));
-    let addr = std::net::SocketAddr::from(([0, 0, 0, 0], API_PORT));
+    let hub = manage_hub(app);
     tauri::async_runtime::spawn(async move {
-        let _ = finance_api::serve(finance_api::ApiState { db }, addr).await;
+        let mut listeners: std::collections::HashMap<
+            std::net::Ipv4Addr,
+            tauri::async_runtime::JoinHandle<()>,
+        > = std::collections::HashMap::new();
+        loop {
+            let want = lan_ipv4s(current_ipv4s());
+            // Drop listeners whose address vanished.
+            listeners.retain(|ip, h| {
+                if want.contains(ip) {
+                    true
+                } else {
+                    h.abort();
+                    false
+                }
+            });
+            for ip in want {
+                let alive = listeners.get(&ip).is_some_and(|h| !h.inner().is_finished());
+                if alive {
+                    continue;
+                }
+                let api_state = finance_api::ApiState {
+                    db: db.clone(),
+                    hub: hub.clone(),
+                };
+                let handle = tauri::async_runtime::spawn(async move {
+                    match tokio::net::TcpListener::bind(std::net::SocketAddr::from((ip, API_PORT)))
+                        .await
+                    {
+                        Ok(l) => {
+                            let _ = finance_api::serve(api_state, l).await;
+                        }
+                        Err(e) => eprintln!("sync: bind {ip}:{API_PORT} failed: {e}"),
+                    }
+                });
+                listeners.insert(ip, handle);
+            }
+            tokio::time::sleep(Duration::from_secs(30)).await;
+        }
     });
 }
 
@@ -340,36 +420,12 @@ async fn sync_once_inner(state: &AppState) -> Result<bool, String> {
     Ok(!ops.is_empty() || !body["changes"].as_array().unwrap_or(&vec![]).is_empty())
 }
 
-/// Candidate URLs clients can reach this host at — shown in Settings so the
-/// user doesn't have to run ipconfig/ifconfig. LAN-looking ranges first.
+/// Candidate URLs clients can reach this host at — the same private
+/// addresses the API binds to, shown in Settings so the user doesn't have to
+/// run ipconfig/ifconfig.
 pub fn host_urls() -> Vec<String> {
-    use std::net::Ipv4Addr;
-    let mut ips: Vec<Ipv4Addr> = Vec::new();
-    let mut push = |ip: Ipv4Addr| {
-        if !ips.contains(&ip) {
-            ips.push(ip);
-        }
-    };
-    if let Ok(std::net::IpAddr::V4(ip)) = local_ip_address::local_ip() {
-        push(ip);
-    }
-    if let Ok(ifas) = local_ip_address::list_afinet_netifas() {
-        for (_, addr) in ifas {
-            if let std::net::IpAddr::V4(ip) = addr {
-                if ip.is_loopback() || ip.is_link_local() || ip.is_unspecified() {
-                    continue;
-                }
-                push(ip);
-            }
-        }
-    }
-    ips.sort_by_key(|ip| match ip.octets() {
-        [192, 168, ..] => 0,
-        [10, ..] => 1,
-        [172, b, ..] if (16..=31).contains(&b) => 2,
-        _ => 3,
-    });
-    ips.into_iter()
+    lan_ipv4s(current_ipv4s())
+        .into_iter()
         .map(|ip| format!("http://{ip}:{API_PORT}"))
         .collect()
 }
@@ -377,7 +433,15 @@ pub fn host_urls() -> Vec<String> {
 // ---------- commands ----------
 
 /// Host: create a 6-digit pairing code for a device (valid 10 min).
-pub fn pair_code(state: &AppState, user_id: &str) -> Result<String, String> {
+/// Generating a fresh code also lifts the failed-attempts lock.
+pub fn pair_code<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    state: &AppState,
+    user_id: &str,
+) -> Result<String, String> {
+    if let Some(hub) = hub(app) {
+        hub.reset_failures();
+    }
     let code: String = (0..6)
         .map(|_| (uuid::Uuid::new_v4().as_bytes()[0] % 10).to_string())
         .collect();
@@ -392,6 +456,97 @@ pub fn pair_code(state: &AppState, user_id: &str) -> Result<String, String> {
     Ok(code)
 }
 
+/// What a successful pairing hands back to the client.
+#[derive(Debug)]
+pub struct PairGrant {
+    pub token: String,
+    pub user_id: String,
+    #[allow(dead_code)]
+    pub device_id: String,
+}
+
+/// Pure network half of pair_client: POST the code, then poll the status
+/// endpoint until the host user decides. No db, no keyring — testable
+/// against a bare finance_api server.
+pub(crate) async fn request_pairing(
+    http: &reqwest::Client,
+    host: &str,
+    code: &str,
+    name: &str,
+    poll: Duration,
+    timeout: Duration,
+) -> Result<PairGrant, String> {
+    let resp = http
+        .post(format!("{host}/api/v1/pair"))
+        .json(&json!({
+            "code": code,
+            "name": name,
+            "platform": std::env::consts::OS,
+            "schemaVersion": finance_storage::migrations::SCHEMA_VERSION,
+        }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    let status = resp.status();
+    let body: Value = resp.json().await.unwrap_or(json!({}));
+    if status.as_u16() == 202 {
+        let request_id = body["requestId"].as_str().ok_or("pairing failed")?;
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            tokio::time::sleep(poll).await;
+            let st_resp = http
+                .get(format!("{host}/api/v1/pair/status"))
+                .query(&[("requestId", request_id)])
+                .send()
+                .await
+                .map_err(|e| e.to_string())?;
+            if st_resp.status() == reqwest::StatusCode::NOT_FOUND {
+                return Err("pair_expired".into());
+            }
+            let st: Value = st_resp.json().await.unwrap_or(json!({}));
+            match st["status"].as_str() {
+                Some("pending") => {}
+                Some("approved") => {
+                    return Ok(PairGrant {
+                        token: st["token"].as_str().unwrap_or("").to_string(),
+                        user_id: st["userId"].as_str().unwrap_or("").to_string(),
+                        device_id: st["deviceId"].as_str().unwrap_or("").to_string(),
+                    });
+                }
+                Some("denied") => return Err("pair_denied".into()),
+                Some("expired") | None => return Err("pair_expired".into()),
+                Some(_) => return Err("pair_expired".into()),
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err("pair_timeout".into());
+            }
+        }
+    }
+    if status.as_u16() == 409 {
+        return Err(body["error"]
+            .as_str()
+            .unwrap_or("schema_mismatch")
+            .to_string());
+    }
+    if status.as_u16() == 429 {
+        return Err("pairing_locked".into());
+    }
+    if status == reqwest::StatusCode::FORBIDDEN {
+        if body["error"] == "bad_code" {
+            return Err(format!(
+                "bad_code:{}",
+                body["attemptsLeft"].as_u64().unwrap_or(0)
+            ));
+        }
+        return Err(body["error"].as_str().unwrap_or("forbidden").to_string());
+    }
+    Err(format!(
+        "host returned {}: {}",
+        status,
+        body["error"].as_str().unwrap_or("")
+    ))
+}
+
 /// Client: pair with a host using URL + code → store token + switch mode.
 /// Returns the host-side user id this device paired as.
 pub async fn pair_client(
@@ -401,19 +556,18 @@ pub async fn pair_client(
     name: &str,
 ) -> Result<String, String> {
     let http = reqwest::Client::new();
-    let resp: Value = http
-        .post(format!("{host}/api/v1/pair"))
-        .json(&json!({"code": code, "name": name, "platform": std::env::consts::OS}))
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .json()
-        .await
-        .map_err(|e| e.to_string())?;
-    let token = resp["token"].as_str().ok_or("pairing failed")?;
+    let grant = request_pairing(
+        &http,
+        host,
+        code,
+        name,
+        Duration::from_secs(2),
+        Duration::from_secs(180),
+    )
+    .await?;
     // The device token is a secret — keyring only, never a settings row.
-    save_device_token(token)?;
-    let user_id = resp["userId"].as_str().unwrap_or("").to_string();
+    save_device_token(&grant.token)?;
+    let user_id = grant.user_id;
     state
         .db
         .with_conn(|c| {
@@ -560,5 +714,164 @@ mod tests {
         // An empty value migrates nothing either.
         repos::setting_set(&c, "device_token", "").unwrap();
         assert!(!migrate_legacy_token(&c, |_| Ok(())).unwrap());
+    }
+
+    /// Regression for the hub-wiring bug: the report a command returns must
+    /// reflect a pending request on the hub it was built from. (tauri::test's
+    /// MockRuntime crashes the test binary on Windows — STATUS_ENTRYPOINT_NOT_FOUND
+    /// — so the report itself is tested here without an AppHandle.)
+    #[test]
+    fn pairing_report_reflects_pending() {
+        let hub = finance_api::PairingHub::new();
+        let id = hub.new_request("u1", "dev", "test", "192.168.1.9".into());
+        let report = crate::commands::pairing_report(Some(&hub));
+        assert_eq!(report["requests"][0]["id"], id);
+        assert_eq!(report["requests"][0]["name"], "dev");
+        assert_eq!(report["requests"][0]["ip"], "192.168.1.9");
+        assert_eq!(report["locked"], false);
+        assert_eq!(report["failures"], 0);
+        assert_eq!(
+            crate::commands::pairing_report(None),
+            json!({"requests": [], "locked": false, "failures": 0})
+        );
+    }
+
+    #[test]
+    fn lan_ipv4s_keeps_only_rfc1918() {
+        use std::net::Ipv4Addr;
+        let v4 = |a, b, c, d| Ipv4Addr::new(a, b, c, d);
+        let got = lan_ipv4s(vec![
+            v4(192, 168, 1, 5),
+            v4(10, 0, 0, 1),
+            v4(8, 8, 8, 8),     // public
+            v4(127, 0, 0, 1),   // loopback
+            v4(169, 254, 1, 1), // link-local
+            v4(100, 64, 0, 1),  // CGNAT
+            v4(0, 0, 0, 0),     // unspecified
+            v4(192, 168, 1, 5), // duplicate
+        ]);
+        assert_eq!(got, vec![v4(10, 0, 0, 1), v4(192, 168, 1, 5)]);
+    }
+
+    /// End-to-end: a real finance_api server on loopback, a code in an
+    /// in-memory db, and request_pairing polling until the hub decides.
+    #[test]
+    fn request_pairing_e2e() {
+        tauri::async_runtime::block_on(async {
+            finance_storage::secrets::install_key_store(|_| Ok(Some(vec![7u8; 32])), |_, _| Ok(()));
+            let db = Arc::new(dbm::Db::open_memory(Some(&[7u8; 32])).unwrap());
+            let hub = Arc::new(finance_api::PairingHub::new());
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            let state = finance_api::ApiState {
+                db: db.clone(),
+                hub: hub.clone(),
+            };
+            tauri::async_runtime::spawn(async move {
+                let _ = finance_api::serve(state, listener).await;
+            });
+
+            let exp = {
+                let t: chrono::DateTime<chrono::Utc> =
+                    (std::time::SystemTime::now() + Duration::from_secs(600)).into();
+                t.to_rfc3339()
+            };
+            db.with_conn(|c| {
+                c.execute(
+                    "INSERT INTO users (id, name, created_at, updated_at) VALUES ('u1','Иван',?1,?1)",
+                    [dbm::now_iso()],
+                )?;
+                c.execute(
+                    "INSERT INTO device_pair_codes (code, user_id, expires_at) VALUES ('424242','u1',?1),('555555','u1',?1)",
+                    [&exp],
+                )?;
+                Ok(())
+            })
+            .unwrap();
+
+            let http = reqwest::Client::new();
+            let host = format!("http://{addr}");
+
+            // Approver: grants the request named dev-ok.
+            {
+                let hub = hub.clone();
+                let db = db.clone();
+                tauri::async_runtime::spawn(async move {
+                    for _ in 0..200 {
+                        if let Some(p) = hub.pending().iter().find(|p| p.name == "dev-ok") {
+                            hub.decide(&db, &p.id, true).unwrap();
+                            return;
+                        }
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                    }
+                });
+            }
+            let grant = request_pairing(
+                &http,
+                &host,
+                "424242",
+                "dev-ok",
+                Duration::from_millis(100),
+                Duration::from_secs(10),
+            )
+            .await
+            .unwrap();
+            assert_eq!(grant.user_id, "u1");
+            let hash = {
+                use sha2::Digest;
+                sha2::Sha256::digest(grant.token.as_bytes())
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect::<String>()
+            };
+            let stored: String = db
+                .with_conn(|c| {
+                    Ok(c.query_row(
+                        "SELECT token_hash FROM devices WHERE id=?1",
+                        [&grant.device_id],
+                        |r| r.get(0),
+                    )?)
+                })
+                .unwrap();
+            assert_eq!(stored, hash);
+
+            // Denier: rejects the request named dev-no.
+            {
+                let hub = hub.clone();
+                let db = db.clone();
+                tauri::async_runtime::spawn(async move {
+                    for _ in 0..200 {
+                        if let Some(p) = hub.pending().iter().find(|p| p.name == "dev-no") {
+                            hub.decide(&db, &p.id, false).unwrap();
+                            return;
+                        }
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                    }
+                });
+            }
+            let err = request_pairing(
+                &http,
+                &host,
+                "555555",
+                "dev-no",
+                Duration::from_millis(100),
+                Duration::from_secs(10),
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(err, "pair_denied");
+
+            let err = request_pairing(
+                &http,
+                &host,
+                "000000",
+                "dev-x",
+                Duration::from_millis(100),
+                Duration::from_secs(10),
+            )
+            .await
+            .unwrap_err();
+            assert!(err.starts_with("bad_code:"), "{err}");
+        });
     }
 }

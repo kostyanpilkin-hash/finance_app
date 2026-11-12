@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { LANGUAGES } from "@/i18n";
 import { api } from "@/lib/api";
-import { syncErrorText } from "@/lib/syncError";
+import { pairErrorText, syncErrorText } from "@/lib/syncError";
 import { THEMES, type ThemeKind } from "@/lib/themes";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -264,6 +264,8 @@ function SyncSection() {
   const [name, setName] = useState("");
   const [pairCode, setPairCode] = useState<Record<string, string>>({});
   const addresses = useQuery({ queryKey: ["host-addresses"], queryFn: api.hostAddresses });
+  const pairing = useQuery({ queryKey: ["pairing-requests"], queryFn: api.pairingRequests, refetchInterval: 3000 });
+  const pairingLocked = pairing.data?.locked === true;
   const queryClient = useQueryClient();
   const pair = useMutation({
     mutationFn: () => api.pairToHost(hostUrl, code, name),
@@ -289,13 +291,15 @@ function SyncSection() {
         {(users.data ?? []).map((u) => (
           <div key={u.id} className="flex items-center gap-3">
             <span className="w-32">{u.name}</span>
-            {pairCode[u.id] ? (
+            {pairCode[u.id] && !pairingLocked ? (
               <code className="rounded bg-muted px-2 py-1 text-lg font-semibold tracking-widest">{pairCode[u.id]}</code>
             ) : (
               <Button size="sm" variant="outline" onClick={() => makeCode.mutate(u.id)}>{t("ui.pairDevice")}</Button>
             )}
           </div>
         ))}
+        <p className="mt-1 text-xs text-muted-foreground">{t("pairing.hint")}</p>
+        {pairingLocked && <p className="mt-1 text-xs text-destructive">{t("pairing.locked")}</p>}
         <p className="mt-1 text-xs text-muted-foreground">
           {t("ui.syncStatus")}: {s?.pairedDevices ?? 0} · {s?.pendingOps ?? 0} {t("ui.pendingOps")}
         </p>
@@ -318,7 +322,8 @@ function SyncSection() {
           }}>{t("ui.findHost")}</Button>
           <Button size="sm" onClick={() => pair.mutate()} disabled={pair.isPending}>{t("ui.connect")}</Button>
         </div>
-        {pair.isError && <p className="mt-1 text-destructive">{String(pair.error)}</p>}
+        {pair.isPending && <p className="mt-1 text-xs text-muted-foreground">{t("pairing.waiting")}</p>}
+        {pair.isError && <p className="mt-1 text-destructive">{pairErrorText(t, String(pair.error))}</p>}
         {pair.isSuccess && <p className="mt-1 text-xs text-muted-foreground">{t("ui.restoreRestart")}</p>}
         {s?.hostUrl && <p className="mt-1 text-xs text-muted-foreground">{s.hostUrl} · seq {s.lastSeq}</p>}
       </div>
