@@ -309,7 +309,7 @@ export function AnalyticsPage() {
         </div>
         <div className={card}>
           <div className="mb-2 text-sm font-medium">{t("ui.byCategory")}</div>
-          <DonutChart data={byCategory} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.other")} emptyLabel={t("ui.empty")} />
+          <DonutChart data={byCategory} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.rest")} emptyLabel={t("ui.empty")} />
         </div>
       </div>
 
@@ -334,11 +334,11 @@ export function AnalyticsPage() {
       <div className="grid gap-4 sm:grid-cols-2">
         <div className={card}>
           <div className="mb-2 text-sm font-medium">{t("ui.byPeopleExpense")}</div>
-          <DonutChart data={byPeople.expense} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.other")} emptyLabel={t("ui.empty")} />
+          <DonutChart data={byPeople.expense} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.rest")} emptyLabel={t("ui.empty")} />
         </div>
         <div className={card}>
           <div className="mb-2 text-sm font-medium">{t("ui.byPeopleIncome")}</div>
-          <DonutChart data={byPeople.income} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.other")} emptyLabel={t("ui.empty")} />
+          <DonutChart data={byPeople.income} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.rest")} emptyLabel={t("ui.empty")} />
         </div>
       </div>
 

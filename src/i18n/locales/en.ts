@@ -151,7 +151,7 @@ const en: Locale = {
     variantA: "This device", variantB: "Host", keepA: "Keep mine", keepB: "Keep host", findHost: "Find host",
     period: { day: "Day", week: "Week", month: "Month", custom: "Period", days30: "30 days" },
     vsPrev: "vs previous", net: "Net (income − expense)", byDay: "By day",
-    total: "Total", other: "Other", noCategory: "No category", noAuthor: "No author",
+    total: "Total", other: "Other", rest: "Everything else", noCategory: "No category", noAuthor: "No author",
     incomeByCat: "Income by category", expenseByPeople: "Expenses by person",
     incomeByPeople: "Income by person",
     avgDaily: "Average daily spend", forecast: "Month-end forecast",

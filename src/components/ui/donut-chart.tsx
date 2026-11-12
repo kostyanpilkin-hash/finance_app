@@ -70,10 +70,17 @@ function sectorPath(rOut: number, rIn: number, a0: number, a1: number): string {
 /** Segments below MIN_SHARE merge into "other"; duplicate fills are re-hued. */
 function useSlices(data: DonutItem[]) {
   return useMemo(() => {
-    const total = data.reduce((s, d) => s + d.value, 0);
+    const byName = new Map<string, DonutItem>();
+    for (const d of data) {
+      const g = byName.get(d.name);
+      if (g) g.value += d.value;
+      else byName.set(d.name, { ...d });
+    }
+    const items = [...byName.values()].sort((a, b) => b.value - a.value);
+    const total = items.reduce((s, d) => s + d.value, 0);
     if (total <= 0) return { slices: [] as Slice[], total };
-    const big = data.filter((d) => d.value / total >= MIN_SHARE || data.length <= 6);
-    const small = data.filter((d) => !big.includes(d));
+    const big = items.filter((d) => d.value / total >= MIN_SHARE || items.length <= 6);
+    const small = items.filter((d) => !big.includes(d));
     const fracs: Slice[] = big.map((d) => ({ ...d, start: 0, frac: d.value / total }));
     if (small.length > 0) {
       const v = small.reduce((s, d) => s + d.value, 0);

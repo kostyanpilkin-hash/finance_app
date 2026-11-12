@@ -149,7 +149,7 @@ const ru = {
     variantA: "Это устройство", variantB: "Хост", keepA: "Оставить моё", keepB: "Оставить с хоста", findHost: "Найти хост",
     period: { day: "День", week: "Неделя", month: "Месяц", custom: "Период", days30: "30 дней" },
     vsPrev: "к прошлому периоду", net: "Итог (доход − расход)", byDay: "По дням",
-    total: "Итого", other: "Прочее", noCategory: "Без категории", noAuthor: "Без автора",
+    total: "Итого", other: "Прочее", rest: "Остальное", noCategory: "Без категории", noAuthor: "Без автора",
     incomeByCat: "Доходы по категориям", expenseByPeople: "Расходы по людям",
     incomeByPeople: "Доходы по людям",
     avgDaily: "Средний расход в день", forecast: "Прогноз на конец месяца",

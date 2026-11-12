@@ -151,7 +151,7 @@ const be: Locale = {
     variantA: "Гэтая прылада", variantB: "Хост", keepA: "Пакінуць маё", keepB: "Пакінуць з хаста", findHost: "Знайсці хост",
     period: { day: "Дзень", week: "Тыдзень", month: "Месяц", custom: "Перыяд", days30: "30 дзён" },
     vsPrev: "да мінулага перыяду", net: "Вынік (даход − выдатак)", byDay: "Па днях",
-    total: "Усяго", other: "Іншае", noCategory: "Без катэгорыі", noAuthor: "Без autora",
+    total: "Усяго", other: "Іншае", rest: "Астатняе", noCategory: "Без катэгорыі", noAuthor: "Без autora",
     incomeByCat: "Даходы па катэгорыях", expenseByPeople: "Выдаткі па людзях",
     incomeByPeople: "Даходы па людзях",
     avgDaily: "Сярэдні выдатак у дзень", forecast: "Прагноз на канец месяца",

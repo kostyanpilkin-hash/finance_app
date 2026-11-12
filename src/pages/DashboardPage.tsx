@@ -166,24 +166,24 @@ export function DashboardPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className={card}>
               <div className="mb-2 text-sm font-medium">{t("ui.pieMonth")}</div>
-              <DonutChart data={catSlices("expense")} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.other")} />
+              <DonutChart data={catSlices("expense")} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.rest")} />
             </div>
             {chartOn("dash_chart_income_cat") && (
               <div className={card}>
                 <div className="mb-2 text-sm font-medium">{t("ui.incomeByCat")}</div>
-                <DonutChart data={catSlices("income")} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.other")} />
+                <DonutChart data={catSlices("income")} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.rest")} />
               </div>
             )}
             {chartOn("dash_chart_expense_people") && (
               <div className={card}>
                 <div className="mb-2 text-sm font-medium">{t("ui.expenseByPeople")}</div>
-                <DonutChart data={peopleSlices("expense")} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.other")} />
+                <DonutChart data={peopleSlices("expense")} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.rest")} />
               </div>
             )}
             {chartOn("dash_chart_income_people") && (
               <div className={card}>
                 <div className="mb-2 text-sm font-medium">{t("ui.incomeByPeople")}</div>
-                <DonutChart data={peopleSlices("income")} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.other")} />
+                <DonutChart data={peopleSlices("income")} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.rest")} />
               </div>
             )}
           </div>
