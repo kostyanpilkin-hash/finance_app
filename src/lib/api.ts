@@ -108,9 +108,13 @@ export const api = {
   conflictResolve: (conflictId: string, winner: "local" | "server") =>
     invoke<void>("conflict_resolve", { conflictId, winner }),
   syncStatus: () =>
-    invoke<{ mode: string; hostUrl?: string; lastSeq?: string; pendingOps: number; pairedDevices: number }>("sync_status"),
+    invoke<{
+      mode: string; hostUrl?: string; lastSeq?: string; pendingOps: number; pairedDevices: number;
+      lastError?: { code: string; hostSchema?: number; clientSchema?: number; message?: string } | null;
+    }>("sync_status"),
   joinHost: (hostUrl: string, code: string, name: string) =>
     invoke<void>("join_host", { hostUrl, code, name }),
-  dbStatus: () => invoke<"ready" | "locked">("db_status"),
+  dbStatus: () => invoke<"ready" | "locked" | "error">("db_status"),
+  startupError: () => invoke<{ message: string; dataDir: string } | null>("startup_error"),
   unlockDb: (recovery: string) => invoke<void>("unlock_db", { recovery }),
 };

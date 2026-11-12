@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 /// Shown when the db file exists but its key is missing from the OS keyring
 /// (fresh OS, new machine, migrated backup). The user types the recovery key
 /// shown at the original install; on success the app relaunches unlocked.
-export function DbUnlock() {
+export function DbUnlock({ onBack }: { onBack?: () => void }) {
   const { t } = useTranslation();
   const [key, setKey] = useState("");
 
@@ -42,6 +42,11 @@ export function DbUnlock() {
           {unlock.isSuccess ? t("dblocked.restarting") : unlock.isPending ? t("dblocked.checking") : t("ui.unlock")}
         </Button>
         {unlock.isError && <p className="mt-2 text-sm text-destructive">{t("dblocked.wrong")}</p>}
+        {onBack && (
+          <Button variant="ghost" className="mt-3 w-full" onClick={onBack}>
+            {t("onboarding.back")}
+          </Button>
+        )}
       </div>
     </div>
   );

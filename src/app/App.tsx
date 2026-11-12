@@ -9,6 +9,8 @@ import { PlaceholderPage } from "@/pages/PlaceholderPage";
 import { Onboarding } from "./Onboarding";
 import { PinLock } from "@/components/PinLock";
 import { DbUnlock } from "@/components/DbUnlock";
+import { DbError } from "@/components/DbError";
+import { ErrorBoundary, PageCrash } from "@/components/ErrorBoundary";
 import { UpdateNotifier } from "@/components/UpdateNotifier";
 import { Toaster } from "@/components/ui/toaster";
 import { PAGES, type PageId } from "./pages";
@@ -67,8 +69,22 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  if (dbStatus.data === "error") {
+    return (
+      <>
+        <DbError />
+        <UpdateNotifier />
+      </>
+    );
+  }
+
   if (dbStatus.data === "locked") {
-    return <DbUnlock />;
+    return (
+      <>
+        <DbUnlock />
+        <UpdateNotifier />
+      </>
+    );
   }
 
   if (onboarding.data && !onboarding.data.done) {
@@ -110,6 +126,7 @@ export default function App() {
             </div>
           }
         >
+        <ErrorBoundary resetKey={page} fallback={(e, reset) => <PageCrash error={e} reset={reset} />}>
         {page === "settings" ? <SettingsPage />
           : page === "dashboard" ? <DashboardPage />
           : page === "accounts" ? <AccountsPage />
@@ -121,6 +138,7 @@ export default function App() {
           : page === "reminders" ? <RemindersPage />
           : page === "goals" ? <GoalsPage />
           : <PlaceholderPage page={page} />}
+        </ErrorBoundary>
         </Suspense>
       </main>
       <UpdateNotifier />

@@ -33,6 +33,10 @@ fn install_key_store() {
     });
 }
 
+/// Managed when the db can't be opened at all — the UI shows the error screen
+/// with backup-restore and data-dir actions instead of the app.
+pub struct StartupError(pub String);
+
 pub struct AppState {
     pub db: Db,
     /// True when the db file already existed (used by onboarding wording).
@@ -56,6 +60,8 @@ pub fn init_db(app: &tauri::App) -> Result<AppState, String> {
     install_key_store();
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    // A restore staged by backup_restore is swapped in before any connection.
+    finance_storage::backup::apply_pending_restore(&dir).map_err(|e| e.to_string())?;
     let path = dir.join("finance.db");
     let existed = path.exists();
 

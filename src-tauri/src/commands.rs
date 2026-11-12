@@ -386,43 +386,27 @@ pub fn backup_create(state: State<AppState>) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn backup_list(state: State<AppState>) -> Vec<String> {
-    let dir = std::path::Path::new(&state.db.attachments_dir)
-        .join("..")
-        .join("backups");
-    let mut v: Vec<String> = std::fs::read_dir(&dir)
-        .map(|rd| {
-            rd.flatten()
-                .map(|e| e.file_name().to_string_lossy().into_owned())
-                .collect()
-        })
-        .unwrap_or_default();
-    v.sort();
-    v.reverse();
-    v
+pub fn backup_list(app: AppHandle) -> Vec<String> {
+    app.path()
+        .app_data_dir()
+        .map(|dir| finance_storage::backup::list(&dir))
+        .unwrap_or_default()
 }
 
-/// Copies a backup over the live db; the app must restart afterwards.
+/// Validates the backup and stages it as finance.db.restore; the swap happens
+/// at the next startup, so the live db is never written over. Works on the
+/// startup-error screen too (no AppState needed).
 #[tauri::command]
-pub fn backup_restore(state: State<AppState>, name: String) -> Result<(), String> {
-    if name.contains('/') || name.contains('\\') || name.contains("..") {
-        return Err("bad name".into());
-    }
-    let base = std::path::Path::new(&state.db.attachments_dir).join("..");
-    let src = base.join("backups").join(&name);
-    if !src.exists() {
-        return Err("backup not found".into());
-    }
-    let dest = base.join("finance.db");
-    state
-        .db
-        .with_conn(|c| {
-            c.execute("PRAGMA wal_checkpoint(TRUNCATE)", [])?;
-            Ok(())
-        })
-        .map_err(|e| e.to_string())?;
-    std::fs::copy(&src, &dest).map_err(|e| e.to_string())?;
-    Ok(())
+pub async fn backup_restore(app: AppHandle, name: String) -> Result<(), String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let key = finance_storage::secrets::read_key("primary")
+        .map_err(|e| e.to_string())?
+        .ok_or("database key unavailable")?;
+    tauri::async_runtime::spawn_blocking(move || {
+        finance_storage::backup::stage_restore(&dir, &name, &key).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -558,9 +542,19 @@ pub async fn join_host(
 pub fn db_status(app: AppHandle) -> &'static str {
     if app.try_state::<AppState>().is_some() {
         "ready"
+    } else if app.try_state::<crate::state::StartupError>().is_some() {
+        "error"
     } else {
         "locked"
     }
+}
+
+/// Details for the startup-error screen; works without AppState.
+#[tauri::command]
+pub fn startup_error(app: AppHandle) -> Option<Value> {
+    let e = app.try_state::<crate::state::StartupError>()?;
+    let dir = app.path().app_data_dir().ok()?;
+    Some(json!({"message": e.0, "dataDir": dir.to_string_lossy()}))
 }
 
 /// Accepts a recovery key from the lock screen, verifies it opens the db and

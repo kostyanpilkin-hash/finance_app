@@ -79,6 +79,7 @@ pub fn run() {
             commands::conflict_resolve,
             commands::join_host,
             commands::db_status,
+            commands::startup_error,
             commands::unlock_db,
         ])
         .setup(|app| {
@@ -86,13 +87,40 @@ pub fn run() {
                 Ok(s) => s,
                 Err(e) if e == "db_locked" => {
                     // Db exists but the keyring lost its key — the window shows
-                    // the recovery-key screen; no state is managed.
+                    // the recovery-key screen; no state is managed. The tray is
+                    // still needed: the close button only hides the window.
+                    tray::create(app.handle())?;
                     show_main_window(app.handle());
                     return Ok(());
                 }
-                Err(e) => panic!("failed to open the database: {e}"),
+                Err(e) => {
+                    // Corrupt db / failed migration: keep the app alive so the
+                    // UI can show the error screen (backup restore etc.) and
+                    // log the cause for support. Never log secrets.
+                    if let Ok(dir) = app.path().app_data_dir() {
+                        let logs = dir.join("logs");
+                        let _ = std::fs::create_dir_all(&logs);
+                        if let Ok(mut f) = std::fs::OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open(logs.join("startup.log"))
+                        {
+                            use std::io::Write;
+                            let _ = writeln!(
+                                f,
+                                "{} {e}",
+                                chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
+                            );
+                        }
+                    }
+                    app.manage(state::StartupError(e));
+                    tray::create(app.handle())?;
+                    show_main_window(app.handle());
+                    return Ok(());
+                }
             };
             app.manage(state);
+            sync::migrate_device_token(app.state::<state::AppState>().inner());
             tray::create(app.handle())?;
             scheduler::start(app.handle().clone());
             scheduler::start_notifications(app.handle().clone());

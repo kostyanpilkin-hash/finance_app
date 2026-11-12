@@ -142,14 +142,19 @@ fn stamp(row: &mut Value, device_id: &str) {
     map.insert("updatedByDevice".into(), json!(device_id));
 }
 
-/// INSERT OR REPLACE of a camelCase JSON row into `table`. Columns are taken
-/// from the table itself so unknown keys are ignored.
+/// UPSERT of a camelCase JSON row into `table`. Columns are taken from the
+/// table itself so unknown keys are ignored. Columns absent from the row keep
+/// their stored values (old clients pushing a partial row can't wipe newer
+/// columns); an explicit `null` clears a column.
 pub fn write_row(conn: &Connection, table: &str, row: &Value) -> Result<(), Error> {
     let stmt = conn.prepare(&format!("SELECT * FROM {table} LIMIT 0"))?;
     let cols: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
     let map = row
         .as_object()
         .ok_or_else(|| Error::Invalid("row must be object".into()))?;
+    if !map.contains_key("id") {
+        return Err(Error::Invalid("row without id".into()));
+    }
     let mut names = Vec::new();
     let mut params: Vec<rusqlite::types::Value> = Vec::new();
     for col in &cols {
@@ -160,8 +165,19 @@ pub fn write_row(conn: &Connection, table: &str, row: &Value) -> Result<(), Erro
         }
     }
     let placeholders = vec!["?"; names.len()].join(",");
+    let updates = names
+        .iter()
+        .filter(|c| c.as_str() != "id")
+        .map(|c| format!("{c}=excluded.{c}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let conflict = if updates.is_empty() {
+        "DO NOTHING".to_string()
+    } else {
+        format!("DO UPDATE SET {updates}")
+    };
     let sql = format!(
-        "INSERT OR REPLACE INTO {table} ({}) VALUES ({placeholders})",
+        "INSERT INTO {table} ({}) VALUES ({placeholders}) ON CONFLICT(id) {conflict}",
         names.join(",")
     );
     conn.execute(&sql, rusqlite::params_from_iter(params))?;

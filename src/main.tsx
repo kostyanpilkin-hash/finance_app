@@ -16,6 +16,7 @@ import "@fontsource-variable/roboto-flex";
 import "@fontsource-variable/outfit";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./app/App";
+import { ErrorBoundary, AppCrash } from "./components/ErrorBoundary";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false } },
@@ -24,7 +25,9 @@ const queryClient = new QueryClient({
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <ErrorBoundary fallback={(e) => <AppCrash error={e} />}>
+        <App />
+      </ErrorBoundary>
     </QueryClientProvider>
   </React.StrictMode>,
 );

@@ -1,6 +1,7 @@
 //! Storage layer for Finance: encrypted SQLite, migrations, repositories,
 //! the audit log and (later) the host/client sync engine.
 
+pub mod backup;
 pub mod db;
 mod error;
 pub mod export;
@@ -160,7 +161,7 @@ pub struct KeyProvision {
     pub need_recovery_input: bool,
 }
 
-fn hex(b: &[u8]) -> String {
+pub(crate) fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
@@ -434,6 +435,271 @@ mod tests {
             Ok(())
         })
         .unwrap();
+    }
+
+    /// An old-schema client pushes a partial row via /push (repos::apply with
+    /// only the columns it knows). The upsert must keep columns it didn't send.
+    #[test]
+    fn old_client_push_keeps_new_columns() {
+        let d = db();
+        d.with_conn(|c| {
+            let a = actor(&d);
+            let acc = repos::account_upsert(
+                c,
+                &d,
+                &a,
+                json!({"name":"Приорбанк","kind":"card","last4":"1234","bank":"Приорбанк","paymentSystem":"visa","currency":"BYN"}),
+            )?;
+            let goal = repos::goal_upsert(
+                c,
+                &d,
+                &a,
+                json!({"name":"Отпуск","targetMinor":100000,"accountId":acc["id"]}),
+            )?;
+            let v0 = acc["version"].as_i64().unwrap();
+
+            // Old client: row minus the v3/v4 columns, with a renamed account.
+            let mut old_acc = db::row_json(c, "accounts", acc["id"].as_str().unwrap())?.unwrap();
+            let m = old_acc.as_object_mut().unwrap();
+            m.remove("bank");
+            m.remove("paymentSystem");
+            m.insert("name".into(), json!("Приорбанк (старый клиент)"));
+            repos::apply(&d, c, &a, Entity::Accounts, models::Op::Upsert, acc["id"].as_str().unwrap(), Some(old_acc))?;
+            let row = db::row_json(c, "accounts", acc["id"].as_str().unwrap())?.unwrap();
+            assert_eq!(row["name"], "Приорбанк (старый клиент)");
+            assert_eq!(row["bank"], "Приорбанк");
+            assert_eq!(row["paymentSystem"], "visa");
+            assert!(row["version"].as_i64().unwrap() > v0);
+
+            let mut old_goal = db::row_json(c, "goals", goal["id"].as_str().unwrap())?.unwrap();
+            let m = old_goal.as_object_mut().unwrap();
+            m.remove("accountId");
+            m.insert("name".into(), json!("Отпуск в горах"));
+            repos::apply(&d, c, &a, Entity::Goals, models::Op::Upsert, goal["id"].as_str().unwrap(), Some(old_goal))?;
+            let row = db::row_json(c, "goals", goal["id"].as_str().unwrap())?.unwrap();
+            assert_eq!(row["name"], "Отпуск в горах");
+            assert_eq!(row["accountId"], acc["id"].as_str().unwrap());
+
+            // An explicit null still clears a column.
+            let mut clear = db::row_json(c, "accounts", acc["id"].as_str().unwrap())?.unwrap();
+            clear.as_object_mut().unwrap().insert("bank".into(), serde_json::Value::Null);
+            repos::apply(&d, c, &a, Entity::Accounts, models::Op::Upsert, acc["id"].as_str().unwrap(), Some(clear))?;
+            let row = db::row_json(c, "accounts", acc["id"].as_str().unwrap())?.unwrap();
+            assert!(row["bank"].is_null());
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    /// Backup → stage → apply roundtrip on an encrypted db in a temp dir.
+    #[test]
+    fn staged_restore_roundtrip() {
+        let dir = std::env::temp_dir().join(format!("finbak-{}", new_id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db_path = dir.join(backup::DB_FILE);
+        let key = [3u8; 32];
+
+        let d = db::Db::open(&db_path, Some(&key)).unwrap();
+        d.with_conn(|c| {
+            let a = actor(&d);
+            repos::account_upsert(
+                c,
+                &d,
+                &a,
+                json!({"name":"А","kind":"cash","currency":"BYN"}),
+            )?;
+            std::fs::create_dir_all(dir.join(backup::BACKUP_DIR))?;
+            c.execute(
+                "VACUUM INTO ?1",
+                [dir.join(backup::BACKUP_DIR)
+                    .join("backup-1.db")
+                    .to_string_lossy()
+                    .as_ref()],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+        // The backup is encrypted too — no plain SQLite header, opens with the key.
+        let head = std::fs::read(dir.join(backup::BACKUP_DIR).join("backup-1.db")).unwrap();
+        assert_ne!(&head[..16], b"SQLite format 3\0");
+        assert!(db::Db::open(
+            &dir.join(backup::BACKUP_DIR).join("backup-1.db"),
+            Some(&key)
+        )
+        .is_ok());
+
+        // Data B lands after the backup; then the live db is closed.
+        d.with_conn(|c| {
+            let a = actor(&d);
+            repos::account_upsert(
+                c,
+                &d,
+                &a,
+                json!({"name":"Б","kind":"cash","currency":"BYN"}),
+            )
+        })
+        .unwrap();
+        drop(d);
+        std::fs::write(dir.join("finance.db-wal"), b"garbage").unwrap();
+        std::fs::write(dir.join("finance.db-shm"), b"garbage").unwrap();
+        let live_before = std::fs::read(&db_path).unwrap();
+
+        backup::stage_restore(&dir, "backup-1.db", &key).unwrap();
+        assert!(dir.join(backup::RESTORE_FILE).exists());
+        assert_eq!(std::fs::read(&db_path).unwrap(), live_before); // live file untouched
+
+        let preserved = backup::apply_pending_restore(&dir).unwrap().unwrap();
+        // The stale -shm was deleted; opening the restored db recreates fresh ones.
+        assert!(!dir.join("finance.db-shm").exists());
+        assert!(dir
+            .join(backup::BACKUP_DIR)
+            .join(format!(
+                "{}-wal",
+                preserved.file_name().unwrap().to_string_lossy()
+            ))
+            .exists());
+        let d2 = db::Db::open(&db_path, Some(&key)).unwrap();
+        let names: Vec<String> = d2
+            .with_conn(|c| {
+                let mut st = c.prepare("SELECT name FROM accounts ORDER BY name")?;
+                let v = st
+                    .query_map([], |r| r.get::<_, String>(0))?
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(v)
+            })
+            .unwrap();
+        assert_eq!(names, vec!["А".to_string()]);
+        drop(d2);
+        // The preserved copy opens with the key and still has B.
+        let d3 = db::Db::open(&preserved, Some(&key)).unwrap();
+        let has_b: bool = d3
+            .with_conn(|c| {
+                Ok(
+                    c.query_row("SELECT COUNT(*) FROM accounts WHERE name='Б'", [], |r| {
+                        r.get::<_, i64>(0)
+                    })? > 0,
+                )
+            })
+            .unwrap();
+        assert!(has_b);
+        drop(d3);
+        let listed = backup::list(&dir);
+        assert!(listed.contains(&"backup-1.db".to_string()));
+        assert!(listed.contains(
+            &preserved
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        ));
+        assert!(listed
+            .iter()
+            .all(|n| n.ends_with(".db") && !n.contains("-wal") && !n.contains("-shm")));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn staged_restore_rejects_bad_input() {
+        let dir = std::env::temp_dir().join(format!("finbak-{}", new_id()));
+        std::fs::create_dir_all(dir.join(backup::BACKUP_DIR)).unwrap();
+        let key = [4u8; 32];
+        for bad in [
+            "",
+            "../x.db",
+            "a/b.db",
+            "a\\b.db",
+            "..",
+            "noext",
+            "missing.db",
+        ] {
+            assert!(backup::stage_restore(&dir, bad, &key).is_err(), "{bad}");
+        }
+        assert!(!dir.join(backup::RESTORE_FILE).exists());
+        // Garbage file fails the probe/integrity check.
+        std::fs::write(dir.join(backup::BACKUP_DIR).join("garbage.db"), b"not a db").unwrap();
+        assert!(backup::stage_restore(&dir, "garbage.db", &key).is_err());
+        assert!(!dir.join(backup::RESTORE_FILE).exists());
+        // A valid db under a different key fails too.
+        let d = db::Db::open(
+            &dir.join(backup::BACKUP_DIR).join("other.db"),
+            Some(&[9u8; 32]),
+        )
+        .unwrap();
+        drop(d);
+        assert!(backup::stage_restore(&dir, "other.db", &key).is_err());
+        assert!(!dir.join(backup::RESTORE_FILE).exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn pending_restore_noop() {
+        let dir = std::env::temp_dir().join(format!("finbak-{}", new_id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("keep.txt"), b"x").unwrap();
+        assert_eq!(backup::apply_pending_restore(&dir).unwrap(), None);
+        assert!(dir.join("keep.txt").exists());
+        assert!(!dir.join(backup::DB_FILE).exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A crashed previous run may leave a staged restore next to a leftover
+    /// finance.db-wal with no finance.db. The wal must still be parked in
+    /// backups/ — never replayed into the restored file.
+    #[test]
+    fn pending_restore_collects_leftover_wal() {
+        let dir = std::env::temp_dir().join(format!("finbak-{}", new_id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let key = [5u8; 32];
+
+        // A valid encrypted backup with data A.
+        std::fs::create_dir_all(dir.join(backup::BACKUP_DIR)).unwrap();
+        let d = db::Db::open(
+            &dir.join(backup::BACKUP_DIR).join("backup-1.db"),
+            Some(&key),
+        )
+        .unwrap();
+        d.with_conn(|c| {
+            let a = actor(&d);
+            repos::account_upsert(
+                c,
+                &d,
+                &a,
+                json!({"name":"А","kind":"cash","currency":"BYN"}),
+            )?;
+            c.pragma_update(None, "wal_checkpoint", "TRUNCATE")?;
+            Ok(())
+        })
+        .unwrap();
+        drop(d);
+
+        backup::stage_restore(&dir, "backup-1.db", &key).unwrap();
+        // Simulate the crash window: staged file present, db gone, wal left.
+        std::fs::write(dir.join(format!("{}-wal", backup::DB_FILE)), b"stale wal").unwrap();
+
+        assert_eq!(backup::apply_pending_restore(&dir).unwrap(), None);
+        assert!(!dir.join(format!("{}-wal", backup::DB_FILE)).exists());
+        let moved: Vec<_> = std::fs::read_dir(dir.join(backup::BACKUP_DIR))
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with("-wal"))
+            .collect();
+        assert_eq!(moved.len(), 1, "expected one parked wal, got {moved:?}");
+
+        let d2 = db::Db::open(&dir.join(backup::DB_FILE), Some(&key)).unwrap();
+        let has_a: bool = d2
+            .with_conn(|c| {
+                Ok(
+                    c.query_row("SELECT COUNT(*) FROM accounts WHERE name='А'", [], |r| {
+                        r.get::<_, i64>(0)
+                    })? > 0,
+                )
+            })
+            .unwrap();
+        assert!(has_a);
+        drop(d2);
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

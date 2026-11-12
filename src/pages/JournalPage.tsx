@@ -119,7 +119,8 @@ export function JournalPage() {
           let changes: { field: string; before: unknown; after: unknown }[] = [];
           try { changes = e.changesJson ? JSON.parse(e.changesJson) : []; } catch { /* ignore */ }
           changes = changes.filter((c) => !SKIP_FIELDS.has(c.field));
-          const after = e.afterJson ? JSON.parse(e.afterJson) : null;
+          let after: Record<string, unknown> | null = null;
+          try { after = e.afterJson ? JSON.parse(e.afterJson) : null; } catch { /* ignore */ }
           return (
             <div key={e.id} className="rounded-xl border border-border bg-card px-3 py-2 text-sm">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -136,7 +137,7 @@ export function JournalPage() {
                 )}
               </div>
               <div className="mt-1">
-                {after?.name && <span className="font-medium">{String(after.name)} </span>}
+                {after?.name != null && <span className="font-medium">{String(after.name)} </span>}
                 {changes.length === 0 && e.action !== "delete" && <span className="text-muted-foreground">{t("ui.noChanges")}</span>}
                 {changes.slice(0, 6).map((c, i) => (
                   <div key={i} className="text-xs">

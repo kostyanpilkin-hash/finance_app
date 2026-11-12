@@ -13,6 +13,11 @@ const SYNC_FIELDS: &str = "
     seq INTEGER NOT NULL DEFAULT 0,
     local_dirty INTEGER NOT NULL DEFAULT 0";
 
+/// Highest schema version this binary can create/upgrade to.
+/// Sent in sync handshakes so a client pushing rows written under an older
+/// schema is rejected instead of silently losing fields.
+pub const SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;
+
 const MIGRATIONS: &[&[&str]] = &[
     // ---- v1 ----
     &[

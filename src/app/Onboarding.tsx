@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { api } from "@/lib/api";
+import { syncErrorText } from "@/lib/syncError";
 import { LANGUAGES } from "@/i18n";
 import { Button } from "@/components/ui/button";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -148,7 +149,13 @@ export function Onboarding() {
                     : t("onboarding.joinBtn")}
               </Button>
             </div>
-            {join.isError && <p className="mt-2 text-sm text-destructive">{String(join.error)}</p>}
+            {join.isError && (
+              <p className="mt-2 text-sm text-destructive">
+                {String(join.error).includes("outdated")
+                  ? syncErrorText(t, String(join.error))
+                  : String(join.error)}
+              </p>
+            )}
           </div>
         )}
 

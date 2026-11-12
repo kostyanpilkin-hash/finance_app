@@ -1,6 +1,6 @@
 //! LAN sync: host serves the HTTP API; clients pair, push outbox, pull changes.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde_json::{json, Value};
@@ -12,6 +12,63 @@ use finance_storage::{db as dbm, repos, Error};
 use crate::state::AppState;
 
 pub const API_PORT: u16 = 45322;
+
+const KEY_SERVICE: &str = "by.kostyan.finance";
+const DEVICE_TOKEN_ACCOUNT: &str = "device-token";
+
+/// The last sync_once outcome, for the settings UI (esp. schema mismatches).
+static LAST_ERROR: Mutex<Option<Value>> = Mutex::new(None);
+
+fn last_error_set(v: Option<Value>) {
+    *LAST_ERROR.lock().unwrap_or_else(|e| e.into_inner()) = v;
+}
+
+fn save_device_token(token: &str) -> Result<(), String> {
+    keyring::Entry::new(KEY_SERVICE, DEVICE_TOKEN_ACCOUNT)
+        .map_err(|e| e.to_string())?
+        .set_secret(token.as_bytes())
+        .map_err(|e| e.to_string())
+}
+
+fn read_device_token() -> Option<String> {
+    keyring::Entry::new(KEY_SERVICE, DEVICE_TOKEN_ACCOUNT)
+        .ok()?
+        .get_secret()
+        .ok()
+        .map(|b| String::from_utf8_lossy(&b).into_owned())
+}
+
+/// Moves a pre-keyring `settings.device_token` into the OS keyring. The row is
+/// deleted only after the keyring write succeeds — a failure keeps the value
+/// where the old code can still read it. Testable with a fake `save`.
+fn migrate_legacy_token(
+    c: &finance_storage::rusqlite::Connection,
+    save: impl Fn(&str) -> Result<(), String>,
+) -> Result<bool, Error> {
+    let Some(token) = repos::setting_get(c, "device_token")? else {
+        return Ok(false);
+    };
+    if token.is_empty() {
+        return Ok(false);
+    }
+    if save(&token).is_err() {
+        return Ok(false); // keep the settings row for the next attempt
+    }
+    c.execute("DELETE FROM settings WHERE key = 'device_token'", [])?;
+    Ok(true)
+}
+
+/// One-shot migration at startup; failures are logged, never fatal.
+pub fn migrate_device_token(state: &AppState) {
+    let r = state
+        .db
+        .with_conn(|c| migrate_legacy_token(c, save_device_token));
+    match r {
+        Ok(true) => eprintln!("device token migrated to the OS keyring"),
+        Ok(false) => {}
+        Err(e) => eprintln!("device token migration failed: {e}"),
+    }
+}
 
 /// Start the host HTTP server (if mode == "host") + mDNS announcement.
 pub fn start_host(app: &AppHandle) {
@@ -108,14 +165,35 @@ pub fn start_client(app: AppHandle) {
 fn client_cfg(state: &AppState) -> Result<(String, String), Error> {
     state.db.with_conn(|c| {
         let get = |k: &str| repos::setting_get(c, k);
+        // Keyring first; a pre-keyring settings row is the fallback until the
+        // startup migration moves it over.
+        let token = read_device_token()
+            .or(get("device_token").ok().flatten())
+            .ok_or_else(|| Error::Other("no device_token".into()))?;
         Ok((
             get("host_url")?.ok_or_else(|| Error::Other("no host_url".into()))?,
-            get("device_token")?.ok_or_else(|| Error::Other("no device_token".into()))?,
+            token,
         ))
     })
 }
 
 pub(crate) async fn sync_once(state: &AppState) -> Result<bool, String> {
+    match sync_once_inner(state).await {
+        Err(e) => {
+            // Schema errors already stored their structured payload above.
+            if e != "client_outdated" && e != "host_outdated" {
+                last_error_set(Some(json!({"code": "error", "message": e})));
+            }
+            Err(e)
+        }
+        ok => {
+            last_error_set(None);
+            ok
+        }
+    }
+}
+
+async fn sync_once_inner(state: &AppState) -> Result<bool, String> {
     let (host, token) = client_cfg(state).map_err(|e| e.to_string())?;
     let http = reqwest::Client::new();
 
@@ -138,10 +216,26 @@ pub(crate) async fn sync_once(state: &AppState) -> Result<bool, String> {
         let resp = http
             .post(format!("{host}/api/v1/push"))
             .bearer_auth(&token)
-            .json(&json!({"ops": ops}))
+            .json(
+                &json!({"ops": ops, "schemaVersion": finance_storage::migrations::SCHEMA_VERSION}),
+            )
             .send()
             .await
             .map_err(|e| e.to_string())?;
+        if resp.status().as_u16() == 409 {
+            // Schema mismatch — parse the code so the UI can explain it.
+            let body: Value = resp.json().await.unwrap_or(json!({}));
+            let code = body["error"].as_str().unwrap_or("").to_string();
+            if code == "client_outdated" || code == "host_outdated" {
+                last_error_set(Some(json!({
+                    "code": code,
+                    "hostSchema": body["hostSchema"],
+                    "clientSchema": body["clientSchema"],
+                })));
+                return Err(code);
+            }
+            return Err("push 409".to_string());
+        }
         if !resp.status().is_success() {
             return Err(format!("push {}", resp.status()));
         }
@@ -317,12 +411,13 @@ pub async fn pair_client(
         .await
         .map_err(|e| e.to_string())?;
     let token = resp["token"].as_str().ok_or("pairing failed")?;
+    // The device token is a secret — keyring only, never a settings row.
+    save_device_token(token)?;
     let user_id = resp["userId"].as_str().unwrap_or("").to_string();
     state
         .db
         .with_conn(|c| {
             repos::setting_set(c, "host_url", host)?;
-            repos::setting_set(c, "device_token", token)?;
             repos::setting_set(c, "last_seq", "0")?;
             if !user_id.is_empty() {
                 repos::setting_set(c, "current_user_id", &user_id)?;
@@ -405,6 +500,65 @@ pub fn sync_status(state: &AppState) -> Value {
         let unresolved: i64 = c.query_row("SELECT COUNT(*) FROM conflicts WHERE resolved_at IS NULL", [], |r| r.get(0)).unwrap_or(0);
         let pending: i64 = c.query_row("SELECT COUNT(*) FROM outbox", [], |r| r.get(0))?;
         let devices: i64 = c.query_row("SELECT COUNT(*) FROM devices WHERE revoked_at IS NULL", [], |r| r.get(0)).unwrap_or(0);
-        Ok(json!({"mode": state.db.mode, "hostUrl": host, "lastSeq": seq, "pendingOps": pending, "pairedDevices": devices, "conflicts": unresolved}))
+        let last_error = LAST_ERROR.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        Ok(json!({"mode": state.db.mode, "hostUrl": host, "lastSeq": seq, "pendingOps": pending, "pairedDevices": devices, "conflicts": unresolved, "lastError": last_error}))
     }).unwrap_or(json!({}))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn conn() -> finance_storage::rusqlite::Connection {
+        let c = finance_storage::rusqlite::Connection::open_in_memory().unwrap();
+        c.execute(
+            "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+            [],
+        )
+        .unwrap();
+        c
+    }
+
+    #[test]
+    fn migrate_moves_token_and_deletes_row() {
+        let c = conn();
+        repos::setting_set(&c, "device_token", "secret-tok").unwrap();
+        let saved = std::cell::RefCell::new(String::new());
+        let moved = migrate_legacy_token(&c, |t| {
+            *saved.borrow_mut() = t.to_string();
+            Ok(())
+        })
+        .unwrap();
+        assert!(moved);
+        assert_eq!(*saved.borrow(), "secret-tok");
+        assert_eq!(repos::setting_get(&c, "device_token").unwrap(), None);
+    }
+
+    #[test]
+    fn migrate_keeps_row_when_save_fails() {
+        let c = conn();
+        repos::setting_set(&c, "device_token", "secret-tok").unwrap();
+        let moved = migrate_legacy_token(&c, |_| Err("keyring down".into())).unwrap();
+        assert!(!moved);
+        assert_eq!(
+            repos::setting_get(&c, "device_token").unwrap(),
+            Some("secret-tok".into())
+        );
+    }
+
+    #[test]
+    fn migrate_noop_without_token() {
+        let c = conn();
+        let called = std::cell::Cell::new(false);
+        let moved = migrate_legacy_token(&c, |_| {
+            called.set(true);
+            Ok(())
+        })
+        .unwrap();
+        assert!(!moved);
+        assert!(!called.get());
+        // An empty value migrates nothing either.
+        repos::setting_set(&c, "device_token", "").unwrap();
+        assert!(!migrate_legacy_token(&c, |_| Ok(())).unwrap());
+    }
 }

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
+import { relaunch } from "@tauri-apps/plugin-process";
 import {
   Check,
   Coins,
@@ -15,6 +16,7 @@ import {
 } from "lucide-react";
 import { LANGUAGES } from "@/i18n";
 import { api } from "@/lib/api";
+import { syncErrorText } from "@/lib/syncError";
 import { THEMES, type ThemeKind } from "@/lib/themes";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -297,6 +299,9 @@ function SyncSection() {
         <p className="mt-1 text-xs text-muted-foreground">
           {t("ui.syncStatus")}: {s?.pairedDevices ?? 0} · {s?.pendingOps ?? 0} {t("ui.pendingOps")}
         </p>
+        {s?.lastError && (
+          <p className="mt-1 text-xs text-destructive">{syncErrorText(t, s.lastError)}</p>
+        )}
       </div>
       <div>
         <div className="mb-1 font-medium">{t("ui.joinHost")}</div>
@@ -402,7 +407,13 @@ function BackupSection() {
     mutationFn: api.backupCreate,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["backups"] }),
   });
-  const restore = useMutation({ mutationFn: api.backupRestore });
+  const restore = useMutation({
+    mutationFn: api.backupRestore,
+    onSuccess: async () => {
+      await new Promise((r) => setTimeout(r, 700));
+      await relaunch();
+    },
+  });
   return (
     <div className="space-y-3 text-sm">
       <div className="flex items-center gap-3">
@@ -419,7 +430,7 @@ function BackupSection() {
             }}>{t("ui.restore")}</button>
           </div>
         ))}
-        {restore.isSuccess && <p className="text-xs text-primary">{t("ui.restoreRestart")}</p>}
+        {restore.isSuccess && <p className="text-xs text-primary">{t("ui.restoreRestarting")}</p>}
         {restore.isError && <p className="text-xs text-destructive">{String(restore.error)}</p>}
         {list.data?.length === 0 && <p className="text-xs text-muted-foreground">{t("ui.noBackups")}</p>}
       </div>

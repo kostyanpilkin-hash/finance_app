@@ -16,7 +16,7 @@ use sha2::Digest;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use finance_storage::{db as dbm, models, repos, Error, Op, Source};
+use finance_storage::{db as dbm, migrations::SCHEMA_VERSION, models, repos, Error, Op, Source};
 
 #[derive(Clone)]
 pub struct ApiState {
@@ -43,7 +43,9 @@ pub async fn serve(state: ApiState, addr: SocketAddr) -> Result<(), String> {
 }
 
 async fn hello(State(s): State<ApiState>) -> Json<Value> {
-    Json(json!({"apiVersion": 1, "deviceId": s.db.device_id, "instanceId": s.db.instance_id}))
+    Json(
+        json!({"apiVersion": 1, "deviceId": s.db.device_id, "instanceId": s.db.instance_id, "schemaVersion": SCHEMA_VERSION}),
+    )
 }
 
 #[derive(Deserialize)]
@@ -113,9 +115,29 @@ async fn push(
     State(s): State<ApiState>,
     headers: axum::http::HeaderMap,
     Json(body): Json<Value>,
-) -> Result<Json<Value>, StatusCode> {
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    // Schema gate: a client built for a different schema must not push — its
+    // rows could not express every column. Missing version = pre-0.1.8 client;
+    // accept those (the upsert writer keeps columns they don't send).
+    if let Some(client_schema) = body["schemaVersion"].as_i64() {
+        if client_schema != SCHEMA_VERSION {
+            let err = if client_schema < SCHEMA_VERSION {
+                "client_outdated"
+            } else {
+                "host_outdated"
+            };
+            return Err((
+                StatusCode::CONFLICT,
+                Json(json!({
+                    "error": err,
+                    "hostSchema": SCHEMA_VERSION,
+                    "clientSchema": client_schema,
+                })),
+            ));
+        }
+    }
     let ops: Vec<PushOp> =
-        serde_json::from_value(body["ops"].clone()).map_err(|_| StatusCode::BAD_REQUEST)?;
+        serde_json::from_value(body["ops"].clone()).map_err(|_| bad(StatusCode::BAD_REQUEST))?;
     let token = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
@@ -162,8 +184,12 @@ async fn push(
         }
         c.execute("UPDATE devices SET last_seen_at=?1 WHERE id=?2", finance_storage::rusqlite::params![dbm::now_iso(), device_id])?;
         Ok(())
-    }).map_err(|e| if e.to_string() == "unauthorized" { StatusCode::UNAUTHORIZED } else { StatusCode::INTERNAL_SERVER_ERROR })?;
+    }).map_err(|e| if e.to_string() == "unauthorized" { bad(StatusCode::UNAUTHORIZED) } else { bad(StatusCode::INTERNAL_SERVER_ERROR) })?;
     Ok(Json(json!({"results": results})))
+}
+
+fn bad(code: StatusCode) -> (StatusCode, Json<Value>) {
+    (code, Json(json!({})))
 }
 
 #[derive(Deserialize)]

@@ -98,7 +98,17 @@ fn auto_backup(app: &AppHandle) {
         let _ = state
             .db
             .with_conn(|c| finance_storage::repos::setting_set(c, "auto_backup_month", &month));
-        if let Ok(mut files) = std::fs::read_dir(&dir).map(|rd| rd.flatten().collect::<Vec<_>>()) {
+        // Prune only our own backup-*.db files — never pre-restore copies or
+        // -wal/-shm sidecars left by a staged restore.
+        if let Ok(mut files) = std::fs::read_dir(&dir).map(|rd| {
+            rd.flatten()
+                .filter(|f| {
+                    let n = f.file_name();
+                    let n = n.to_string_lossy();
+                    n.starts_with("backup-") && n.ends_with(".db")
+                })
+                .collect::<Vec<_>>()
+        }) {
             files.sort_by_key(|f| f.file_name());
             if files.len() > 12 {
                 for f in files.drain(..files.len() - 12) {
