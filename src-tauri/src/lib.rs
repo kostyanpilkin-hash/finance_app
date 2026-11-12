@@ -1,5 +1,6 @@
 mod bot;
 mod commands;
+mod net;
 mod scheduler;
 mod state;
 mod sync;

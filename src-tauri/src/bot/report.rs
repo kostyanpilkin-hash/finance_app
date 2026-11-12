@@ -12,7 +12,7 @@ use crate::state::AppState;
 pub(super) fn display_currency(state: &AppState) -> String {
     state
         .db
-        .with_conn(|c| repos::setting_get(c, "display_currency"))
+        .with_read_conn(|c| repos::setting_get(c, "display_currency"))
         .ok()
         .flatten()
         .filter(|c| c.len() == 3)
@@ -76,7 +76,7 @@ pub(super) fn totals(
 ) -> Result<Totals, String> {
     state
         .db
-        .with_conn(|c| {
+        .with_read_conn(|c| {
             let rows: Vec<SumRow> = {
                 let mut st = c.prepare(
                     "SELECT t.kind, a.currency, t.category_id, c.name, c.icon, SUM(t.amount_minor)
@@ -138,7 +138,7 @@ fn balances(
 ) -> Result<(Vec<serde_json::Value>, i64, BTreeSet<String>), String> {
     state
         .db
-        .with_conn(|c| {
+        .with_read_conn(|c| {
             let d = today().to_string();
             let dash = repos::dashboard(c, &d, &d)?;
             let accounts: Vec<serde_json::Value> = dash["accounts"]
@@ -238,7 +238,7 @@ pub(super) fn balances_text(state: &AppState, lang: &str) -> Result<String, Stri
 pub(super) fn rates_text(state: &AppState, lang: &str) -> Result<String, String> {
     let rates = state
         .db
-        .with_conn(repos::rates_latest)
+        .with_read_conn(repos::rates_latest)
         .map_err(|_| "rates failed")?;
     if rates.is_empty() {
         return Ok(tr(lang, "rates_empty"));

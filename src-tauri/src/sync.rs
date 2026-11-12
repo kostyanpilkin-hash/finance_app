@@ -243,7 +243,7 @@ pub fn start_client(app: AppHandle) {
 }
 
 fn client_cfg(state: &AppState) -> Result<(String, String), Error> {
-    state.db.with_conn(|c| {
+    state.db.with_read_conn(|c| {
         let get = |k: &str| repos::setting_get(c, k);
         // Keyring first; a pre-keyring settings row is the fallback until the
         // startup migration moves it over.
@@ -275,7 +275,7 @@ pub(crate) async fn sync_once(state: &AppState) -> Result<bool, String> {
 
 async fn sync_once_inner(state: &AppState) -> Result<bool, String> {
     let (host, token) = client_cfg(state).map_err(|e| e.to_string())?;
-    let http = reqwest::Client::new();
+    let http = crate::net::client();
 
     // 1. Push outbox.
     let ops: Vec<Value> = state.db.with_conn(|c| {
@@ -436,7 +436,7 @@ pub fn host_urls() -> Vec<String> {
 /// Generating a fresh code also lifts the failed-attempts lock.
 pub fn pair_code<R: tauri::Runtime>(
     app: &AppHandle<R>,
-    state: &AppState,
+    db: &dbm::Db,
     user_id: &str,
 ) -> Result<String, String> {
     if let Some(hub) = hub(app) {
@@ -446,7 +446,7 @@ pub fn pair_code<R: tauri::Runtime>(
         .map(|_| (uuid::Uuid::new_v4().as_bytes()[0] % 10).to_string())
         .collect();
     let exp = (chrono::Utc::now() + chrono::Duration::minutes(10)).to_rfc3339();
-    state.db.with_conn(|c| {
+    db.with_conn(|c| {
         c.execute(
             "INSERT OR REPLACE INTO device_pair_codes (code, user_id, expires_at) VALUES (?1,?2,?3)",
             finance_storage::rusqlite::params![code, user_id, exp],
@@ -555,9 +555,9 @@ pub async fn pair_client(
     code: &str,
     name: &str,
 ) -> Result<String, String> {
-    let http = reqwest::Client::new();
+    let http = crate::net::client();
     let grant = request_pairing(
-        &http,
+        http,
         host,
         code,
         name,
@@ -602,8 +602,8 @@ pub async fn join_host(state: &AppState, host: &str, code: &str, name: &str) -> 
 }
 
 /// Client: unresolved conflicts (id, entity, both versions).
-pub fn conflict_list(state: &AppState) -> Result<Vec<Value>, String> {
-    state.db.with_conn(|c| {
+pub fn conflict_list(db: &dbm::Db) -> Result<Vec<Value>, String> {
+    db.with_read_conn(|c| {
         let mut st = c.prepare("SELECT id, entity, entity_id, local_payload, server_payload FROM conflicts WHERE resolved_at IS NULL")?;
         let v = st
             .query_map([], |r| {
@@ -624,7 +624,7 @@ pub async fn conflict_resolve(
     winner: &str,
 ) -> Result<(), String> {
     let (host, token) = client_cfg(state).map_err(|e| e.to_string())?;
-    let resp = reqwest::Client::new()
+    let resp = crate::net::client()
         .post(format!("{host}/api/v1/resolve"))
         .bearer_auth(&token)
         .json(&json!({"conflictId": conflict_id, "winner": winner}))
@@ -646,16 +646,15 @@ pub async fn conflict_resolve(
         .map_err(|e| e.to_string())
 }
 
-pub fn sync_status(state: &AppState) -> Value {
-    let _ = state;
-    state.db.with_conn(|c| {
+pub fn sync_status(db: &dbm::Db) -> Value {
+    db.with_read_conn(|c| {
         let host = repos::setting_get(c, "host_url")?;
         let seq = repos::setting_get(c, "last_seq")?;
         let unresolved: i64 = c.query_row("SELECT COUNT(*) FROM conflicts WHERE resolved_at IS NULL", [], |r| r.get(0)).unwrap_or(0);
         let pending: i64 = c.query_row("SELECT COUNT(*) FROM outbox", [], |r| r.get(0))?;
         let devices: i64 = c.query_row("SELECT COUNT(*) FROM devices WHERE revoked_at IS NULL", [], |r| r.get(0)).unwrap_or(0);
         let last_error = LAST_ERROR.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        Ok(json!({"mode": state.db.mode, "hostUrl": host, "lastSeq": seq, "pendingOps": pending, "pairedDevices": devices, "conflicts": unresolved, "lastError": last_error}))
+        Ok(json!({"mode": db.mode, "hostUrl": host, "lastSeq": seq, "pendingOps": pending, "pairedDevices": devices, "conflicts": unresolved, "lastError": last_error}))
     }).unwrap_or(json!({}))
 }
 
@@ -751,6 +750,16 @@ mod tests {
             v4(192, 168, 1, 5), // duplicate
         ]);
         assert_eq!(got, vec![v4(10, 0, 0, 1), v4(192, 168, 1, 5)]);
+    }
+
+    /// The browse window is a fixed ~2.5 s scan — long enough that running it
+    /// on the IPC thread froze the window; the command runs on spawn_blocking.
+    /// This guards the total duration from growing unnoticed.
+    #[test]
+    fn discover_hosts_completes_within_browse_window() {
+        let t = std::time::Instant::now();
+        let _ = discover_hosts();
+        assert!(t.elapsed() < Duration::from_secs(4));
     }
 
     /// End-to-end: a real finance_api server on loopback, a code in an

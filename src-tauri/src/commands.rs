@@ -29,47 +29,52 @@ pub fn set_tray_labels(
     tray.set_tooltip(Some(tooltip)).map_err(|e| e.to_string())
 }
 
-fn db<'a>(state: &'a State<'a, AppState>) -> &'a Db {
-    &state.db
+/// Runs SQLite/disk work on the blocking pool: the command future resolves on
+/// the async runtime while a worker thread does the blocking part, so a slow
+/// query can never freeze the window.
+async fn run<T, F>(f: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .map_err(|e| e.to_string())?
 }
 
-fn actor(state: &State<AppState>, user_id: Option<String>) -> Actor {
-    Actor {
-        user_id,
-        device_id: Some(state.db.device_id.clone()),
+/// Current user id read on the write conn — used inside `with_conn` closures
+/// where the write lock is already held.
+fn actor_on(
+    c: &finance_storage::rusqlite::Connection,
+    db: &Db,
+) -> Result<Actor, finance_storage::Error> {
+    Ok(Actor {
+        user_id: repos::setting_get(c, "current_user_id")?,
+        device_id: Some(db.device_id.clone()),
         source: Source::Desktop,
-    }
-}
-
-fn actor_or_current(state: &State<AppState>) -> Result<Actor, String> {
-    db(state)
-        .with_conn(|c| {
-            let uid = repos::setting_get(c, "current_user_id")?;
-            Ok(Actor {
-                user_id: uid,
-                device_id: Some(state.db.device_id.clone()),
-                source: Source::Desktop,
-            })
-        })
-        .map_err(|e| e.to_string())
+    })
 }
 
 // ---------- onboarding / bootstrap ----------
 
 #[tauri::command]
-pub fn onboarding_status(state: State<AppState>) -> Result<Value, String> {
-    db(&state)
-        .with_conn(|c| {
+pub async fn onboarding_status(state: State<'_, AppState>) -> Result<Value, String> {
+    let db = state.db.share();
+    let db_existed = state.db_existed;
+    run(move || {
+        db.with_read_conn(|c| {
             let done = repos::setting_get(c, "onboarding_done")? == Some("1".into());
             let users = repos::list_rows(c, Entity::Users, false)?.len();
             Ok(json!({
                 "done": done,
                 "users": users,
-                "dbExisted": state.db_existed,
-                "mode": state.db.mode,
+                "dbExisted": db_existed,
+                "mode": db.mode,
             }))
         })
         .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 /// Shows the freshly generated recovery key once (fresh installs only).
@@ -87,20 +92,20 @@ pub struct OnboardingInput {
 }
 
 #[tauri::command]
-pub fn complete_onboarding(state: State<AppState>, input: OnboardingInput) -> Result<(), String> {
-    db(&state)
-        .with_conn(|c| {
+pub async fn complete_onboarding(
+    state: State<'_, AppState>,
+    input: OnboardingInput,
+) -> Result<(), String> {
+    let db = state.db.share();
+    run(move || {
+        db.with_conn(|c| {
             let tx = c.unchecked_transaction()?;
-            let actor = actor_or_stateless(&state);
-            seed_categories(&tx, &state.db, &actor)?;
+            let actor = actor_on(c, &db)?;
+            seed_categories(&tx, &db, &actor)?;
             let mut ids = Vec::new();
             for (i, name) in input.user_names.iter().enumerate() {
-                let u = repos::user_upsert(
-                    &tx,
-                    &state.db,
-                    &actor,
-                    json!({"name": name, "sort": i as i64}),
-                )?;
+                let u =
+                    repos::user_upsert(&tx, &db, &actor, json!({"name": name, "sort": i as i64}))?;
                 ids.push(u["id"].as_str().unwrap().to_string());
             }
             let owner = ids
@@ -115,7 +120,7 @@ pub fn complete_onboarding(state: State<AppState>, input: OnboardingInput) -> Re
                 };
                 repos::account_upsert(
                     &tx,
-                    &state.db,
+                    &db,
                     &actor,
                     json!({
                         "name": name, "kind": kind, "currency": "BYN", "ownerUserId": owner
@@ -132,207 +137,298 @@ pub fn complete_onboarding(state: State<AppState>, input: OnboardingInput) -> Re
             Ok(())
         })
         .map_err(|e| e.to_string())
-}
-
-fn actor_or_stateless(state: &State<AppState>) -> Actor {
-    actor(state, None)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn set_current_user(state: State<AppState>, user_id: String) -> Result<(), String> {
-    db(&state)
-        .with_conn(|c| repos::setting_set(c, "current_user_id", &user_id))
-        .map_err(|e| e.to_string())
+pub async fn set_current_user(state: State<'_, AppState>, user_id: String) -> Result<(), String> {
+    let db = state.db.share();
+    run(move || {
+        db.with_conn(|c| repos::setting_set(c, "current_user_id", &user_id))
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 // ---------- settings ----------
 
 #[tauri::command]
-pub fn get_settings(state: State<AppState>) -> Result<Value, String> {
-    db(&state)
-        .with_conn(repos::settings_all)
-        .map_err(|e| e.to_string())
+pub async fn get_settings(state: State<'_, AppState>) -> Result<Value, String> {
+    let db = state.db.share();
+    run(move || {
+        db.with_read_conn(repos::settings_all)
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn set_setting(state: State<AppState>, key: String, value: String) -> Result<(), String> {
-    db(&state)
-        .with_conn(|c| repos::setting_set(c, &key, &value))
-        .map_err(|e| e.to_string())
+pub async fn set_setting(
+    state: State<'_, AppState>,
+    key: String,
+    value: String,
+) -> Result<(), String> {
+    let db = state.db.share();
+    run(move || {
+        db.with_conn(|c| repos::setting_set(c, &key, &value))
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 // ---------- generic entity CRUD ----------
 
 #[tauri::command]
-pub fn entity_list(
-    state: State<AppState>,
+pub async fn entity_list(
+    state: State<'_, AppState>,
     entity: String,
     include_deleted: Option<bool>,
 ) -> Result<Vec<Value>, String> {
     let e = Entity::parse(&entity).ok_or("unknown entity")?;
-    db(&state)
-        .with_conn(|c| repos::list_rows(c, e, include_deleted.unwrap_or(false)))
-        .map_err(|e| e.to_string())
+    let db = state.db.share();
+    run(move || {
+        db.with_read_conn(|c| repos::list_rows(c, e, include_deleted.unwrap_or(false)))
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn entity_delete(state: State<AppState>, entity: String, id: String) -> Result<(), String> {
+pub async fn entity_delete(
+    state: State<'_, AppState>,
+    entity: String,
+    id: String,
+) -> Result<(), String> {
     let e = Entity::parse(&entity).ok_or("unknown entity")?;
-    let a = actor_or_current(&state)?;
-    db(&state)
-        .with_conn(|c| {
-            repos::apply(&state.db, c, &a, e, models::Op::Delete, &id, None)?;
+    let db = state.db.share();
+    run(move || {
+        db.with_conn(|c| {
+            let a = actor_on(c, &db)?;
+            repos::apply(&db, c, &a, e, models::Op::Delete, &id, None)?;
             Ok(())
         })
         .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn entity_restore(state: State<AppState>, entity: String, id: String) -> Result<(), String> {
-    let a = actor_or_current(&state)?;
-    db(&state)
-        .with_conn(|c| repos::restore(c, &state.db, &a, &entity, &id))
+pub async fn entity_restore(
+    state: State<'_, AppState>,
+    entity: String,
+    id: String,
+) -> Result<(), String> {
+    let db = state.db.share();
+    run(move || {
+        db.with_conn(|c| {
+            let a = actor_on(c, &db)?;
+            repos::restore(c, &db, &a, &entity, &id)
+        })
         .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn user_upsert(state: State<AppState>, input: Value) -> Result<Value, String> {
-    let a = actor_or_current(&state)?;
-    db(&state)
-        .with_conn(|c| repos::user_upsert(c, &state.db, &a, input))
+pub async fn user_upsert(state: State<'_, AppState>, input: Value) -> Result<Value, String> {
+    let db = state.db.share();
+    run(move || {
+        db.with_conn(|c| {
+            let a = actor_on(c, &db)?;
+            repos::user_upsert(c, &db, &a, input)
+        })
         .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn account_upsert(state: State<AppState>, input: Value) -> Result<Value, String> {
-    let a = actor_or_current(&state)?;
-    db(&state)
-        .with_conn(|c| repos::account_upsert(c, &state.db, &a, input))
+pub async fn account_upsert(state: State<'_, AppState>, input: Value) -> Result<Value, String> {
+    let db = state.db.share();
+    run(move || {
+        db.with_conn(|c| {
+            let a = actor_on(c, &db)?;
+            repos::account_upsert(c, &db, &a, input)
+        })
         .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn category_upsert(state: State<AppState>, input: Value) -> Result<Value, String> {
-    let a = actor_or_current(&state)?;
-    db(&state)
-        .with_conn(|c| repos::category_upsert(c, &state.db, &a, input))
+pub async fn category_upsert(state: State<'_, AppState>, input: Value) -> Result<Value, String> {
+    let db = state.db.share();
+    run(move || {
+        db.with_conn(|c| {
+            let a = actor_on(c, &db)?;
+            repos::category_upsert(c, &db, &a, input)
+        })
         .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn category_delete(
-    state: State<AppState>,
+pub async fn category_delete(
+    state: State<'_, AppState>,
     id: String,
     move_to: Option<String>,
 ) -> Result<(), String> {
-    let a = actor_or_current(&state)?;
-    db(&state)
-        .with_conn(|c| repos::category_delete(c, &state.db, &a, &id, move_to.as_deref()))
+    let db = state.db.share();
+    run(move || {
+        db.with_conn(|c| {
+            let a = actor_on(c, &db)?;
+            repos::category_delete(c, &db, &a, &id, move_to.as_deref())
+        })
         .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn transaction_upsert(state: State<AppState>, input: Value) -> Result<Value, String> {
-    let a = actor_or_current(&state)?;
-    db(&state)
-        .with_conn(|c| repos::transaction_upsert(c, &state.db, &a, input))
+pub async fn transaction_upsert(state: State<'_, AppState>, input: Value) -> Result<Value, String> {
+    let db = state.db.share();
+    run(move || {
+        db.with_conn(|c| {
+            let a = actor_on(c, &db)?;
+            repos::transaction_upsert(c, &db, &a, input)
+        })
         .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn transaction_list(state: State<AppState>, filter: Value) -> Result<Vec<Value>, String> {
+pub async fn transaction_list(
+    state: State<'_, AppState>,
+    filter: Value,
+) -> Result<Vec<Value>, String> {
     let f: repos::TransactionFilter = serde_json::from_value(filter).map_err(|e| e.to_string())?;
-    db(&state)
-        .with_conn(|c| repos::transaction_list(c, &f))
-        .map_err(|e| e.to_string())
+    let db = state.db.share();
+    run(move || {
+        db.with_read_conn(|c| repos::transaction_list(c, &f))
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn transaction_days(
-    state: State<AppState>,
+pub async fn transaction_days(
+    state: State<'_, AppState>,
     from: String,
     to: String,
 ) -> Result<Vec<String>, String> {
-    db(&state)
-        .with_conn(|c| repos::transaction_days(c, &from, &to))
-        .map_err(|e| e.to_string())
+    let db = state.db.share();
+    run(move || {
+        db.with_read_conn(|c| repos::transaction_days(c, &from, &to))
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn dashboard(state: State<AppState>, from: String, to: String) -> Result<Value, String> {
-    db(&state)
-        .with_conn(|c| repos::dashboard(c, &from, &to))
-        .map_err(|e| e.to_string())
+pub async fn dashboard(
+    state: State<'_, AppState>,
+    from: String,
+    to: String,
+) -> Result<Value, String> {
+    let db = state.db.share();
+    run(move || {
+        db.with_read_conn(|c| repos::dashboard(c, &from, &to))
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn journal(state: State<AppState>, filter: Value) -> Result<Vec<Value>, String> {
+pub async fn journal(state: State<'_, AppState>, filter: Value) -> Result<Vec<Value>, String> {
     let f: repos::JournalFilter = serde_json::from_value(filter).map_err(|e| e.to_string())?;
-    db(&state)
-        .with_conn(|c| repos::journal(c, &f))
-        .map_err(|e| e.to_string())
+    let db = state.db.share();
+    run(move || {
+        db.with_read_conn(|c| repos::journal(c, &f))
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn goal_upsert(state: State<AppState>, input: Value) -> Result<Value, String> {
-    let a = actor_or_current(&state)?;
-    db(&state)
-        .with_conn(|c| repos::goal_upsert(c, &state.db, &a, input))
+pub async fn goal_upsert(state: State<'_, AppState>, input: Value) -> Result<Value, String> {
+    let db = state.db.share();
+    run(move || {
+        db.with_conn(|c| {
+            let a = actor_on(c, &db)?;
+            repos::goal_upsert(c, &db, &a, input)
+        })
         .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn reminder_upsert(state: State<AppState>, input: Value) -> Result<Value, String> {
-    let a = actor_or_current(&state)?;
-    db(&state)
-        .with_conn(|c| repos::reminder_upsert(c, &state.db, &a, input))
+pub async fn reminder_upsert(state: State<'_, AppState>, input: Value) -> Result<Value, String> {
+    let db = state.db.share();
+    run(move || {
+        db.with_conn(|c| {
+            let a = actor_on(c, &db)?;
+            repos::reminder_upsert(c, &db, &a, input)
+        })
         .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn reminder_resolve(
-    state: State<AppState>,
+pub async fn reminder_resolve(
+    state: State<'_, AppState>,
     id: String,
     status: String,
     create_tx: Option<Value>,
 ) -> Result<(), String> {
-    let a = actor_or_current(&state)?;
-    db(&state)
-        .with_conn(|c| {
+    let db = state.db.share();
+    run(move || {
+        db.with_conn(|c| {
+            let a = actor_on(c, &db)?;
             let tx = c.unchecked_transaction()?;
             let mut tx_id = None;
             if let Some(v) = create_tx {
-                let row = repos::transaction_upsert(&tx, &state.db, &a, v)?;
+                let row = repos::transaction_upsert(&tx, &db, &a, v)?;
                 tx_id = row["id"].as_str().map(|s| s.to_string());
             }
-            repos::reminder_resolve(&tx, &state.db, &a, &id, &status, tx_id.as_deref())?;
+            repos::reminder_resolve(&tx, &db, &a, &id, &status, tx_id.as_deref())?;
             tx.commit()?;
             Ok(())
         })
         .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 // ---------- security & backups ----------
 
 #[tauri::command]
-pub fn pin_set(state: State<AppState>, pin: String) -> Result<(), String> {
+pub async fn pin_set(state: State<'_, AppState>, pin: String) -> Result<(), String> {
     use sha2::Digest;
     let salt = uuid::Uuid::new_v4().to_string();
     let hash = sha2::Sha256::digest(format!("{salt}{pin}").as_bytes());
     let hex: String = hash.iter().map(|b| format!("{b:02x}")).collect();
-    db(&state)
-        .with_conn(|c| {
+    let db = state.db.share();
+    run(move || {
+        db.with_conn(|c| {
             repos::setting_set(c, "pin_salt", &salt)?;
             repos::setting_set(c, "pin_hash", &hex)
         })
         .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn pin_verify(state: State<AppState>, pin: String) -> Result<bool, String> {
+pub async fn pin_verify(state: State<'_, AppState>, pin: String) -> Result<bool, String> {
     use sha2::Digest;
-    db(&state)
-        .with_conn(|c| {
+    let db = state.db.share();
+    run(move || {
+        db.with_read_conn(|c| {
             let salt = repos::setting_get(c, "pin_salt")?.unwrap_or_default();
             let expect = repos::setting_get(c, "pin_hash")?;
             match expect {
@@ -344,49 +440,59 @@ pub fn pin_verify(state: State<AppState>, pin: String) -> Result<bool, String> {
             }
         })
         .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn pin_clear(state: State<AppState>) -> Result<(), String> {
-    db(&state)
-        .with_conn(|c| {
+pub async fn pin_clear(state: State<'_, AppState>) -> Result<(), String> {
+    let db = state.db.share();
+    run(move || {
+        db.with_conn(|c| {
             repos::setting_set(c, "pin_salt", "")?;
             repos::setting_set(c, "pin_hash", "")
         })
         .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn pin_enabled(state: State<AppState>) -> bool {
-    state
-        .db
-        .with_conn(|c| repos::setting_get(c, "pin_hash"))
-        .ok()
-        .flatten()
-        .map(|h| !h.is_empty())
-        .unwrap_or(false)
+pub async fn pin_enabled(state: State<'_, AppState>) -> Result<bool, String> {
+    let db = state.db.share();
+    run(move || {
+        Ok(db
+            .with_read_conn(|c| repos::setting_get(c, "pin_hash"))
+            .ok()
+            .flatten()
+            .map(|h| !h.is_empty())
+            .unwrap_or(false))
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn backup_create(state: State<AppState>) -> Result<String, String> {
-    let dir = std::path::Path::new(&state.db.attachments_dir)
-        .join("..")
-        .join("backups");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let name = format!("backup-{}.db", chrono::Local::now().format("%Y%m%d-%H%M%S"));
-    let dest = dir.join(&name);
-    state
-        .db
-        .with_conn(|c| {
+pub async fn backup_create(state: State<'_, AppState>) -> Result<String, String> {
+    let db = state.db.share();
+    run(move || {
+        let dir = std::path::Path::new(&db.attachments_dir)
+            .join("..")
+            .join("backups");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let name = format!("backup-{}.db", chrono::Local::now().format("%Y%m%d-%H%M%S"));
+        let dest = dir.join(&name);
+        db.with_conn(|c| {
             c.execute("VACUUM INTO ?1", [dest.to_string_lossy().as_ref()])?;
             Ok(())
         })
         .map_err(|e| e.to_string())?;
-    Ok(dest.to_string_lossy().into_owned())
+        Ok(dest.to_string_lossy().into_owned())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn backup_list(app: AppHandle) -> Vec<String> {
+pub async fn backup_list(app: AppHandle) -> Vec<String> {
     app.path()
         .app_data_dir()
         .map(|dir| finance_storage::backup::list(&dir))
@@ -409,12 +515,16 @@ pub async fn backup_restore(app: AppHandle, name: String) -> Result<(), String> 
     .map_err(|e| e.to_string())?
 }
 
+/// Reminders due by today (local time — the user plans payments by their clock).
 #[tauri::command]
-pub fn reminders_due(state: State<AppState>) -> Result<Vec<Value>, String> {
-    let today = finance_storage::db::now_iso()[..10].to_string();
-    db(&state)
-        .with_conn(|c| repos::reminders_due(c, &today))
-        .map_err(|e| e.to_string())
+pub async fn reminders_due(state: State<'_, AppState>) -> Result<Vec<Value>, String> {
+    let today = chrono::Local::now().date_naive().to_string();
+    let db = state.db.share();
+    run(move || {
+        db.with_read_conn(|c| repos::reminders_due(c, &today))
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 // ---------- attachments ----------
@@ -469,20 +579,14 @@ pub async fn attachment_add(
     }
     let bytes = bytes.clone();
     let db = state.db.share();
-    tauri::async_runtime::spawn_blocking(move || {
+    run(move || {
         db.with_conn(|c| {
-            let uid = repos::setting_get(c, "current_user_id")?;
-            let actor = Actor {
-                user_id: uid,
-                device_id: Some(db.device_id.clone()),
-                source: Source::Desktop,
-            };
+            let actor = actor_on(c, &db)?;
             repos::attachment_add(c, &db, &actor, &transaction_id, &file_name, &mime, &bytes)
         })
         .map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 /// Attachment file names are sha256 hex digests — reject anything else so a
@@ -492,7 +596,7 @@ pub(crate) fn valid_attachment_hash(sha256: &str) -> bool {
 }
 
 #[tauri::command]
-pub fn attachment_path(state: State<AppState>, sha256: String) -> Result<String, String> {
+pub async fn attachment_path(state: State<'_, AppState>, sha256: String) -> Result<String, String> {
     if !valid_attachment_hash(&sha256) {
         return Err("invalid attachment id".into());
     }
@@ -507,8 +611,8 @@ pub fn attachment_path(state: State<AppState>, sha256: String) -> Result<String,
 // ---------- exchange rates ----------
 
 #[tauri::command]
-pub fn export_xlsx(
-    state: State<AppState>,
+pub async fn export_xlsx(
+    state: State<'_, AppState>,
     app: AppHandle,
     from: String,
     to: String,
@@ -518,20 +622,24 @@ pub fn export_xlsx(
         .document_dir()
         .unwrap_or_else(|_| std::env::temp_dir())
         .join("Финансы");
-    db(&state)
-        .with_conn(|c| finance_storage::export::export_xlsx(c, &dir, &from, &to))
-        .map_err(|e| e.to_string())
+    let db = state.db.share();
+    run(move || {
+        db.with_read_conn(|c| finance_storage::export::export_xlsx(c, &dir, &from, &to))
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn rates_latest(state: State<AppState>) -> Result<Vec<Value>, String> {
-    db(&state)
-        .with_conn(repos::rates_latest)
-        .map_err(|e| e.to_string())
+pub async fn rates_latest(state: State<'_, AppState>) -> Result<Vec<Value>, String> {
+    let db = state.db.share();
+    run(move || {
+        db.with_read_conn(repos::rates_latest)
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
-/// Refreshes exchange rates from api.nbrb.by for every currency used by
-/// accounts plus USD/EUR. Currencies unknown to NBRB are skipped.
 // ---------- telegram bot ----------
 
 #[tauri::command]
@@ -546,29 +654,33 @@ pub async fn tg_connect(
 }
 
 #[tauri::command]
-pub fn tg_disconnect(state: State<AppState>) -> Result<(), String> {
-    crate::bot::tg_disconnect(&state)
+pub async fn tg_disconnect(state: State<'_, AppState>) -> Result<(), String> {
+    let db = state.db.share();
+    run(move || crate::bot::tg_disconnect(&db)).await
 }
 
 #[tauri::command]
-pub fn tg_status(state: State<AppState>) -> Value {
-    crate::bot::tg_status(&state)
+pub async fn tg_status(state: State<'_, AppState>) -> Result<Value, String> {
+    let db = state.db.share();
+    run(move || Ok(crate::bot::tg_status(&db))).await
 }
 
 #[tauri::command]
-pub fn tg_pair_code(state: State<AppState>, user_id: String) -> Result<String, String> {
-    crate::bot::tg_pair_code(&state, &user_id)
+pub async fn tg_pair_code(state: State<'_, AppState>, user_id: String) -> Result<String, String> {
+    let db = state.db.share();
+    run(move || crate::bot::tg_pair_code(&db, &user_id)).await
 }
 
 // ---------- LAN sync ----------
 
 #[tauri::command]
-pub fn device_pair_code<R: tauri::Runtime>(
+pub async fn device_pair_code<R: tauri::Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
     user_id: String,
 ) -> Result<String, String> {
-    crate::sync::pair_code(&app, &state, &user_id)
+    let db = state.db.share();
+    run(move || crate::sync::pair_code(&app, &db, &user_id)).await
 }
 
 /// The pairing_requests payload for a given hub (None = client mode,
@@ -594,15 +706,19 @@ pub fn pairing_requests<R: tauri::Runtime>(app: AppHandle<R>) -> Value {
 }
 
 #[tauri::command]
-pub fn pairing_decide<R: tauri::Runtime>(
+pub async fn pairing_decide<R: tauri::Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
     request_id: String,
     allow: bool,
 ) -> Result<(), String> {
     let hub = crate::sync::hub(&app).ok_or("pairing unavailable")?;
-    hub.decide(&state.db, &request_id, allow)
-        .map_err(|e| e.to_string())
+    let db = state.db.share();
+    run(move || {
+        hub.decide(&db, &request_id, allow)
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -653,19 +769,21 @@ pub fn startup_error(app: AppHandle) -> Option<Value> {
 /// Accepts a recovery key from the lock screen, verifies it opens the db and
 /// stores it in the OS keyring. The frontend relaunches on success.
 #[tauri::command]
-pub fn unlock_db(app: AppHandle, recovery: String) -> Result<(), String> {
+pub async fn unlock_db(app: AppHandle, recovery: String) -> Result<(), String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    crate::state::unlock_with_recovery(&dir, &recovery)
+    run(move || crate::state::unlock_with_recovery(&dir, &recovery)).await
 }
 
 #[tauri::command]
-pub fn sync_status(state: State<AppState>) -> Value {
-    crate::sync::sync_status(&state)
+pub async fn sync_status(state: State<'_, AppState>) -> Result<Value, String> {
+    let db = state.db.share();
+    run(move || Ok(crate::sync::sync_status(&db))).await
 }
 
+/// ~2.5 s mDNS browse — must not run on the IPC thread.
 #[tauri::command]
-pub fn discover_hosts() -> Vec<Value> {
-    crate::sync::discover_hosts()
+pub async fn discover_hosts() -> Result<Vec<Value>, String> {
+    run(|| Ok(crate::sync::discover_hosts())).await
 }
 
 /// LAN URLs this device can be reached at when it acts as a host.
@@ -675,8 +793,9 @@ pub fn host_addresses() -> Vec<String> {
 }
 
 #[tauri::command]
-pub fn conflict_list(state: State<AppState>) -> Result<Vec<Value>, String> {
-    crate::sync::conflict_list(&state)
+pub async fn conflict_list(state: State<'_, AppState>) -> Result<Vec<Value>, String> {
+    let db = state.db.share();
+    run(move || crate::sync::conflict_list(&db)).await
 }
 
 #[tauri::command]
@@ -693,13 +812,16 @@ pub async fn rates_refresh(state: State<'_, AppState>) -> Result<Value, String> 
     refresh_rates(&state).await
 }
 
-/// Fetches NBRB rates for account currencies plus USD/EUR (used by the UI, scheduler and bot).
+/// Fetches NBRB rates for account currencies plus USD/EUR (used by the UI,
+/// scheduler and bot). Currencies are fetched in parallel on the shared client;
+/// unknown ones are skipped.
 pub async fn refresh_rates(state: &AppState) -> Result<Value, String> {
-    let currencies: Vec<String> = state
-        .db
-        .with_conn(|c| {
-            let mut stmt =
-                c.prepare("SELECT DISTINCT currency FROM accounts WHERE deleted_at IS NULL")?;
+    let db = state.db.share();
+    let currencies: Vec<String> = run(move || {
+        db.with_read_conn(|c| {
+            let mut stmt = c.prepare_cached(
+                "SELECT DISTINCT currency FROM accounts WHERE deleted_at IS NULL",
+            )?;
             let mut v: Vec<String> = stmt
                 .query_map([], |r| r.get(0))?
                 .collect::<Result<_, _>>()?;
@@ -710,32 +832,62 @@ pub async fn refresh_rates(state: &AppState) -> Result<Value, String> {
             }
             Ok(v)
         })
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())
+    })
+    .await?;
 
-    let http = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|e| e.to_string())?;
-    let mut updated = Vec::<String>::new();
-    let mut skipped = Vec::<String>::new();
-    for cur in currencies {
-        let url = format!("https://api.nbrb.by/exrates/rates/{cur}?parammode=2");
-        let Ok(resp) = http.get(&url).send().await else {
-            skipped.push(cur);
-            continue;
-        };
-        let Ok(rate) = resp.json::<finance_storage::nbrb::NbrbRate>().await else {
-            skipped.push(cur);
-            continue;
-        };
-        let scaled = finance_storage::nbrb::per_unit_scaled(&rate);
-        let date = finance_storage::nbrb::date_of(&rate).to_string();
-        state
-            .db
-            .with_conn(|c| repos::rate_upsert(c, &state.db, &date, &cur, scaled, 1))
-            .map_err(|e| e.to_string())?;
-        updated.push(cur);
+    let http = crate::net::client();
+    let mut fetches = Vec::new();
+    for cur in &currencies {
+        let cur = cur.clone();
+        let http = http.clone();
+        fetches.push(tauri::async_runtime::spawn(async move {
+            let url = format!("https://api.nbrb.by/exrates/rates/{cur}?parammode=2");
+            let resp = http
+                .get(&url)
+                .timeout(std::time::Duration::from_secs(15))
+                .send()
+                .await
+                .map_err(|e| e.to_string())?;
+            let rate = resp
+                .json::<finance_storage::nbrb::NbrbRate>()
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok::<_, String>((
+                cur,
+                finance_storage::nbrb::per_unit_scaled(&rate),
+                finance_storage::nbrb::date_of(&rate).to_string(),
+            ))
+        }));
     }
+
+    let mut updated = Vec::<String>::new();
+    let mut fetched = Vec::<(String, i64, String)>::new();
+    for f in fetches {
+        if let Ok(Ok(v)) = f.await {
+            fetched.push(v);
+        }
+    }
+    // Writes still serialize on the single write conn.
+    let db = state.db.share();
+    let fetched2 = fetched.clone();
+    run(move || {
+        db.with_conn(|c| {
+            for (cur, scaled, date) in &fetched2 {
+                repos::rate_upsert(c, &db, date, cur, *scaled, 1)?;
+            }
+            Ok(())
+        })
+        .map_err(|e| e.to_string())
+    })
+    .await?;
+    updated.extend(fetched.iter().map(|f| f.0.clone()));
+    let fetched_set: std::collections::HashSet<&String> = fetched.iter().map(|f| &f.0).collect();
+    let skipped: Vec<String> = currencies
+        .iter()
+        .filter(|c| !fetched_set.contains(*c))
+        .cloned()
+        .collect();
     Ok(json!({"updated": updated, "skipped": skipped}))
 }
 
@@ -751,19 +903,24 @@ pub async fn ensure_rate(state: &AppState, currency: &str, date: &str) -> Result
     if date > today.as_str() {
         return Ok(());
     }
-    let have = state
-        .db
-        .with_conn(|c| repos::has_rate_on(c, &cur, date))
-        .map_err(|e| e.to_string())?;
+    let db = state.db.share();
+    let cc = cur.clone();
+    let dd = date.to_string();
+    let have = run(move || {
+        db.with_read_conn(|c| repos::has_rate_on(c, &cc, &dd))
+            .map_err(|e| e.to_string())
+    })
+    .await?;
     if have {
         return Ok(());
     }
     let url = format!("https://api.nbrb.by/exrates/rates/{cur}?parammode=2&ondate={date}");
-    let http = reqwest::Client::builder()
+    let Ok(resp) = crate::net::client()
+        .get(&url)
         .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|e| e.to_string())?;
-    let Ok(resp) = http.get(&url).send().await else {
+        .send()
+        .await
+    else {
         return Ok(());
     };
     let Ok(rate) = resp.json::<finance_storage::nbrb::NbrbRate>().await else {
@@ -774,10 +931,12 @@ pub async fn ensure_rate(state: &AppState, currency: &str, date: &str) -> Result
         return Ok(());
     }
     let stored_date = finance_storage::nbrb::date_of(&rate).to_string();
-    state
-        .db
-        .with_conn(|c| repos::rate_upsert(c, &state.db, &stored_date, &cur, scaled, 1))
-        .map_err(|e| e.to_string())
+    let db = state.db.share();
+    run(move || {
+        db.with_conn(|c| repos::rate_upsert(c, &db, &stored_date, &cur, scaled, 1))
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 /// Converts `amount_minor` between currencies using the rate in effect on `date`
@@ -793,10 +952,12 @@ pub async fn convert_at(
     for cur in [&from, &to] {
         let _ = ensure_rate(&state, cur, &date).await;
     }
-    state
-        .db
-        .with_conn(|c| repos::convert_minor_at(c, amount_minor, &from, &to, &date))
-        .map_err(|e| e.to_string())
+    let db = state.db.share();
+    run(move || {
+        db.with_read_conn(|c| repos::convert_minor_at(c, amount_minor, &from, &to, &date))
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[cfg(test)]

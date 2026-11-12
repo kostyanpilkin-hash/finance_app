@@ -21,7 +21,7 @@ pub fn new_id() -> String {
 
 /// Reads a whole row as a camelCase JSON map.
 pub fn row_json(conn: &Connection, table: &str, id: &str) -> Result<Option<Value>, Error> {
-    let mut stmt = conn.prepare(&format!("SELECT * FROM {table} WHERE id = ?1"))?;
+    let mut stmt = conn.prepare_cached(&format!("SELECT * FROM {table} WHERE id = ?1"))?;
     let cols: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
     let mut rows = stmt.query([id])?;
     let Some(row) = rows.next()? else {
@@ -30,9 +30,29 @@ pub fn row_json(conn: &Connection, table: &str, id: &str) -> Result<Option<Value
     Ok(Some(row_to_json(row, &cols)))
 }
 
+type CamelCache = Mutex<std::collections::HashMap<Vec<String>, std::sync::Arc<Vec<String>>>>;
+
+/// snake_case → camelCase for a whole column list, memoized. Result rows share
+/// the same handful of column shapes, so one lookup replaces the per-row work.
+fn camel_names(cols: &[String]) -> std::sync::Arc<Vec<String>> {
+    use std::sync::OnceLock;
+    static CACHE: OnceLock<CamelCache> = OnceLock::new();
+    let cache = CACHE.get_or_init(Default::default);
+    if let Some(v) = cache.lock().unwrap_or_else(|e| e.into_inner()).get(cols) {
+        return v.clone();
+    }
+    let v = std::sync::Arc::new(cols.iter().map(|c| snake_to_camel(c)).collect::<Vec<_>>());
+    cache
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(cols.to_vec(), v.clone());
+    v
+}
+
 pub fn row_to_json(row: &rusqlite::Row, cols: &[String]) -> Value {
+    let names = camel_names(cols);
     let mut map = Map::with_capacity(cols.len());
-    for (i, name) in cols.iter().enumerate() {
+    for (i, name) in names.iter().enumerate() {
         let v = match row.get_ref(i) {
             Ok(ValueRef::Null) => Value::Null,
             Ok(ValueRef::Integer(n)) => json!(n),
@@ -43,7 +63,7 @@ pub fn row_to_json(row: &rusqlite::Row, cols: &[String]) -> Value {
             }
             Err(_) => Value::Null,
         };
-        map.insert(snake_to_camel(name), v);
+        map.insert(name.clone(), v);
     }
     Value::Object(map)
 }
@@ -92,7 +112,12 @@ pub fn diff_json(before: &Value, after: &Value) -> Value {
 }
 
 pub struct Db {
+    /// Write connection: every mutation (and its journal/outbox side effects)
+    /// serializes on this mutex.
     pub conn: std::sync::Arc<Mutex<Connection>>,
+    /// Dedicated read connection (WAL): UI queries don't wait on a busy writer
+    /// (sync pushes, bot, backups). Never used for writes.
+    pub read_conn: std::sync::Arc<Mutex<Connection>>,
     /// "host" | "client" — set by the wizard; default host.
     pub mode: String,
     /// Stable id of this device (this machine's database).
@@ -104,10 +129,11 @@ pub struct Db {
 }
 
 impl Db {
-    /// Cheap handle sharing the same connection (for the API server task).
+    /// Cheap handle sharing the same connections (for the API server task).
     pub fn share(&self) -> Self {
         Self {
             conn: self.conn.clone(),
+            read_conn: self.read_conn.clone(),
             mode: self.mode.clone(),
             device_id: self.device_id.clone(),
             instance_id: self.instance_id.clone(),
@@ -147,7 +173,7 @@ fn stamp(row: &mut Value, device_id: &str) {
 /// their stored values (old clients pushing a partial row can't wipe newer
 /// columns); an explicit `null` clears a column.
 pub fn write_row(conn: &Connection, table: &str, row: &Value) -> Result<(), Error> {
-    let stmt = conn.prepare(&format!("SELECT * FROM {table} LIMIT 0"))?;
+    let stmt = conn.prepare_cached(&format!("SELECT * FROM {table} LIMIT 0"))?;
     let cols: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
     let map = row
         .as_object()
@@ -325,8 +351,10 @@ pub fn record_audit(
     // (separate from the entity change seq recorded in record_sync_side).
     let seq = if ctx.db.mode == "host" {
         ctx.conn
-            .query_row(
+            .prepare_cached(
                 "INSERT INTO sync_log (entity, entity_id, version, op, ts) VALUES (?1,?2,1,'audit',?3) RETURNING seq",
+            )?
+            .query_row(
                 rusqlite::params![Entity::AuditLog.table(), entry_id, now],
                 |r| r.get(0),
             )
@@ -334,9 +362,11 @@ pub fn record_audit(
     } else {
         0
     };
-    ctx.conn.execute(
+    ctx.conn.prepare_cached(
         "INSERT INTO audit_log (id, ts, user_id, device_id, source, entity, entity_id, action, before_json, after_json, changes_json, version, created_at, updated_at, updated_by_device, seq, local_dirty)
          VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,1,?12,?12,?13,?14,?15)",
+    )?
+    .execute(
         rusqlite::params![
             entry_id,
             now,
@@ -371,15 +401,21 @@ fn record_sync_side(
             Op::Delete => "delete",
             Op::Restore => "restore",
         };
-        let seq: i64 = ctx.conn.query_row(
-            "INSERT INTO sync_log (entity, entity_id, version, op, ts) VALUES (?1,?2,?3,?4,?5) RETURNING seq",
-            rusqlite::params![entity.table(), id, version, op_s, now_iso()],
-            |r| r.get(0),
-        )?;
-        ctx.conn.execute(
-            &format!("UPDATE {} SET seq = ?1 WHERE id = ?2", entity.table()),
-            rusqlite::params![seq, id],
-        )?;
+        let seq: i64 = ctx
+            .conn
+            .prepare_cached(
+                "INSERT INTO sync_log (entity, entity_id, version, op, ts) VALUES (?1,?2,?3,?4,?5) RETURNING seq",
+            )?
+            .query_row(
+                rusqlite::params![entity.table(), id, version, op_s, now_iso()],
+                |r| r.get(0),
+            )?;
+        ctx.conn
+            .prepare_cached(&format!(
+                "UPDATE {} SET seq = ?1 WHERE id = ?2",
+                entity.table()
+            ))?
+            .execute(rusqlite::params![seq, id])?;
     } else {
         // Queue for the host. `payload` read back from the row for fidelity.
         let row = row_json(ctx.conn, entity.table(), id)?;
@@ -394,9 +430,11 @@ fn record_sync_side(
             .as_ref()
             .and_then(|r| r["version"].as_i64())
             .map(|v| v - 1);
-        ctx.conn.execute(
+        ctx.conn.prepare_cached(
             "INSERT OR REPLACE INTO outbox (op_id, entity, entity_id, op, base_version, payload_json, created_at)
              VALUES (?1,?2,?3,?4,?5,?6,?7)",
+        )?
+        .execute(
             rusqlite::params![
                 op_id,
                 entity.table(),

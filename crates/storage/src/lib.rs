@@ -22,44 +22,64 @@ use std::sync::{Arc, Mutex};
 
 use db::{new_id, now_iso};
 
+fn apply_key(conn: &Connection, key: Option<&[u8]>) -> Result<(), Error> {
+    if let Some(k) = key {
+        conn.pragma_update(None, "key", hex(k))?;
+    }
+    Ok(())
+}
+
 impl db::Db {
     /// Opens (or creates) `path` as a SQLCipher database.
     /// `key` — the 32-byte DB key; `None` opens an unencrypted db (tests).
+    /// Two connections share the file: `conn` for writes, `read_conn` (WAL) for
+    /// reads so queries never queue behind a write transaction.
     pub fn open(path: &Path, key: Option<&[u8]>) -> Result<Self, Error> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
         let conn = Connection::open(path)?;
+        apply_key(&conn, key)?;
+        let read_conn = Connection::open(path)?;
+        apply_key(&read_conn, key)?;
         Self::init_conn(
             conn,
+            read_conn,
             path.parent().unwrap_or(Path::new(".")).to_path_buf(),
-            key,
         )
     }
 
-    /// In-memory db for tests.
+    /// In-memory db for tests. A named shared-cache URI gives conn+read_conn
+    /// a common database that is still private to this `Db` — `file::memory:`
+    /// alone would leak state between `Db`s in the same test process.
     pub fn open_memory(key: Option<&[u8]>) -> Result<Self, Error> {
-        let conn = Connection::open_in_memory()?;
+        let flags = rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
+            | rusqlite::OpenFlags::SQLITE_OPEN_CREATE
+            | rusqlite::OpenFlags::SQLITE_OPEN_URI;
+        let name = format!("file:memdb-{}?mode=memory&cache=shared", new_id());
+        let conn = Connection::open_with_flags(&name, flags)?;
+        apply_key(&conn, key)?;
+        let read_conn = Connection::open_with_flags(&name, flags)?;
+        apply_key(&read_conn, key)?;
         Self::init_conn(
             conn,
+            read_conn,
             std::env::temp_dir().join("finance-test-attachments"),
-            key,
         )
     }
 
     fn init_conn(
         conn: Connection,
+        read_conn: Connection,
         attachments_dir: PathBuf,
-        key: Option<&[u8]>,
     ) -> Result<Self, Error> {
-        if let Some(k) = key {
-            conn.pragma_update(None, "key", hex(k))?;
-        }
         // Throws when the key is wrong or the file isn't a SQLite db.
         conn.query_row("SELECT count(*) FROM sqlite_master", [], |r| {
             r.get::<_, i64>(0)
         })?;
         migrations::migrate(&conn)?;
+        // Per-connection pragmas the migration batch can't set for us.
+        read_conn.pragma_update(None, "busy_timeout", 5000)?;
 
         let meta = |key: &str| -> Option<String> {
             conn.query_row("SELECT value FROM meta WHERE key=?1", [key], |r| r.get(0))
@@ -89,6 +109,7 @@ impl db::Db {
         let instance_id = meta("instance_id").unwrap();
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
+            read_conn: Arc::new(Mutex::new(read_conn)),
             mode,
             device_id,
             instance_id,
@@ -96,11 +117,25 @@ impl db::Db {
         })
     }
 
+    /// Serialized write access (mutations, journal, outbox).
     pub fn with_conn<T>(
         &self,
         f: impl FnOnce(&Connection) -> Result<T, Error>,
     ) -> Result<T, Error> {
         let conn = self.conn.lock().map_err(|e| Error::Other(e.to_string()))?;
+        f(&conn)
+    }
+
+    /// Read-only queries on the dedicated read connection. In WAL mode they
+    /// run concurrently with the writer; never call this inside `with_conn`.
+    pub fn with_read_conn<T>(
+        &self,
+        f: impl FnOnce(&Connection) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        let conn = self
+            .read_conn
+            .lock()
+            .map_err(|e| Error::Other(e.to_string()))?;
         f(&conn)
     }
 

@@ -271,7 +271,7 @@ struct Ctx {
 fn linked_user(state: &AppState, chat: i64) -> Option<String> {
     state
         .db
-        .with_conn(|c| {
+        .with_read_conn(|c| {
             c.query_row(
                 "SELECT user_id FROM telegram_links WHERE chat_id=?1",
                 [chat],
@@ -286,7 +286,7 @@ fn linked_user(state: &AppState, chat: i64) -> Option<String> {
 fn user_lang(state: &AppState, _user_id: Option<&String>) -> String {
     state
         .db
-        .with_conn(|c| repos::setting_get(c, "language"))
+        .with_read_conn(|c| repos::setting_get(c, "language"))
         .ok()
         .flatten()
         .filter(|l| matches!(l.as_str(), "ru" | "be" | "en"))
@@ -458,37 +458,44 @@ pub fn start_polling(app: AppHandle) {
 
 pub async fn tg_connect(state: &AppState, token: String) -> Result<(String, String), String> {
     let tg = Tg {
-        http: reqwest::Client::new(),
+        http: crate::net::client().clone(),
         token: token.trim().into(),
     };
     let me: Option<TgUser> = tg.call("getMe", &json!({})).await?;
     let me = me.ok_or("invalid token")?;
     save_token(token.trim())?;
     let username = me.username.unwrap_or_default();
-    state
-        .db
-        .with_conn(|c| {
-            repos::setting_set(c, "tg_bot_username", &username)?;
+    let db = state.db.share();
+    let uname = username.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        db.with_conn(|c| {
+            repos::setting_set(c, "tg_bot_username", &uname)?;
             repos::setting_set(c, "tg_enabled", "1")
         })
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
     Ok((username, me.id.to_string()))
 }
 
-pub fn tg_pair_code(state: &AppState, user_id: &str) -> Result<String, String> {
+pub fn tg_pair_code(db: &finance_storage::db::Db, user_id: &str) -> Result<String, String> {
     let code: String = (0..6)
         .map(|_| (uuid::Uuid::new_v4().as_bytes()[0] % 10).to_string())
         .collect();
     let exp = (chrono::Utc::now() + chrono::Duration::minutes(10)).to_rfc3339();
-    state.db.with_conn(|c| {
-        c.execute("INSERT OR REPLACE INTO tg_pair_codes (code, user_id, expires_at) VALUES (?1,?2,?3)",
-            finance_storage::rusqlite::params![code, user_id, exp])?;
+    db.with_conn(|c| {
+        c.execute(
+            "INSERT OR REPLACE INTO tg_pair_codes (code, user_id, expires_at) VALUES (?1,?2,?3)",
+            finance_storage::rusqlite::params![code, user_id, exp],
+        )?;
         Ok(())
-    }).map_err(|e| e.to_string())?;
+    })
+    .map_err(|e| e.to_string())?;
     Ok(code)
 }
 
-pub fn tg_status(state: &AppState) -> Value {
+pub fn tg_status(db: &finance_storage::db::Db) -> Value {
     let status = STATUS.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let fresh = |t: &Option<String>| {
         t.as_deref()
@@ -503,9 +510,8 @@ pub fn tg_status(state: &AppState) -> Value {
     } else {
         "offline"
     };
-    let mut v = state
-        .db
-        .with_conn(|c| {
+    let mut v = db
+        .with_read_conn(|c| {
             let username = repos::setting_get(c, "tg_bot_username")?.filter(|u| !u.is_empty());
             let mut st = c.prepare("SELECT user_id, chat_id FROM telegram_links")?;
             let links: Vec<(String, i64)> = st
@@ -524,14 +530,12 @@ pub fn tg_status(state: &AppState) -> Value {
     v
 }
 
-pub fn tg_disconnect(state: &AppState) -> Result<(), String> {
+pub fn tg_disconnect(db: &finance_storage::db::Db) -> Result<(), String> {
     delete_token();
-    state
-        .db
-        .with_conn(|c| {
-            c.execute("DELETE FROM telegram_links", [])?;
-            repos::setting_set(c, "tg_bot_username", "")?;
-            repos::setting_set(c, "tg_enabled", "0")
-        })
-        .map_err(|e| e.to_string())
+    db.with_conn(|c| {
+        c.execute("DELETE FROM telegram_links", [])?;
+        repos::setting_set(c, "tg_bot_username", "")?;
+        repos::setting_set(c, "tg_enabled", "0")
+    })
+    .map_err(|e| e.to_string())
 }

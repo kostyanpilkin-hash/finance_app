@@ -166,7 +166,7 @@ impl Draft {
 fn load(state: &AppState, chat: i64) -> Result<Draft, String> {
     state
         .db
-        .with_conn(|c| {
+        .with_read_conn(|c| {
             use finance_storage::rusqlite::OptionalExtension;
             let raw: Option<String> = c
                 .query_row(
@@ -194,7 +194,7 @@ fn store(state: &AppState, chat: i64, draft: &Draft) -> Result<(), String> {
 fn rows(state: &AppState, entity: Entity) -> Result<Vec<Value>, String> {
     state
         .db
-        .with_conn(|c| repos::list_rows(c, entity, true))
+        .with_read_conn(|c| repos::list_rows(c, entity, true))
         .map(|v| v.into_iter().filter(|r| r["deletedAt"].is_null()).collect())
         .map_err(|_| "lookup failed".into())
 }
@@ -246,7 +246,7 @@ fn favourites(state: &AppState, kind: &str) -> Result<Vec<String>, String> {
     let since = (report::today() - chrono::Duration::days(90)).to_string();
     state
         .db
-        .with_conn(|c| {
+        .with_read_conn(|c| {
             let mut st = c.prepare(
                 "SELECT category_id FROM transactions WHERE deleted_at IS NULL AND kind=?1
                  AND category_id IS NOT NULL AND occurred_at >= ?2
@@ -293,7 +293,7 @@ fn choices(state: &AppState, d: &Draft) -> Result<Vec<Value>, String> {
             let day = (!d.filter_date.is_empty()).then(|| d.filter_date.clone());
             return state
                 .db
-                .with_conn(|c| {
+                .with_read_conn(|c| {
                     repos::transaction_list(
                         c,
                         &repos::TransactionFilter {
@@ -397,7 +397,7 @@ fn suggested(state: &AppState, d: &Draft) -> Result<Option<i64>, String> {
     };
     state
         .db
-        .with_conn(|c| repos::convert_minor_at(c, d.amount, cur, &acc, &d.date))
+        .with_read_conn(|c| repos::convert_minor_at(c, d.amount, cur, &acc, &d.date))
         .map(|v| v.filter(|n| *n > 0))
         .map_err(|_| "conversion failed".into())
 }
@@ -546,7 +546,7 @@ fn tx_button(state: &AppState, r: &Value, lang: &str) -> String {
 fn tx_details(state: &AppState, id: &str, lang: &str) -> Result<Option<String>, String> {
     let Some(row) = state
         .db
-        .with_conn(|c| finance_storage::db::row_json(c, "transactions", id))
+        .with_read_conn(|c| finance_storage::db::row_json(c, "transactions", id))
         .map_err(|_| "lookup failed")?
         .filter(|r| r["deletedAt"].is_null())
     else {
@@ -554,7 +554,7 @@ fn tx_details(state: &AppState, id: &str, lang: &str) -> Result<Option<String>, 
     };
     let receipts: i64 = state
         .db
-        .with_conn(|c| {
+        .with_read_conn(|c| {
             Ok(c.query_row(
                 "SELECT COUNT(*) FROM attachments WHERE transaction_id=?1 AND deleted_at IS NULL",
                 [id],
@@ -1337,7 +1337,7 @@ fn persist_entry(
 }
 
 fn undo_id(state: &AppState, ctx: &Ctx) -> Result<Option<String>, String> {
-    state.db.with_conn(|c| {
+    state.db.with_read_conn(|c| {
         use finance_storage::rusqlite::OptionalExtension;
         Ok(c.query_row("SELECT id FROM transactions WHERE source='bot' AND created_by_user_id=?1 AND deleted_at IS NULL AND julianday(created_at) >= julianday(?2) ORDER BY created_at DESC LIMIT 1", finance_storage::rusqlite::params![ctx.db_user, (chrono::Utc::now()-chrono::Duration::minutes(10)).to_rfc3339()], |r| r.get(0)).optional()?)
     }).map_err(|_| "undo lookup failed".into())
@@ -1645,13 +1645,13 @@ async fn action_apply(
             let id = d.tx.clone().ok_or("transaction unavailable")?;
             let row = state
                 .db
-                .with_conn(|c| finance_storage::db::row_json(c, "transactions", &id))
+                .with_read_conn(|c| finance_storage::db::row_json(c, "transactions", &id))
                 .map_err(|_| "lookup failed")?
                 .filter(|r| r["deletedAt"].is_null())
                 .ok_or("transaction unavailable")?;
             let receipts: i64 = state
                 .db
-                .with_conn(|c| {
+                .with_read_conn(|c| {
                     Ok(c.query_row(
                         "SELECT COUNT(*) FROM attachments WHERE transaction_id=?1 AND deleted_at IS NULL",
                         [&id],

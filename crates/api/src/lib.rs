@@ -579,7 +579,7 @@ async fn pull(
         .to_string();
     let since = q.since.unwrap_or(0);
     let limit = q.limit.unwrap_or(2000);
-    s.db.with_conn(|c| {
+    s.db.with_read_conn(|c| {
         auth(c, &token)?;
         let mut st = c.prepare(
             "SELECT s.seq, s.entity, s.entity_id, s.op FROM sync_log s WHERE s.seq > ?1 ORDER BY s.seq LIMIT ?2",

@@ -14,7 +14,7 @@ const CATCH_UP_HOURS: i64 = 12;
 fn setting(state: &AppState, key: &str, default: &str) -> String {
     state
         .db
-        .with_conn(|c| repos::setting_get(c, key))
+        .with_read_conn(|c| repos::setting_get(c, key))
         .ok()
         .flatten()
         .filter(|v| !v.is_empty())
@@ -88,7 +88,7 @@ pub async fn tick(state: &AppState) {
         }
     }
     let tg = Tg {
-        http: reqwest::Client::new(),
+        http: crate::net::client().clone(),
         token,
     };
     let jobs = [
@@ -164,7 +164,7 @@ pub async fn tick(state: &AppState) {
 fn linked_chats(state: &AppState) -> Vec<(String, i64)> {
     state
         .db
-        .with_conn(|c| {
+        .with_read_conn(|c| {
             let mut st = c.prepare("SELECT user_id, chat_id FROM telegram_links")?;
             let v = st
                 .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
@@ -222,7 +222,7 @@ fn reminder_text(state: &AppState, lang: &str, r: &Value) -> String {
     let rows = |e: Entity| {
         state
             .db
-            .with_conn(|c| repos::list_rows(c, e, false))
+            .with_read_conn(|c| repos::list_rows(c, e, false))
             .unwrap_or_default()
     };
     if let Some(a) = r["accountId"]
@@ -253,7 +253,7 @@ async fn send_reminders(state: &AppState, tg: &Tg, due: NaiveDate) -> Result<(),
     let lang = user_lang(state, None);
     let list = state
         .db
-        .with_conn(|c| repos::reminders_due(c, &due.to_string()))
+        .with_read_conn(|c| repos::reminders_due(c, &due.to_string()))
         .map_err(|e| e.to_string())?;
     for r in list {
         let id = r["id"].as_str().unwrap_or("");

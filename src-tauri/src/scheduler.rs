@@ -18,7 +18,8 @@ pub fn start(app: AppHandle) {
         tokio::time::sleep(Duration::from_secs(10)).await;
         while flag.load(Ordering::Relaxed) {
             refresh_once(&app).await;
-            auto_backup(&app);
+            let app2 = app.clone();
+            let _ = tauri::async_runtime::spawn_blocking(move || auto_backup(&app2)).await;
             // Check hourly; refresh at most once per calendar day.
             tokio::time::sleep(Duration::from_secs(3600)).await;
         }
@@ -44,8 +45,8 @@ async fn refresh_once(app: &AppHandle) {
     };
     let already = state
         .db
-        .with_conn(|c| {
-            let today = finance_storage::db::now_iso()[..10].to_string();
+        .with_read_conn(|c| {
+            let today = chrono::Local::now().date_naive().to_string();
             let n: i64 = c
                 .query_row(
                     "SELECT COUNT(*) FROM exchange_rates WHERE date >= ?1",

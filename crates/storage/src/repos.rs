@@ -39,7 +39,7 @@ pub fn list_rows(
     } else {
         format!("SELECT * FROM {table} WHERE deleted_at IS NULL ORDER BY sort, name")
     };
-    let mut stmt = conn.prepare(&sql)?;
+    let mut stmt = conn.prepare_cached(&sql)?;
     let cols: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
     let rows = stmt
         .query_map([], |r| Ok(crate::db::row_to_json(r, &cols)))?
@@ -104,11 +104,8 @@ pub fn user_upsert(
 
 fn next_sort(conn: &Connection, table: &str) -> Result<i64, Error> {
     Ok(conn
-        .query_row(
-            &format!("SELECT COALESCE(MAX(sort),0)+1 FROM {table}"),
-            [],
-            |r| r.get(0),
-        )
+        .prepare_cached(&format!("SELECT COALESCE(MAX(sort),0)+1 FROM {table}"))?
+        .query_row([], |r| r.get(0))
         .unwrap_or(0))
 }
 
@@ -257,16 +254,17 @@ pub fn category_delete(
     if target == id {
         return Err(Error::Invalid("cannot move to itself".into()));
     }
-    let count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM transactions WHERE category_id = ?1 AND deleted_at IS NULL",
-        [id],
-        |r| r.get(0),
-    )?;
+    let count: i64 = conn
+        .prepare_cached(
+            "SELECT COUNT(*) FROM transactions WHERE category_id = ?1 AND deleted_at IS NULL",
+        )?
+        .query_row([id], |r| r.get(0))?;
     if count > 0 {
         // Re-apply each moved transaction so version/seq/outbox stay consistent,
         // plus one merge_category audit entry describing the bulk move.
-        let mut st = conn
-            .prepare("SELECT id FROM transactions WHERE category_id = ?1 AND deleted_at IS NULL")?;
+        let mut st = conn.prepare_cached(
+            "SELECT id FROM transactions WHERE category_id = ?1 AND deleted_at IS NULL",
+        )?;
         let ids: Vec<String> = st
             .query_map([id], |r| r.get(0))?
             .collect::<Result<_, _>>()?;
@@ -306,8 +304,9 @@ fn misc_category_id(
     actor: &crate::models::Actor,
     kind: &str,
 ) -> Result<String, Error> {
-    if let Ok(id) = conn.query_row(
+    if let Ok(id) = conn.prepare_cached(
         "SELECT id FROM categories WHERE kind = ?1 AND key = 'misc' AND deleted_at IS NULL LIMIT 1",
+    )?.query_row(
         [kind],
         |r| r.get::<_, String>(0),
     ) {
@@ -377,10 +376,9 @@ pub fn transaction_upsert(
                 .clone()
                 .ok_or_else(|| Error::Invalid("category required".into()))?;
             ensure_exists(conn, Entity::Categories, &cat, "category")?;
-            let ck: String =
-                conn.query_row("SELECT kind FROM categories WHERE id=?1", [&cat], |r| {
-                    r.get(0)
-                })?;
+            let ck: String = conn
+                .prepare_cached("SELECT kind FROM categories WHERE id=?1")?
+                .query_row([&cat], |r| r.get(0))?;
             if ck != t.kind {
                 return Err(Error::Invalid(format!("category kind {ck} != {}", t.kind)));
             }
@@ -397,11 +395,9 @@ pub fn transaction_upsert(
         }
         _ => unreachable!(),
     }
-    let account_currency: String = conn.query_row(
-        "SELECT currency FROM accounts WHERE id=?1",
-        [&t.account_id],
-        |r| r.get(0),
-    )?;
+    let account_currency: String = conn
+        .prepare_cached("SELECT currency FROM accounts WHERE id=?1")?
+        .query_row([&t.account_id], |r| r.get(0))?;
     let orig = match (t.orig_currency.as_deref(), t.orig_amount_minor) {
         (Some(cur), _) if t.kind == "transfer" || cur.eq_ignore_ascii_case(&account_currency) => {
             None
@@ -453,14 +449,12 @@ pub fn transaction_upsert(
 }
 
 fn ensure_exists(conn: &Connection, entity: Entity, id: &str, what: &str) -> Result<(), Error> {
-    let n: i64 = conn.query_row(
-        &format!(
+    let n: i64 = conn
+        .prepare_cached(&format!(
             "SELECT COUNT(*) FROM {} WHERE id = ?1 AND deleted_at IS NULL",
             entity.table()
-        ),
-        [id],
-        |r| r.get(0),
-    )?;
+        ))?
+        .query_row([id], |r| r.get(0))?;
     if n == 0 {
         return Err(Error::NotFound(format!("{what} {id}")));
     }
@@ -544,7 +538,7 @@ pub fn transaction_list(conn: &Connection, f: &TransactionFilter) -> Result<Vec<
             sql.push_str(&format!(" OFFSET {}", push(o.into())));
         }
     }
-    let mut stmt = conn.prepare(&sql)?;
+    let mut stmt = conn.prepare_cached(&sql)?;
     let cols: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
     let rows = stmt
         .query_map(rusqlite::params_from_iter(params), |r| {
@@ -556,7 +550,7 @@ pub fn transaction_list(conn: &Connection, f: &TransactionFilter) -> Result<Vec<
 
 /// Distinct days (YYYY-MM-DD) that have at least one non-deleted transaction in the range.
 pub fn transaction_days(conn: &Connection, from: &str, to: &str) -> Result<Vec<String>, Error> {
-    let mut stmt = conn.prepare(
+    let mut stmt = conn.prepare_cached(
         "SELECT DISTINCT substr(occurred_at, 1, 10) AS d
          FROM transactions
          WHERE deleted_at IS NULL
@@ -614,22 +608,19 @@ fn hex_lower(b: &[u8]) -> String {
 
 pub fn setting_get(conn: &Connection, key: &str) -> Result<Option<String>, Error> {
     Ok(conn
-        .query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| {
-            r.get(0)
-        })
+        .prepare_cached("SELECT value FROM settings WHERE key = ?1")?
+        .query_row([key], |r| r.get(0))
         .ok())
 }
 
 pub fn setting_set(conn: &Connection, key: &str, value: &str) -> Result<(), Error> {
-    conn.execute(
-        "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
-        [key, value],
-    )?;
+    conn.prepare_cached("INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)")?
+        .execute([key, value])?;
     Ok(())
 }
 
 pub fn settings_all(conn: &Connection) -> Result<Value, Error> {
-    let mut stmt = conn.prepare("SELECT key, value FROM settings")?;
+    let mut stmt = conn.prepare_cached("SELECT key, value FROM settings")?;
     let map: serde_json::Map<String, Value> = stmt
         .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
         .filter_map(|r| r.ok())
@@ -642,7 +633,7 @@ pub fn settings_all(conn: &Connection) -> Result<Value, Error> {
 
 /// Balances per account (in account currency) + totals for a period, summed per currency.
 pub fn dashboard(conn: &Connection, from: &str, to: &str) -> Result<Value, Error> {
-    let mut stmt = conn.prepare(
+    let mut stmt = conn.prepare_cached(
         "SELECT a.*, u.name AS owner_name,
                 COALESCE((SELECT SUM(CASE WHEN t.kind='income' AND t.account_id = a.id THEN t.amount_minor
                                           WHEN t.kind='transfer' AND t.to_account_id = a.id THEN COALESCE(t.to_amount_minor, t.amount_minor)
@@ -662,7 +653,7 @@ pub fn dashboard(conn: &Connection, from: &str, to: &str) -> Result<Value, Error
         .query_map([], |r| Ok(crate::db::row_to_json(r, &cols)))?
         .collect::<Result<Vec<_>, _>>()?;
 
-    let mut stmt = conn.prepare(
+    let mut stmt = conn.prepare_cached(
         "SELECT t.kind, a.currency, SUM(t.amount_minor) AS amount
          FROM transactions t JOIN accounts a ON a.id = t.account_id
          WHERE t.deleted_at IS NULL AND t.kind != 'transfer'
@@ -721,7 +712,7 @@ pub fn rate_upsert(
 
 /// Latest rate per currency.
 pub fn rates_latest(conn: &Connection) -> Result<Vec<Value>, Error> {
-    let mut stmt = conn.prepare(
+    let mut stmt = conn.prepare_cached(
         "SELECT r.* FROM exchange_rates r
          JOIN (SELECT currency, MAX(date) AS d FROM exchange_rates GROUP BY currency) m
            ON m.currency = r.currency AND m.d = r.date",
@@ -745,16 +736,20 @@ fn rate_row(
     }
     let row = match date {
         Some(d) => conn
-            .query_row(
+            .prepare_cached(
                 "SELECT rate_byn_scaled, scale FROM exchange_rates
                  WHERE currency = ?1 AND date <= ?2 ORDER BY date DESC LIMIT 1",
+            )?
+            .query_row(
                 rusqlite::params![currency.to_uppercase(), d],
                 |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
             )
             .ok(),
         None => conn
-            .query_row(
+            .prepare_cached(
                 "SELECT rate_byn_scaled, scale FROM exchange_rates WHERE currency = ?1 ORDER BY date DESC LIMIT 1",
+            )?
+            .query_row(
                 [currency.to_uppercase()],
                 |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
             )
@@ -770,9 +765,15 @@ fn convert_with(
 ) -> Option<i64> {
     match (from, to) {
         (Some((f_rate, f_scale)), Some((t_rate, t_scale))) if f_rate > 0 && t_rate > 0 => {
-            // amount * (f_rate/f_scale) * (t_scale/t_rate)
-            let v = (amount_minor as i128) * (f_rate as i128) * (t_scale as i128)
-                / ((f_scale as i128) * (t_rate as i128));
+            // amount * (f_rate/f_scale) * (t_scale/t_rate), rounded half away
+            // from zero — kopecks, not truncated fractions.
+            let num = (amount_minor as i128) * (f_rate as i128) * (t_scale as i128);
+            let den = (f_scale as i128) * (t_rate as i128);
+            let v = if num >= 0 {
+                (num + den / 2) / den
+            } else {
+                (num - den / 2) / den
+            };
             Some(v as i64)
         }
         _ => None,
@@ -817,11 +818,11 @@ pub fn has_rate_on(conn: &Connection, currency: &str, date: &str) -> Result<bool
     if currency.eq_ignore_ascii_case("BYN") {
         return Ok(true);
     }
-    let n: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM exchange_rates WHERE currency = ?1 AND date = ?2",
-        rusqlite::params![currency.to_uppercase(), date],
-        |r| r.get(0),
-    )?;
+    let n: i64 = conn
+        .prepare_cached("SELECT COUNT(*) FROM exchange_rates WHERE currency = ?1 AND date = ?2")?
+        .query_row(rusqlite::params![currency.to_uppercase(), date], |r| {
+            r.get(0)
+        })?;
     Ok(n > 0)
 }
 
@@ -955,7 +956,7 @@ pub fn next_due(rule_type: &str, rule_day: i64, rule_month: Option<i64>) -> Stri
 
 /// Reminders due by `today` (inclusive). Returns reminder rows.
 pub fn reminders_due(conn: &Connection, today: &str) -> Result<Vec<Value>, Error> {
-    let mut st = conn.prepare(
+    let mut st = conn.prepare_cached(
         "SELECT * FROM reminders WHERE deleted_at IS NULL AND active = 1 AND next_due <= ?1",
     )?;
     let cols: Vec<String> = st.column_names().iter().map(|s| s.to_string()).collect();
@@ -1083,7 +1084,7 @@ pub fn journal(conn: &Connection, f: &JournalFilter) -> Result<Vec<Value>, Error
     if let Some(o) = f.offset {
         sql.push_str(&format!(" OFFSET {}", push(o.into())));
     }
-    let mut stmt = conn.prepare(&sql)?;
+    let mut stmt = conn.prepare_cached(&sql)?;
     let cols: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
     let out = stmt
         .query_map(rusqlite::params_from_iter(params), |r| {
