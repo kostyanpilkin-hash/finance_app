@@ -4,9 +4,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { CategoryIcon } from "@/components/ui/category-icon";
-import { CATEGORY_COLORS, CATEGORY_ICONS, NO_ICON } from "@/lib/categoryIcons";
+import { CATEGORY_ICONS, NO_ICON } from "@/lib/categoryIcons";
 import { cn } from "@/lib/utils";
 import type { CategoryRow } from "@/lib/types";
+import { Input } from "@/components/ui/input";
+import { Field } from "@/components/ui/field";
+import { Select } from "@/components/ui/select";
+import { ColorSwatches } from "@/components/ui/color-swatches";
 
 export function CategoriesPage() {
   const { t } = useTranslation();
@@ -50,10 +54,11 @@ export function CategoriesPage() {
 
       {editing && (
         <div className="space-y-4 rounded-2xl border border-primary/40 bg-card p-4">
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-end gap-3">
             <CategoryIcon icon={editing.icon} color={editing.color} size={44} />
-            <input className="flex-1 rounded border border-border bg-background px-3 py-2 text-sm" placeholder={t("ui.name")}
-              value={editing.name ?? ""} onChange={(e) => setEditing({ ...editing, name: e.target.value })} autoFocus />
+            <Field label={t("ui.name")} className="min-w-48 flex-1">
+              <Input value={editing.name ?? ""} onChange={(e) => setEditing({ ...editing, name: e.target.value })} autoFocus />
+            </Field>
             <Button size="sm" disabled={!editing.name?.trim() || save.isPending} onClick={() => void save.mutateAsync(editing)}>
               {t("ui.save")}
             </Button>
@@ -80,16 +85,7 @@ export function CategoriesPage() {
 
           <div>
             <div className="mb-2 text-xs font-medium text-muted-foreground">{t("ui.color")}</div>
-            <div className="flex flex-wrap items-center gap-2">
-              {CATEGORY_COLORS.map((c) => (
-                <button key={c} type="button" aria-label={c} onClick={() => setEditing({ ...editing, color: c })}
-                  className={cn("h-7 w-7 rounded-full transition hover:scale-110",
-                    editing.color === c ? "ring-2 ring-primary ring-offset-2 ring-offset-card" : "")}
-                  style={{ background: c }} />
-              ))}
-              <input type="color" className="h-7 w-9 cursor-pointer" value={editing.color ?? "#6b7280"}
-                onChange={(e) => setEditing({ ...editing, color: e.target.value })} />
-            </div>
+            <ColorSwatches value={editing.color} onChange={(c) => setEditing({ ...editing, color: c })} />
           </div>
         </div>
       )}
@@ -107,13 +103,13 @@ export function CategoriesPage() {
                   <Button size="sm" variant="ghost" onClick={() => setEditing(c)}>{t("ui.edit")}</Button>
                   {c.isSystem === 0 && (
                     <>
-                      <select className="rounded border border-border bg-background px-2 py-1 text-xs"
+                      <Select 
                         value={moveTo[c.id] ?? ""} onChange={(e) => setMoveTo({ ...moveTo, [c.id]: e.target.value })}>
                         <option value="">{t("ui.moveToMisc")}</option>
                         {list.filter((x) => x.id !== c.id && x.archived === 0).map((x) => (
                           <option key={x.id} value={x.id}>{name(x)}</option>
                         ))}
-                      </select>
+                      </Select>
                       <Button size="sm" variant="ghost" onClick={() => del.mutate({ id: c.id, to: moveTo[c.id] || undefined })}>
                         {t("ui.delete")}
                       </Button>

@@ -16,6 +16,7 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-fg);
   --color-border: var(--border);
+  --color-field-border: var(--border-strong);
   --color-ring: var(--ring);
   --color-destructive: var(--destructive);
   --color-income: var(--income, #16a34a);
@@ -44,12 +45,16 @@
   --secondary: #f1f5f9;
   --secondary-fg: #0f172a;
   --muted: #f1f5f9;
-  --muted-fg: #64748b;
+  --muted-fg: #627188;
   --accent: #e0e7ff;
   --accent-fg: #1e3a8a;
   --border: #e2e8f0;
   --ring: #2563eb;
   --destructive: #dc2626;
+  --border-strong: #8b919e;
+  --income: #158844;
+  --expense: #dc2626;
+  color-scheme: light;
 }
 
 .theme-dark {
@@ -57,17 +62,21 @@
   --fg: #f8fafc;
   --card: #1e293b;
   --card-fg: #f8fafc;
-  --primary: #3b82f6;
-  --primary-fg: #ffffff;
+  --primary: #4c8df7;
+  --primary-fg: #111827;
   --secondary: #334155;
   --secondary-fg: #f8fafc;
   --muted: #334155;
-  --muted-fg: #94a3b8;
+  --muted-fg: #9facbf;
   --accent: #1e3a8a;
   --accent-fg: #dbeafe;
   --border: #334155;
-  --ring: #3b82f6;
-  --destructive: #ef4444;
+  --ring: #4c8df7;
+  --destructive: #d83d3d;
+  --border-strong: #687282;
+  --income: #1aa44d;
+  --expense: #e56767;
+  color-scheme: dark;
 }
 
 /* Изумруд — фирменная тема «Финансов» */
@@ -76,7 +85,7 @@
   --fg: #0b2b1f;
   --card: #ffffff;
   --card-fg: #0b2b1f;
-  --primary: #059669;
+  --primary: #06875f;
   --primary-fg: #ffffff;
   --secondary: #e3f4ec;
   --secondary-fg: #064e3b;
@@ -85,8 +94,12 @@
   --accent: #c7eedb;
   --accent-fg: #065f46;
   --border: #d3e8dd;
-  --ring: #059669;
+  --ring: #06875f;
   --destructive: #dc2626;
+  --border-strong: #7c968b;
+  --income: #148841;
+  --expense: #dc2626;
+  color-scheme: light;
 }
 
 .theme-colorful {
@@ -94,17 +107,21 @@
   --fg: #431407;
   --card: #ffffff;
   --card-fg: #431407;
-  --primary: #ea580c;
+  --primary: #ce4c0b;
   --primary-fg: #ffffff;
   --secondary: #ffedd5;
   --secondary-fg: #9a3412;
   --muted: #fed7aa;
-  --muted-fg: #c2410c;
+  --muted-fg: #af3a0b;
   --accent: #fef3c7;
   --accent-fg: #92400e;
   --border: #fdba74;
-  --ring: #ea580c;
+  --ring: #ce4c0b;
   --destructive: #dc2626;
+  --border-strong: #bf8350;
+  --income: #1e883e;
+  --expense: #dc2626;
+  color-scheme: light;
 }
 
 /* Мята — свежая дневная */
@@ -113,7 +130,7 @@
   --fg: #134e4a;
   --card: #ffffff;
   --card-fg: #134e4a;
-  --primary: #0d9488;
+  --primary: #0e857b;
   --primary-fg: #ffffff;
   --secondary: #ccfbf1;
   --secondary-fg: #115e59;
@@ -122,8 +139,12 @@
   --accent: #a7f3d0;
   --accent-fg: #065f46;
   --border: #99f6e4;
-  --ring: #0d9488;
+  --ring: #0e857b;
   --destructive: #dc2626;
+  --border-strong: #529d93;
+  --income: #15884a;
+  --expense: #dc2626;
+  color-scheme: light;
 }
 
 /* Чернила и бумага — спокойная «репетиторская» */
@@ -143,6 +164,10 @@
   --border: #d6d0c4;
   --ring: #1d4ed8;
   --destructive: #b91c1c;
+  --border-strong: #928d85;
+  --income: #17863f;
+  --expense: #dc2626;
+  color-scheme: light;
 }
 
 /* Вечерний индиго — мягкая тёмная */
@@ -161,7 +186,11 @@
   --accent-fg: #c7d2fe;
   --border: #2f3658;
   --ring: #818cf8;
-  --destructive: #f87171;
+  --destructive: #be5656;
+  --border-strong: #646a85;
+  --income: #16a34a;
+  --expense: #df5e61;
+  color-scheme: dark;
 }
 
 /* Контрастная — максимальная читаемость */
@@ -181,6 +210,10 @@
   --border: #000000;
   --ring: #000000;
   --destructive: #9f1239;
+  --border-strong: #000000;
+  --income: #12883e;
+  --expense: #dc2626;
+  color-scheme: light;
 }
 
 /* Лес — спокойный зелёный */
@@ -200,6 +233,10 @@
   --border: #c5d6c9;
   --ring: #2f6b3a;
   --destructive: #b91c1c;
+  --border-strong: #819386;
+  --income: #168840;
+  --expense: #dc2626;
+  color-scheme: light;
 }
 
 /* Песок — тёплый нейтральный */
@@ -219,6 +256,10 @@
   --border: #d9cbb8;
   --ring: #8a5a2b;
   --destructive: #b91c1c;
+  --border-strong: #968a7b;
+  --income: #1a873f;
+  --expense: #dc2626;
+  color-scheme: light;
 }
 
 /* Роза — мягкий акцент */
@@ -238,6 +279,10 @@
   --border: #f0cdd6;
   --ring: #be123c;
   --destructive: #9f1239;
+  --border-strong: #a58791;
+  --income: #1a8842;
+  --expense: #dc2626;
+  color-scheme: light;
 }
 
 /* Океан — прохладный сине-зелёный */
@@ -257,6 +302,10 @@
   --border: #b6d9e6;
   --ring: #0e7490;
   --destructive: #dc2626;
+  --border-strong: #7293a2;
+  --income: #148846;
+  --expense: #dc2626;
+  color-scheme: light;
 }
 
 /* Лаванда — мягкий фиолетовый */
@@ -276,6 +325,10 @@
   --border: #d8cff1;
   --ring: #6d4fc2;
   --destructive: #b91c1c;
+  --border-strong: #938aab;
+  --income: #1a8848;
+  --expense: #dc2626;
+  color-scheme: light;
 }
 
 /* Персик — тёплый светлый */
@@ -284,7 +337,7 @@
   --fg: #3d2419;
   --card: #ffffff;
   --card-fg: #3d2419;
-  --primary: #d9633b;
+  --primary: #be5835;
   --primary-fg: #ffffff;
   --secondary: #ffe6da;
   --secondary-fg: #7c3a22;
@@ -293,8 +346,12 @@
   --accent: #fed2bd;
   --accent-fg: #7c3a22;
   --border: #f3cdbb;
-  --ring: #d9633b;
+  --ring: #be5835;
   --destructive: #b91c1c;
+  --border-strong: #a9897a;
+  --income: #1e8840;
+  --expense: #dc2626;
+  color-scheme: light;
 }
 
 /* Графит — нейтральный тёмно-серый */
@@ -313,7 +370,11 @@
   --accent-fg: #e5e8ec;
   --border: #30353b;
   --ring: #c9ced6;
-  --destructive: #f87171;
+  --destructive: #be5656;
+  --border-strong: #686c70;
+  --income: #16a34a;
+  --expense: #e05e5e;
+  color-scheme: dark;
 }
 
 /* Полночь — тёмный сине-фиолетовый */
@@ -332,7 +393,11 @@
   --accent-fg: #dbe4ff;
   --border: #27305a;
   --ring: #7aa2ff;
-  --destructive: #fb7185;
+  --destructive: #bd5564;
+  --border-strong: #5e6586;
+  --income: #16a34a;
+  --expense: #de5557;
+  color-scheme: dark;
 }
 
 /* Уголь и янтарь — тёмный с тёплым акцентом */
@@ -351,7 +416,11 @@
   --accent-fg: #fde8c3;
   --border: #3d322b;
   --ring: #f59e0b;
-  --destructive: #f87171;
+  --destructive: #be5656;
+  --border-strong: #726962;
+  --income: #16a34a;
+  --expense: #e25a58;
+  color-scheme: dark;
 }
 
 /* Хвоя — тёмный зелёный */
@@ -370,7 +439,11 @@
   --accent-fg: #c8f5d9;
   --border: #27443a;
   --ring: #4ade80;
-  --destructive: #fb7185;
+  --destructive: #bd5564;
+  --border-strong: #577066;
+  --income: #16a34a;
+  --expense: #de5f5c;
+  color-scheme: dark;
 }
 
 /* Слива — тёмный бордовый */
@@ -389,7 +462,11 @@
   --accent-fg: #fbd5e6;
   --border: #40293a;
   --ring: #e879a6;
-  --destructive: #fb7185;
+  --destructive: #bd5564;
+  --border-strong: #756270;
+  --income: #16a34a;
+  --expense: #e25254;
+  color-scheme: dark;
 }
 
 /* Купертино — тёмный минимализм в стиле macOS */
@@ -399,7 +476,7 @@
   --card: #1c1c1e;
   --card-fg: #f5f5f7;
   --primary: #0a84ff;
-  --primary-fg: #ffffff;
+  --primary-fg: #111827;
   --secondary: #2c2c2e;
   --secondary-fg: #f5f5f7;
   --muted: #2c2c2e;
@@ -408,7 +485,11 @@
   --accent-fg: #7cc3ff;
   --border: #38383a;
   --ring: #0a84ff;
-  --destructive: #ff453a;
+  --destructive: #da3b32;
+  --border-strong: #676769;
+  --income: #16a34a;
+  --expense: #e15353;
+  color-scheme: dark;
 }
 
 /* Дискорд — блюрпл на тёмно-сером */
@@ -417,17 +498,21 @@
   --fg: #f2f3f5;
   --card: #2b2d31;
   --card-fg: #f2f3f5;
-  --primary: #5865f2;
-  --primary-fg: #ffffff;
+  --primary: #818af3;
+  --primary-fg: #111827;
   --secondary: #383a40;
   --secondary-fg: #dbdee1;
   --muted: #383a40;
-  --muted-fg: #949ba4;
+  --muted-fg: #9da4ac;
   --accent: #383a40;
   --accent-fg: #b5bac1;
   --border: #1e1f22;
-  --ring: #5865f2;
-  --destructive: #f23f43;
+  --ring: #818af3;
+  --destructive: #db393d;
+  --border-strong: #7b7c7e;
+  --income: #25a956;
+  --expense: #e47071;
+  color-scheme: dark;
 }
 
 /* Спотифай — зелёный на глубоком чёрном */
@@ -446,7 +531,11 @@
   --accent-fg: #4ade80;
   --border: #2a2a2a;
   --ring: #1db954;
-  --destructive: #f15e6c;
+  --destructive: #c74e59;
+  --border-strong: #696969;
+  --income: #16a34a;
+  --expense: #e45555;
+  color-scheme: dark;
 }
 
 /* Гитхаб — холодный тёмный */
@@ -455,8 +544,8 @@
   --fg: #e6edf3;
   --card: #161b22;
   --card-fg: #e6edf3;
-  --primary: #1f6feb;
-  --primary-fg: #ffffff;
+  --primary: #3980ec;
+  --primary-fg: #111827;
   --secondary: #21262d;
   --secondary-fg: #e6edf3;
   --muted: #21262d;
@@ -465,7 +554,11 @@
   --accent-fg: #79c0ff;
   --border: #30363d;
   --ring: #58a6ff;
-  --destructive: #f85149;
+  --destructive: #d2453e;
+  --border-strong: #60676d;
+  --income: #16a34a;
+  --expense: #de5354;
+  color-scheme: dark;
 }
 
 /* Редактор — в стиле VS Code */
@@ -474,17 +567,21 @@
   --fg: #d4d4d4;
   --card: #252526;
   --card-fg: #d4d4d4;
-  --primary: #007acc;
-  --primary-fg: #ffffff;
+  --primary: #3892ce;
+  --primary-fg: #111827;
   --secondary: #2d2d30;
   --secondary-fg: #d4d4d4;
   --muted: #2d2d30;
-  --muted-fg: #858585;
+  --muted-fg: #949494;
   --accent: #094771;
   --accent-fg: #9cdcfe;
   --border: #3c3c3c;
-  --ring: #007acc;
-  --destructive: #f14c4c;
+  --ring: #3892ce;
+  --destructive: #d34343;
+  --border-strong: #6e6e6e;
+  --income: #16a34a;
+  --expense: #d96969;
+  color-scheme: dark;
 }
 
 /* Слэк — баклажан */
@@ -504,6 +601,10 @@
   --border: #522653;
   --ring: #36c5f0;
   --destructive: #e01e5a;
+  --border-strong: #896b89;
+  --income: #21a853;
+  --expense: #e76c6c;
+  color-scheme: dark;
 }
 
 /* Мак — светлый в стиле macOS */
@@ -512,36 +613,45 @@
   --fg: #1d1d1f;
   --card: #ffffff;
   --card-fg: #1d1d1f;
-  --primary: #007aff;
+  --primary: #0272ec;
   --primary-fg: #ffffff;
   --secondary: #e8e8ed;
   --secondary-fg: #1d1d1f;
   --muted: #e8e8ed;
-  --muted-fg: #6e6e73;
+  --muted-fg: #68686d;
   --accent: #e6f0ff;
   --accent-fg: #0060df;
   --border: #d2d2d7;
-  --ring: #007aff;
-  --destructive: #ff3b30;
+  --ring: #0272ec;
+  --destructive: #df342a;
+  --border-strong: #8e8e91;
+  --income: #178841;
+  --expense: #dc2626;
+  color-scheme: light;
 }
 
 /* Ноушн — тёплая бумага */
+/* Notion — бумага и чернила, контрастный синий акцент */
 .theme-notion {
   --bg: #f7f6f3;
   --fg: #37352f;
   --card: #ffffff;
   --card-fg: #37352f;
-  --primary: #e16259;
+  --primary: #1f6fd1;
   --primary-fg: #ffffff;
   --secondary: #efefed;
   --secondary-fg: #37352f;
   --muted: #efefed;
-  --muted-fg: #787774;
-  --accent: #faeceb;
-  --accent-fg: #c4554d;
+  --muted-fg: #5f5e5a;
+  --accent: #e7f0fb;
+  --accent-fg: #174f96;
   --border: #e3e2de;
-  --ring: #e16259;
-  --destructive: #eb5757;
+  --ring: #1f6fd1;
+  --destructive: #c12f2f;
+  --border-strong: #908e8a;
+  --income: #1e8843;
+  --expense: #dc2626;
+  color-scheme: light;
 }
 
 /* Материал — чистый белый с синим акцентом */
@@ -550,17 +660,21 @@
   --fg: #202124;
   --card: #f8f9fa;
   --card-fg: #202124;
-  --primary: #1a73e8;
+  --primary: #1a6fdf;
   --primary-fg: #ffffff;
   --secondary: #f1f3f4;
   --secondary-fg: #202124;
   --muted: #f1f3f4;
   --muted-fg: #5f6368;
   --accent: #e8f0fe;
-  --accent-fg: #1a73e8;
+  --accent-fg: #1b6ad4;
   --border: #dadce0;
-  --ring: #1a73e8;
+  --ring: #1a6fdf;
   --destructive: #d93025;
+  --border-strong: #8f9094;
+  --income: #188441;
+  --expense: #dc2626;
+  color-scheme: light;
 }
 
 /* Мика — светло-серый в стиле Windows 11 */
@@ -580,6 +694,10 @@
   --border: #e0e0e0;
   --ring: #0067c0;
   --destructive: #c42b1c;
+  --border-strong: #8c8c8c;
+  --income: #178841;
+  --expense: #dc2626;
+  color-scheme: light;
 }
 
 * {
@@ -596,6 +714,8 @@ body {
   background-attachment: fixed;
   color: var(--fg);
   font-family: var(--font-sans);
+  /* Sums line up everywhere — tabular digits for the whole app. */
+  font-variant-numeric: tabular-nums;
 }
 
 html.theme-contrast {

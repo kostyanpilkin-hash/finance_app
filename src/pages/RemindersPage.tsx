@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button";
 import { TxForm } from "@/components/transactions/TxForm";
 import { formatMinor, parseMinor, nowLocalIso } from "@/lib/money";
 import type { AccountRow, CategoryRow } from "@/lib/types";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Field } from "@/components/ui/field";
 
 interface ReminderRow {
   id: string; name: string; amountMinor?: number | null; currency: string;
@@ -89,42 +92,55 @@ export function RemindersPage() {
       {editing && (
         <div className="space-y-3 rounded-2xl border border-primary/40 bg-card p-4">
           <div className="grid gap-3 sm:grid-cols-2">
-            <input className="rounded border border-border bg-background px-3 py-2 text-sm" placeholder={t("ui.name")}
-              value={editing.name ?? ""} onChange={(e) => setEditing({ ...editing, name: e.target.value })} autoFocus />
-            <input className="rounded border border-border bg-background px-3 py-2 text-sm" placeholder={t("ui.amount")}
-              inputMode="decimal" value={amountStr}
+            <Field label={t("ui.name")}>
+              <Input value={editing.name ?? ""} onChange={(e) => setEditing({ ...editing, name: e.target.value })} autoFocus />
+            </Field>
+            <Field label={t("ui.amount")}>
+              <Input inputMode="decimal" value={amountStr}
               onChange={(e) => { setAmountStr(e.target.value); setEditing({ ...editing, amountMinor: parseMinor(e.target.value) ?? null }); }} />
-            <select className="rounded border border-border bg-background px-3 py-2 text-sm"
-              value={editing.ruleType ?? "monthly"} onChange={(e) => setEditing({ ...editing, ruleType: e.target.value })}>
-              <option value="monthly">{t("ui.rule.monthly")}</option>
-              <option value="weekly">{t("ui.rule.weekly")}</option>
-              <option value="yearly">{t("ui.rule.yearly")}</option>
-            </select>
-            <input className="rounded border border-border bg-background px-3 py-2 text-sm" type="number" min={1} max={editing.ruleType === "weekly" ? 7 : 31}
-              placeholder={editing.ruleType === "weekly" ? t("ui.wdDay") : t("ui.day")}
-              value={editing.ruleDay ?? 1} onChange={(e) => setEditing({ ...editing, ruleDay: Number(e.target.value) })} />
+            </Field>
+            <Field label={t("ui.frequency")}>
+              <Select
+                value={editing.ruleType ?? "monthly"} onChange={(e) => setEditing({ ...editing, ruleType: e.target.value })}>
+                <option value="monthly">{t("ui.rule.monthly")}</option>
+                <option value="weekly">{t("ui.rule.weekly")}</option>
+                <option value="yearly">{t("ui.rule.yearly")}</option>
+              </Select>
+            </Field>
+            <Field label={editing.ruleType === "weekly" ? t("ui.wdDay") : t("ui.day")}>
+              <Input type="number" min={1} max={editing.ruleType === "weekly" ? 7 : 31}
+                value={editing.ruleDay ?? 1} onChange={(e) => setEditing({ ...editing, ruleDay: Number(e.target.value) })} />
+            </Field>
             {editing.ruleType === "yearly" && (
-              <input className="rounded border border-border bg-background px-3 py-2 text-sm" type="number" min={1} max={12}
-                placeholder={t("ui.period.month")} value={editing.ruleMonth ?? 1}
-                onChange={(e) => setEditing({ ...editing, ruleMonth: Number(e.target.value) })} />
+              <Field label={t("ui.period.month")}>
+                <Input type="number" min={1} max={12}
+                  value={editing.ruleMonth ?? 1}
+                  onChange={(e) => setEditing({ ...editing, ruleMonth: Number(e.target.value) })} />
+              </Field>
             )}
-            <select className="rounded border border-border bg-background px-3 py-2 text-sm"
-              value={editing.kind ?? "expense"} onChange={(e) => setEditing({ ...editing, kind: e.target.value })}>
-              <option value="expense">{t("ui.txKind.expense")}</option>
-              <option value="income">{t("ui.txKind.income")}</option>
-            </select>
-            <select className="rounded border border-border bg-background px-3 py-2 text-sm"
-              value={editing.accountId ?? ""} onChange={(e) => setEditing({ ...editing, accountId: e.target.value || null })}>
-              <option value="">{t("ui.account")}</option>
-              {(accounts.data ?? []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </select>
-            <select className="rounded border border-border bg-background px-3 py-2 text-sm"
-              value={editing.categoryId ?? ""} onChange={(e) => setEditing({ ...editing, categoryId: e.target.value || null })}>
-              <option value="">{t("ui.category")}</option>
-              {(categories.data ?? []).filter((c) => c.kind === (editing.kind ?? "expense")).map((c) => (
-                <option key={c.id} value={c.id}>{c.key ? t(`categories.${c.key}`, c.name) : c.name}</option>
-              ))}
-            </select>
+            <Field label={t("ui.kind")}>
+              <Select
+                value={editing.kind ?? "expense"} onChange={(e) => setEditing({ ...editing, kind: e.target.value })}>
+                <option value="expense">{t("ui.txKind.expense")}</option>
+                <option value="income">{t("ui.txKind.income")}</option>
+              </Select>
+            </Field>
+            <Field label={t("ui.account")}>
+              <Select
+                value={editing.accountId ?? ""} onChange={(e) => setEditing({ ...editing, accountId: e.target.value || null })}>
+                <option value="">{t("ui.account")}</option>
+                {(accounts.data ?? []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </Select>
+            </Field>
+            <Field label={t("ui.category")}>
+              <Select
+                value={editing.categoryId ?? ""} onChange={(e) => setEditing({ ...editing, categoryId: e.target.value || null })}>
+                <option value="">{t("ui.category")}</option>
+                {(categories.data ?? []).filter((c) => c.kind === (editing.kind ?? "expense")).map((c) => (
+                  <option key={c.id} value={c.id}>{c.key ? t(`categories.${c.key}`, c.name) : c.name}</option>
+                ))}
+              </Select>
+            </Field>
           </div>
           <div className="flex gap-2">
             <Button size="sm" disabled={!editing.name?.trim() || save.isPending} onClick={() => void save.mutateAsync(editing)}>{t("ui.save")}</Button>

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useMutation } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 export function PinLock({ onUnlock }: { onUnlock: () => void }) {
   const { t } = useTranslation();
@@ -17,12 +18,12 @@ export function PinLock({ onUnlock }: { onUnlock: () => void }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4 bg-background">
       <div className="text-lg font-medium">{t("ui.locked")}</div>
-      <input
+      <Input
         type="password"
         inputMode="numeric"
         maxLength={8}
         autoFocus
-        className="w-40 rounded-lg border border-border bg-card px-3 py-2 text-center text-2xl tracking-[0.5em]"
+        className="w-40 text-center text-2xl tracking-[0.5em]"
         value={pin}
         onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
         onKeyDown={(e) => e.key === "Enter" && pin && verify.mutate()}

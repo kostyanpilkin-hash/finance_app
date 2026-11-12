@@ -6,6 +6,10 @@ import { Button } from "@/components/ui/button";
 import { TxForm } from "@/components/transactions/TxForm";
 import { formatMinor, parseMinor } from "@/lib/money";
 import type { AccountRow } from "@/lib/types";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Field } from "@/components/ui/field";
+import { ColorSwatches } from "@/components/ui/color-swatches";
 
 interface GoalRow {
   id: string; name: string; targetMinor: number; currentMinor: number;
@@ -58,41 +62,53 @@ export function GoalsPage() {
       {editing && (
         <div className="space-y-3 rounded-2xl border border-primary/40 bg-card p-4">
           <div className="grid gap-3 sm:grid-cols-2">
-            <input className="rounded border border-border bg-background px-3 py-2 text-sm" placeholder={t("ui.name")}
-              value={editing.name ?? ""} onChange={(e) => setEditing({ ...editing, name: e.target.value })} autoFocus />
-            <input type="date" className="rounded border border-border bg-background px-3 py-2 text-sm"
-              value={editing.deadline ?? ""} onChange={(e) => setEditing({ ...editing, deadline: e.target.value || null })} />
-            <input className="rounded border border-border bg-background px-3 py-2 text-sm" placeholder={t("ui.goalTarget")}
-              inputMode="decimal" value={targetStr} onChange={(e) => setTargetStr(e.target.value)} />
+            <Field label={t("ui.name")}>
+              <Input value={editing.name ?? ""} onChange={(e) => setEditing({ ...editing, name: e.target.value })} autoFocus />
+            </Field>
+            <Field label={t("ui.deadline")}>
+              <Input type="date"
+                value={editing.deadline ?? ""} onChange={(e) => setEditing({ ...editing, deadline: e.target.value || null })} />
+            </Field>
+            <Field label={t("ui.goalTarget")}>
+              <Input inputMode="decimal" value={targetStr} onChange={(e) => setTargetStr(e.target.value)} />
+            </Field>
             {editing.accountId ? (
               <div className="flex items-center rounded border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
                 {t("ui.goalCurrent")}: {formatMinor(balanceOf(editing.accountId) ?? 0, editing.currency)}
               </div>
             ) : (
-              <input className="rounded border border-border bg-background px-3 py-2 text-sm" placeholder={t("ui.goalCurrent")}
-                inputMode="decimal" value={currentStr} onChange={(e) => setCurrentStr(e.target.value)} />
+              <Field label={t("ui.goalCurrent")}>
+                <Input inputMode="decimal" value={currentStr} onChange={(e) => setCurrentStr(e.target.value)} />
+              </Field>
             )}
-            <select className="rounded border border-border bg-background px-3 py-2 text-sm"
-              value={editing.currency ?? "BYN"} onChange={(e) => setEditing({ ...editing, currency: e.target.value })}
-              disabled={!!editing.accountId}>
-              {["BYN", "USD", "EUR", "RUB"].map((c) => <option key={c}>{c}</option>)}
-            </select>
-            <select className="rounded border border-border bg-background px-3 py-2 text-sm"
-              value={editing.accountId ?? ""}
-              onChange={(e) => {
-                const acc = (accounts.data ?? []).find((a) => a.id === e.target.value);
-                setEditing({
-                  ...editing,
-                  accountId: e.target.value || null,
-                  currency: acc?.currency ?? editing.currency,
-                });
-              }}>
+            <Field label={t("ui.currency")}>
+              <Select
+                value={editing.currency ?? "BYN"} onChange={(e) => setEditing({ ...editing, currency: e.target.value })}
+                disabled={!!editing.accountId}>
+                {["BYN", "USD", "EUR", "RUB"].map((c) => <option key={c}>{c}</option>)}
+              </Select>
+            </Field>
+            <Field label={t("ui.account")}>
+              <Select
+                value={editing.accountId ?? ""}
+                onChange={(e) => {
+                  const acc = (accounts.data ?? []).find((a) => a.id === e.target.value);
+                  setEditing({
+                    ...editing,
+                    accountId: e.target.value || null,
+                    currency: acc?.currency ?? editing.currency,
+                  });
+                }}>
               <option value="">{t("ui.goalAccountNone")}</option>
               {(accounts.data ?? []).filter((a) => !a.archived).map((a) => (
                 <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>
               ))}
-            </select>
-            <input type="color" value={editing.color ?? "#059669"} onChange={(e) => setEditing({ ...editing, color: e.target.value })} />
+            </Select>
+            </Field>
+            <div>
+              <div className="mb-2 text-xs font-medium text-muted-foreground">{t("ui.color")}</div>
+              <ColorSwatches value={editing.color} onChange={(c) => setEditing({ ...editing, color: c })} />
+            </div>
           </div>
           {editing.accountId && <p className="text-xs text-muted-foreground">{t("ui.goalAccountHint")}</p>}
           <div className="flex gap-2">

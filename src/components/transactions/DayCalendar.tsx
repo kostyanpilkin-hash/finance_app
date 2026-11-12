@@ -47,7 +47,7 @@ export function DayCalendar({ selected, onPick }: { selected: string; onPick: (d
       </div>
       <div className="grid grid-cols-7 gap-0.5 text-center">
         {[1, 2, 3, 4, 5, 6, 7].map((d) => (
-          <div key={d} className="py-1 text-[10px] font-semibold uppercase text-muted-foreground">{t(`ui.wd.${d}`)}</div>
+          <div key={d} className="py-1 text-xs font-semibold uppercase text-muted-foreground">{t(`ui.wd.${d}`)}</div>
         ))}
         {cells.map((d, i) =>
           d === null ? (

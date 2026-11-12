@@ -36,8 +36,25 @@ describe("parseMinor / formatMinor", () => {
     expect(parseMinor("")).toBeNull();
   });
 
-  it("formats with grouping", () => {
-    expect(formatMinor(123456, "BYN")).toBe("1 234.56 BYN");
-    expect(formatMinor(-50, "BYN")).toBe("-0.50 BYN");
+  it("formats with locale grouping (ru default)", () => {
+    expect(formatMinor(123456, "BYN")).toBe("1 234,56 BYN");
+    expect(formatMinor(-50, "BYN")).toBe("−0,50 BYN");
+  });
+
+  it("parses ASCII and typographic minus", () => {
+    expect(parseMinor("-12,50")).toBe(-1250);
+    expect(parseMinor("−12.50")).toBe(-1250);
+    expect(parseMinor("-")).toBeNull();
+  });
+
+  it("formats with a decimal point in en", async () => {
+    const i18n = (await import("@/i18n")).default;
+    await i18n.changeLanguage("en");
+    try {
+      expect(formatMinor(123456, "BYN")).toBe("1,234.56 BYN");
+      expect(formatMinor(-50, "BYN")).toBe("−0.50 BYN");
+    } finally {
+      await i18n.changeLanguage("ru");
+    }
   });
 });

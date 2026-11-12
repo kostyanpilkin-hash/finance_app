@@ -9,6 +9,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatMinor } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import type { AccountRow, DashboardData, PaymentSystem, UserRow } from "@/lib/types";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Field } from "@/components/ui/field";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ColorSwatches } from "@/components/ui/color-swatches";
 
 const KINDS = ["card", "cash", "savings", "other"] as const;
 const CURRENCIES = ["BYN", "USD", "EUR", "RUB"];
@@ -122,18 +127,23 @@ export function AccountsPage() {
             <AccountCard a={preview} ownerName={users.data?.find((u) => u.id === editing.ownerUserId)?.name} />
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <input className="rounded border border-border bg-background px-3 py-2 text-sm" placeholder={t("ui.name")}
-              value={editing.name ?? ""} onChange={(e) => setEditing({ ...editing, name: e.target.value })} autoFocus />
-            <select className="rounded border border-border bg-background px-3 py-2 text-sm" value={editing.kind ?? "card"}
-              onChange={(e) => setEditing({ ...editing, kind: e.target.value as AccountRow["kind"] })}>
-              {KINDS.map((k) => <option key={k} value={k}>{t(`ui.accountKind.${k}`)}</option>)}
-            </select>
+            <Field label={t("ui.name")}>
+              <Input value={editing.name ?? ""} onChange={(e) => setEditing({ ...editing, name: e.target.value })} autoFocus />
+            </Field>
+            <Field label={t("ui.kind")}>
+              <Select value={editing.kind ?? "card"}
+                onChange={(e) => setEditing({ ...editing, kind: e.target.value as AccountRow["kind"] })}>
+                {KINDS.map((k) => <option key={k} value={k}>{t(`ui.accountKind.${k}`)}</option>)}
+              </Select>
+            </Field>
             {editing.kind === "card" && (
               <>
-                <input className="rounded border border-border bg-background px-3 py-2 text-sm" placeholder={t("ui.bank")}
-                  value={editing.bank ?? ""} onChange={(e) => setEditing({ ...editing, bank: e.target.value })} />
-                <input className="rounded border border-border bg-background px-3 py-2 text-sm" placeholder={t("ui.last4")}
-                  maxLength={4} value={editing.last4 ?? ""} onChange={(e) => setEditing({ ...editing, last4: e.target.value.replace(/\D/g, "") })} />
+                <Field label={t("ui.bank")}>
+                  <Input value={editing.bank ?? ""} onChange={(e) => setEditing({ ...editing, bank: e.target.value })} />
+                </Field>
+                <Field label={t("ui.last4")}>
+                  <Input maxLength={4} value={editing.last4 ?? ""} onChange={(e) => setEditing({ ...editing, last4: e.target.value.replace(/\D/g, "") })} />
+                </Field>
                 <div className="flex flex-wrap items-center gap-1.5 sm:col-span-2">
                   <span className="text-xs text-muted-foreground">{t("ui.paymentSystem")}:</span>
                   <button type="button"
@@ -153,24 +163,25 @@ export function AccountsPage() {
                 </div>
               </>
             )}
-            <select className="rounded border border-border bg-background px-3 py-2 text-sm" value={editing.currency ?? "BYN"}
-              onChange={(e) => setEditing({ ...editing, currency: e.target.value })}>
-              {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
-            </select>
-            <select className="rounded border border-border bg-background px-3 py-2 text-sm"
-              value={editing.ownerUserId ?? ""} onChange={(e) => setEditing({ ...editing, ownerUserId: e.target.value || null })}>
-              <option value="">{t("ui.noOwner")}</option>
-              {users.data?.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
-            <label className="flex items-center gap-2 text-sm">
-              {t("ui.color")}
-              <input type="color" value={editing.color ?? "#059669"} onChange={(e) => setEditing({ ...editing, color: e.target.value })} />
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={(editing.includeInTotal ?? 1) === 1}
-                onChange={(e) => setEditing({ ...editing, includeInTotal: e.target.checked ? 1 : 0 })} />
-              {t("ui.includeInTotal")}
-            </label>
+            <Field label={t("ui.currency")}>
+              <Select value={editing.currency ?? "BYN"}
+                onChange={(e) => setEditing({ ...editing, currency: e.target.value })}>
+                {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
+              </Select>
+            </Field>
+            <Field label={t("ui.owner")}>
+              <Select
+                value={editing.ownerUserId ?? ""} onChange={(e) => setEditing({ ...editing, ownerUserId: e.target.value || null })}>
+                <option value="">{t("ui.noOwner")}</option>
+                {users.data?.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </Select>
+            </Field>
+            <div>
+              <div className="mb-2 text-xs font-medium text-muted-foreground">{t("ui.color")}</div>
+              <ColorSwatches value={editing.color} onChange={(c) => setEditing({ ...editing, color: c })} />
+            </div>
+            <Checkbox checked={(editing.includeInTotal ?? 1) === 1} label={t("ui.includeInTotal")}
+              onCheckedChange={(v) => setEditing({ ...editing, includeInTotal: v ? 1 : 0 })} />
           </div>
           <div className="flex gap-2">
             <Button size="sm" onClick={submit} disabled={save.isPending}>{t("ui.save")}</Button>

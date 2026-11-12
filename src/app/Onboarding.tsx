@@ -7,6 +7,9 @@ import { pairErrorText } from "@/lib/syncError";
 import { LANGUAGES } from "@/i18n";
 import { Button } from "@/components/ui/button";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { Input } from "@/components/ui/input";
+import { Field } from "@/components/ui/field";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type Step = "language" | "mode" | "join" | "users" | "accounts" | "key";
 
@@ -115,25 +118,28 @@ export function Onboarding() {
             {hosts.isSuccess && hosts.data.length === 0 && (
               <p className="mb-2 text-xs text-muted-foreground">{t("onboarding.joinNone")}</p>
             )}
-            <input
-              className="mb-2 w-full rounded-[var(--input-radius)] border border-border bg-background px-3 py-2 text-sm"
-              placeholder={t("onboarding.joinUrl")}
-              value={hostUrl}
-              onChange={(e) => setHostUrl(e.target.value)}
-            />
+            <Field label={t("ui.hostUrl")} className="mb-2">
+              <Input
+                className="w-full"
+                placeholder={t("onboarding.joinUrl")}
+                value={hostUrl}
+                onChange={(e) => setHostUrl(e.target.value)}
+              />
+            </Field>
             <div className="mb-4 flex gap-2">
-              <input
-                className="w-28 rounded-[var(--input-radius)] border border-border bg-background px-3 py-2 text-sm tracking-widest"
-                placeholder={t("onboarding.joinCode")}
-                value={joinCode}
-                onChange={(e) => setJoinCode(e.target.value)}
-              />
-              <input
-                className="flex-1 rounded-[var(--input-radius)] border border-border bg-background px-3 py-2 text-sm"
-                placeholder={t("onboarding.joinName")}
-                value={deviceName}
-                onChange={(e) => setDeviceName(e.target.value)}
-              />
+              <Field label={t("onboarding.joinCode")} className="w-28">
+                <Input
+                  className="tracking-widest"
+                  value={joinCode}
+                  onChange={(e) => setJoinCode(e.target.value)}
+                />
+              </Field>
+              <Field label={t("onboarding.joinName")} className="flex-1">
+                <Input
+                  value={deviceName}
+                  onChange={(e) => setDeviceName(e.target.value)}
+                />
+              </Field>
             </div>
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => setStep("mode")}>{t("onboarding.back")}</Button>
@@ -164,8 +170,8 @@ export function Onboarding() {
             <p className="mb-3 text-sm text-muted-foreground">{t("onboarding.usersHint")}</p>
             {names.map((n, i) => (
               <div key={i} className="mb-2 flex items-center gap-2">
-                <input
-                  className="flex-1 rounded-[var(--input-radius)] border border-border bg-background px-3 py-2 text-sm"
+                <Input
+                  className="flex-1 text-sm"
                   placeholder={i === 0 ? t("onboarding.yourName") : t("onboarding.otherName")}
                   value={n}
                   autoFocus={i === names.length - 1}
@@ -197,10 +203,9 @@ export function Onboarding() {
             <h2 className="mb-1 font-medium">{t("onboarding.accountsTitle")}</h2>
             <p className="mb-3 text-sm text-muted-foreground">{t("onboarding.accountsHint")}</p>
             {(["cash", "savings"] as const).map((k) => (
-              <label key={k} className="mb-2 flex cursor-pointer items-center gap-3 rounded-lg border border-border p-3">
-                <input type="checkbox" checked={starter.includes(k)} onChange={() => toggle(k)} />
-                {t(`onboarding.account.${k}`)}
-              </label>
+              <div key={k} className="mb-2 rounded-lg border border-border px-3">
+                <Checkbox checked={starter.includes(k)} label={t(`onboarding.account.${k}`)} onCheckedChange={() => toggle(k)} />
+              </div>
             ))}
             <div className="mt-6 flex gap-2">
               <Button variant="outline" onClick={() => setStep("users")}>{t("onboarding.back")}</Button>
@@ -218,10 +223,8 @@ export function Onboarding() {
                 <code className="mb-3 block break-all rounded-lg bg-muted p-3 text-center text-sm font-semibold tracking-wider">
                   {recKey.data}
                 </code>
-                <label className="mb-4 flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={savedKey} onChange={(e) => setSavedKey(e.target.checked)} />
-                  {t("onboarding.recoverySaved")}
-                </label>
+                <Checkbox className="mb-4" checked={savedKey} label={t("onboarding.recoverySaved")}
+                  onCheckedChange={(v) => setSavedKey(v)} />
               </>
             ) : (
               <p className="mb-4 text-sm text-muted-foreground">{t("onboarding.ready")}</p>

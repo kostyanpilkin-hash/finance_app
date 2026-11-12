@@ -12,6 +12,8 @@ import { DonutChart, type DonutItem } from "@/components/ui/donut-chart";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import type { AccountRow, CategoryRow, TransactionRow, UserRow } from "@/lib/types";
+import { Input } from "@/components/ui/input";
+import { Segmented } from "@/components/ui/segmented";
 
 type Kind = "day" | "week" | "month" | "custom";
 
@@ -236,17 +238,13 @@ export function AnalyticsPage() {
       <h2 className="font-display text-2xl font-semibold tracking-tight">{t("nav.analytics")}</h2>
 
       <div className="flex flex-wrap items-center gap-2">
-        {(["day", "week", "month", "custom"] as const).map((k) => (
-          <button key={k} onClick={() => setKind(k)}
-            className={`rounded-lg border px-3 py-1.5 text-sm ${kind === k ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card"}`}>
-            {t(`ui.period.${k}`)}
-          </button>
-        ))}
+        <Segmented value={kind} onChange={setKind}
+          options={(["day", "week", "month", "custom"] as const).map((k) => ({ value: k, label: t(`ui.period.${k}`) }))} />
         {kind === "custom" && (
           <>
-            <input type="date" className="rounded border border-border bg-background px-2 py-1.5 text-sm"
+            <Input type="date" 
               value={custom.from} onChange={(e) => setCustom({ ...custom, from: e.target.value })} />
-            <input type="date" className="rounded border border-border bg-background px-2 py-1.5 text-sm"
+            <Input type="date" 
               value={custom.to} onChange={(e) => setCustom({ ...custom, to: e.target.value })} />
           </>
         )}

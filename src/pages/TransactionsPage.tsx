@@ -14,6 +14,8 @@ import { cn } from "@/lib/utils";
 import { formatMinor, nowLocalIso, todayIso } from "@/lib/money";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { AccountRow, CategoryRow, TransactionRow } from "@/lib/types";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 
 interface AttachmentRow { id: string; transactionId: string; sha256: string; fileName: string }
 
@@ -121,16 +123,16 @@ export function TransactionsPage() {
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <input className="flex-1 rounded border border-border bg-background px-3 py-2 text-sm"
+        <Input className="flex-1"
           placeholder={t("ui.searchComment")} value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select className="rounded border border-border bg-background px-2 py-2 text-sm" value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+        <Select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
           <option value="">{t("ui.allAccounts")}</option>
           {(accounts.data ?? []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-        </select>
-        <select className="rounded border border-border bg-background px-2 py-2 text-sm" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+        </Select>
+        <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
           <option value="">{t("ui.allCategories")}</option>
           {(categories.data ?? []).map((c) => <option key={c.id} value={c.id}>{catName(c)}</option>)}
-        </select>
+        </Select>
       </div>
 
       {searching ? (
@@ -246,7 +248,7 @@ export function TransactionsPage() {
                         </div>
                       </div>
                       <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-                        <Button size="icon" variant="ghost" className="h-7 w-7" title={t("ui.edit")}
+                        <Button size="icon-sm" variant="ghost" title={t("ui.edit")}
                           onClick={(e) => {
                             e.stopPropagation();
                             setAddOpen(false);
@@ -254,7 +256,7 @@ export function TransactionsPage() {
                           }}>
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
-                        <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-destructive" title={t("ui.delete")}
+                        <Button size="icon-sm" variant="ghost" className="text-muted-foreground hover:text-destructive" title={t("ui.delete")}
                           onClick={(e) => {
                             e.stopPropagation();
                             remove(x.id);

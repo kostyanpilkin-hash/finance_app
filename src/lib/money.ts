@@ -1,18 +1,25 @@
+import i18n from "@/i18n";
+
+/** ru/be use thin spaces for thousands and a decimal comma; en keeps 1,234.56.
+ * The minus is typographic (−), and every sum is locale-aware. */
 export function formatMinor(minor: number | null | undefined, currency = ""): string {
   const v = minor ?? 0;
-  const sign = v < 0 ? "-" : "";
+  const sign = v < 0 ? "\u2212" : "";
   const abs = Math.abs(v);
-  const num = `${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, "0")}`;
-  const grouped = num.replace(/\B(?=(\d{3})+(?!\d))/g, "\u00a0");
-  return `${sign}${grouped}${currency ? " " + currency : ""}`;
+  const locale = (i18n.language ?? "ru").startsWith("en") ? "en-US" : "ru-RU";
+  const num = new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(abs / 100);
+  return `${sign}${num}${currency ? " " + currency : ""}`;
 }
 
-/** "12,5" | "12.50" -> 1250 ; returns null on invalid. */
+/** "12,5" | "12.50" | "−12.50" -> 1250 | −1250 ; returns null on invalid. */
 export function parseMinor(s: string): number | null {
-  const t = s.trim().replace(/\s/g, "").replace(",", ".");
+  let t = s.trim().replace(/\s/g, "").replace(",", ".");
+  const neg = t.startsWith("-") || t.startsWith("−");
+  if (neg) t = t.slice(1);
   if (!/^\d+(\.\d{1,2})?$/.test(t)) return null;
   const [i, f = ""] = t.split(".");
-  return Number(i) * 100 + Number(f.padEnd(2, "0"));
+  const v = Number(i) * 100 + Number(f.padEnd(2, "0"));
+  return neg ? -v : v;
 }
 
 /** Local YYYY-MM-DD for an arbitrary Date. */

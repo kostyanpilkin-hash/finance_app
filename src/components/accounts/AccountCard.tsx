@@ -35,7 +35,7 @@ export function PsLogo({ ps }: { ps?: PaymentSystem | null }) {
     case "belkart":
       return <span className="text-xs font-bold tracking-wide">Белкарт</span>;
     case "unionpay":
-      return <span className="rounded-md bg-white/25 px-1.5 py-0.5 text-[10px] font-bold tracking-wide">UP</span>;
+      return <span className="rounded-md bg-white/25 px-1.5 py-0.5 text-xs font-bold tracking-wide">UP</span>;
   }
 }
 
@@ -67,11 +67,11 @@ export function AccountCard({ a, ownerName, compact, onEdit, onArchive }: Accoun
 
       <div className="relative flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className={cn("truncate font-semibold uppercase tracking-wide opacity-95", compact ? "text-[10px]" : "text-xs")}>
+          <div className={cn("truncate font-semibold uppercase tracking-wide opacity-95", "text-xs")}>
             {a.bank || a.name}
           </div>
           {a.bank && (
-            <div className={cn("truncate font-medium opacity-80", compact ? "text-[10px]" : "text-xs")}>{a.name}</div>
+            <div className={cn("truncate font-medium opacity-80", "text-xs")}>{a.name}</div>
           )}
         </div>
         <KindIcon className={cn("shrink-0 opacity-85", compact ? "h-4 w-4" : "h-5 w-5")} />
@@ -87,14 +87,14 @@ export function AccountCard({ a, ownerName, compact, onEdit, onArchive }: Accoun
       <div className="relative mt-auto flex items-end justify-between gap-2">
         <div className="min-w-0">
           {isCard && (
-            <div className={cn("font-mono tracking-[0.2em] opacity-90", compact ? "text-[10px]" : "text-sm")}>
+            <div className={cn("font-mono tracking-[0.2em] opacity-90", compact ? "text-xs" : "text-sm")}>
               •••• {a.last4 ?? "····"}
             </div>
           )}
           <div className={cn("font-display font-semibold leading-tight", compact ? "mt-0.5 text-base" : "mt-1 text-xl")}>
             {formatMinor(a.balance ?? 0, a.currency)}
           </div>
-          <div className={cn("truncate opacity-75", compact ? "text-[9px]" : "text-[11px]")}>
+          <div className={cn("truncate opacity-75", "text-xs")}>
             {ownerName ?? t("ui.accountKind." + a.kind)}
           </div>
         </div>
@@ -106,12 +106,12 @@ export function AccountCard({ a, ownerName, compact, onEdit, onArchive }: Accoun
       {(onEdit || onArchive) && (
         <div className="absolute right-2 top-2 flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
           {onEdit && (
-            <Button size="icon" variant="ghost" className="h-7 w-7 bg-black/15 text-white hover:bg-black/25 hover:text-white" title={t("ui.edit")} onClick={onEdit}>
+            <Button size="icon-sm" variant="ghost" className="bg-black/15 text-white hover:bg-black/25 hover:text-white" title={t("ui.edit")} onClick={onEdit}>
               <Pencil className="h-3.5 w-3.5" />
             </Button>
           )}
           {onArchive && (
-            <Button size="icon" variant="ghost" className="h-7 w-7 bg-black/15 text-white hover:bg-black/25 hover:text-white" title={t("ui.archive")} onClick={onArchive}>
+            <Button size="icon-sm" variant="ghost" className="bg-black/15 text-white hover:bg-black/25 hover:text-white" title={t("ui.archive")} onClick={onArchive}>
               <Archive className="h-3.5 w-3.5" />
             </Button>
           )}

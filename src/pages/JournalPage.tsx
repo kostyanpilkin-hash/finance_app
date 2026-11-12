@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { formatMinor } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import type { AccountRow, AuditRow, CategoryRow, UserRow } from "@/lib/types";
+import { Input } from "@/components/ui/input";
 
 const ENTITIES = ["transactions", "accounts", "categories", "goals", "reminders", "users"] as const;
 
@@ -86,7 +87,7 @@ export function JournalPage() {
     <div className="animate-fade-up mx-auto w-full max-w-4xl space-y-4">
       <h2 className="font-display text-2xl font-semibold tracking-tight">{t("nav.journal")}</h2>
       <div className="flex flex-wrap items-center gap-2">
-        <input className="flex-1 rounded border border-border bg-background px-3 py-2 text-sm"
+        <Input className="flex-1"
           placeholder={t("ui.searchComment")} value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
       <div className="flex flex-wrap gap-1.5">

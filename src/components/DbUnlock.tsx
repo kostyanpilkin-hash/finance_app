@@ -4,6 +4,7 @@ import { useMutation } from "@tanstack/react-query";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 /// Shown when the db file exists but its key is missing from the OS keyring
 /// (fresh OS, new machine, migrated backup). The user types the recovery key
@@ -26,8 +27,8 @@ export function DbUnlock({ onBack }: { onBack?: () => void }) {
         <h1 className="font-display mb-1 text-3xl font-semibold text-primary">{t("app.title")}</h1>
         <h2 className="mb-1 font-medium">{t("dblocked.title")}</h2>
         <p className="mb-4 text-sm text-muted-foreground">{t("dblocked.hint")}</p>
-        <input
-          className="mb-4 w-full rounded-[var(--input-radius)] border border-border bg-background px-3 py-2 font-mono text-sm tracking-wider"
+        <Input
+          className="mb-4 w-full font-mono text-sm tracking-wider"
           placeholder="K3F4-9XM2-…"
           value={key}
           autoFocus

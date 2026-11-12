@@ -3,17 +3,17 @@ import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Field } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { convertMinorLocal, formatMinor, nowLocalIso, parseMinor, todayIso, type StoredRate } from "@/lib/money";
 import { useEnsureRates } from "@/lib/useDisplayMoney";
-import { cn } from "@/lib/utils";
 import type { AccountRow, CategoryRow, TransactionRow } from "@/lib/types";
 
 const ENTRY_CURRENCIES = ["BYN", "USD", "EUR", "RUB"];
 /** Receipt photos are capped so a huge file can't stall the app. */
 const MAX_PHOTO_MB = 15;
 const MAX_PHOTO_BYTES = MAX_PHOTO_MB * 1024 * 1024;
-
-const inputCls = "rounded border bg-background px-3 py-2 text-sm";
 
 type Missing = "amount" | "account" | "toAccount" | "category";
 
@@ -114,8 +114,6 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
     });
   };
 
-  const bad = (f: Missing) => (show && missing.has(f) ? "border-destructive" : "border-border");
-
   return (
     <form
       className="space-y-3 rounded-2xl border border-primary/40 bg-card p-4"
@@ -131,67 +129,82 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
         ))}
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="flex gap-2">
-          <input key={`amt-${foreign}-${editing.origCurrency ?? ""}`}
-            className={cn("min-w-0 flex-1", inputCls, bad("amount"))}
-            placeholder={t("ui.amount")} inputMode="decimal" aria-invalid={show && missing.has("amount")}
-            defaultValue={(() => {
-              const v = foreign ? editing.origAmountMinor : editing.amountMinor;
-              return v ? formatMinor(v).replace(/\u00a0/g, "") : "";
-            })()}
-            onChange={(e) => {
-              const v = parseMinor(e.target.value) ?? 0;
-              setEditing(foreign ? { ...editing, origAmountMinor: v } : { ...editing, amountMinor: v });
-            }} />
-          {editing.kind !== "transfer" && accCurrency && (
-            <select className={cn(inputCls, "px-2 border-border")} aria-label={t("ui.currency")}
-              value={foreign ? editing.origCurrency ?? accCurrency : accCurrency} onChange={(e) => setCurrency(e.target.value)}>
-              {entryCurrencies.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          )}
-        </div>
-        <input className={cn(inputCls, "border-border")} type="date" defaultValue={opDate}
-          onChange={(e) => setEditing({ ...editing, occurredAt: `${e.target.value}T${editing.occurredAt?.slice(11, 19) || nowLocalIso().slice(11)}` })} />
-        <select className={cn(inputCls, bad("account"))} aria-invalid={show && missing.has("account")}
-          value={editing.accountId ?? ""} onChange={(e) => setEditing({ ...editing, accountId: e.target.value })}>
-          <option value="">{t("ui.account")}</option>
-          {(accounts.data ?? []).filter((a) => !a.archived).map((a) => (
-            <option key={a.id} value={a.id}>{a.name}{a.last4 ? ` ·${a.last4}` : ""} ({a.currency})</option>
-          ))}
-        </select>
-        {foreign && (
-          <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
-            <span className="text-sm text-muted-foreground">{t("ui.accountAmount")} ({accCurrency})</span>
-            <input key={`acc-${editing.origCurrency}-${accKey}`} className={cn("w-36", inputCls, bad("amount"))}
-              inputMode="decimal" placeholder="0,00"
-              defaultValue={editing.amountMinor ? formatMinor(editing.amountMinor).replace(/\u00a0/g, "") : ""}
-              onChange={(e) => setEditing({ ...editing, amountMinor: parseMinor(e.target.value) ?? 0 })} />
-            {suggestion !== null && (
-              <Button type="button" size="sm" variant="outline" onClick={() => { setEditing({ ...editing, amountMinor: suggestion }); setAccKey((k) => k + 1); }}>
-                ≈ {formatMinor(suggestion, accCurrency)} · {t("ui.byRate")}
-              </Button>
+        <Field label={t("ui.amount")} htmlFor="tx-amount">
+          <div className="flex gap-2">
+            <Input key={`amt-${foreign}-${editing.origCurrency ?? ""}`} id="tx-amount"
+              className="min-w-0 flex-1"
+              invalid={show && missing.has("amount")}
+              placeholder="0,00" inputMode="decimal"
+              defaultValue={(() => {
+                const v = foreign ? editing.origAmountMinor : editing.amountMinor;
+                return v ? formatMinor(v).replace(/[\u00A0\u202F]/g, "") : "";
+              })()}
+              onChange={(e) => {
+                const v = parseMinor(e.target.value) ?? 0;
+                setEditing(foreign ? { ...editing, origAmountMinor: v } : { ...editing, amountMinor: v });
+              }} />
+            {editing.kind !== "transfer" && accCurrency && (
+              <Select className="w-24 shrink-0 px-2" aria-label={t("ui.currency")}
+                value={foreign ? editing.origCurrency ?? accCurrency : accCurrency} onChange={(e) => setCurrency(e.target.value)}>
+                {entryCurrencies.map((c) => <option key={c} value={c}>{c}</option>)}
+              </Select>
             )}
           </div>
-        )}
-        {editing.kind === "transfer" ? (
-          <select className={cn(inputCls, bad("toAccount"))} aria-invalid={show && missing.has("toAccount")}
-            value={editing.toAccountId ?? ""} onChange={(e) => setEditing({ ...editing, toAccountId: e.target.value })}>
-            <option value="">{t("ui.toAccount")}</option>
-            {(accounts.data ?? []).filter((a) => !a.archived && a.id !== editing.accountId).map((a) => (
-              <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>
+        </Field>
+        <Field label={t("ui.date")} htmlFor="tx-date">
+          <Input id="tx-date" type="date" defaultValue={opDate}
+            onChange={(e) => setEditing({ ...editing, occurredAt: `${e.target.value}T${editing.occurredAt?.slice(11, 19) || nowLocalIso().slice(11)}` })} />
+        </Field>
+        <Field label={t("ui.account")} htmlFor="tx-account">
+          <Select id="tx-account" invalid={show && missing.has("account")}
+            value={editing.accountId ?? ""} onChange={(e) => setEditing({ ...editing, accountId: e.target.value })}>
+            <option value="">{t("ui.account")}</option>
+            {(accounts.data ?? []).filter((a) => !a.archived).map((a) => (
+              <option key={a.id} value={a.id}>{a.name}{a.last4 ? ` ·${a.last4}` : ""} ({a.currency})</option>
             ))}
-          </select>
-        ) : (
-          <select className={cn(inputCls, bad("category"))} aria-invalid={show && missing.has("category")}
-            value={editing.categoryId ?? ""} onChange={(e) => setEditing({ ...editing, categoryId: e.target.value })}>
-            <option value="">{t("ui.category")}</option>
-            {cats.filter((c) => !c.archived).map((c) => <option key={c.id} value={c.id}>{catName(c)}</option>)}
-          </select>
+          </Select>
+        </Field>
+        {foreign && (
+          <div className="sm:col-span-2">
+            <Field label={`${t("ui.accountAmount")} (${accCurrency})`} htmlFor="tx-acc-amount">
+              <div className="flex flex-wrap items-center gap-2">
+                <Input key={`acc-${editing.origCurrency}-${accKey}`} id="tx-acc-amount" className="w-36"
+                  invalid={show && missing.has("amount")}
+                  inputMode="decimal" placeholder="0,00"
+                  defaultValue={editing.amountMinor ? formatMinor(editing.amountMinor).replace(/[\u00A0\u202F]/g, "") : ""}
+                  onChange={(e) => setEditing({ ...editing, amountMinor: parseMinor(e.target.value) ?? 0 })} />
+                {suggestion !== null && (
+                  <Button type="button" size="sm" variant="outline" onClick={() => { setEditing({ ...editing, amountMinor: suggestion }); setAccKey((k) => k + 1); }}>
+                    ≈ {formatMinor(suggestion, accCurrency)} · {t("ui.byRate")}
+                  </Button>
+                )}
+              </div>
+            </Field>
+          </div>
         )}
-        <input className={cn(inputCls, "border-border sm:col-span-2")}
-          placeholder={t("ui.comment")} value={editing.comment ?? ""}
-          onChange={(e) => setEditing({ ...editing, comment: e.target.value })} />
-        <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground sm:col-span-2">
+        <Field label={editing.kind === "transfer" ? t("ui.toAccount") : t("ui.category")}
+          htmlFor={editing.kind === "transfer" ? "tx-to-account" : "tx-category"}>
+          {editing.kind === "transfer" ? (
+            <Select id="tx-to-account" invalid={show && missing.has("toAccount")}
+              value={editing.toAccountId ?? ""} onChange={(e) => setEditing({ ...editing, toAccountId: e.target.value })}>
+              <option value="">{t("ui.toAccount")}</option>
+              {(accounts.data ?? []).filter((a) => !a.archived && a.id !== editing.accountId).map((a) => (
+                <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>
+              ))}
+            </Select>
+          ) : (
+            <Select id="tx-category" invalid={show && missing.has("category")}
+              value={editing.categoryId ?? ""} onChange={(e) => setEditing({ ...editing, categoryId: e.target.value })}>
+              <option value="">{t("ui.category")}</option>
+              {cats.filter((c) => !c.archived).map((c) => <option key={c.id} value={c.id}>{catName(c)}</option>)}
+            </Select>
+          )}
+        </Field>
+        <Field label={t("ui.comment")} htmlFor="tx-comment" className="sm:col-span-2">
+          <Input id="tx-comment" value={editing.comment ?? ""}
+            onChange={(e) => setEditing({ ...editing, comment: e.target.value })} />
+        </Field>
+        <label className="flex min-h-9 cursor-pointer items-center gap-2 text-sm text-muted-foreground sm:col-span-2">
           <input type="file" accept="image/*" className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0] ?? null;
@@ -208,7 +221,7 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
         </label>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" type="submit" disabled={save.isPending}>{t("ui.save")}</Button>
+        <Button size="sm" type="submit" loading={save.isPending}>{t("ui.save")}</Button>
         <Button size="sm" type="button" variant="outline" onClick={() => onDone(false)}>{t("ui.cancel")}</Button>
         {firstMissing && (
           <span className="text-sm text-destructive">

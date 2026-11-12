@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { formatMinor, todayIso } from "@/lib/money";
 import type { CategoryRow, TransactionRow } from "@/lib/types";
+import { Input } from "@/components/ui/input";
 
 function firstOfMonth() {
   const d = new Date();
@@ -52,9 +53,9 @@ export function ReportsPage() {
     <div className="animate-fade-up mx-auto w-full max-w-4xl space-y-5">
       <h2 className="font-display text-2xl font-semibold tracking-tight">{t("nav.reports")}</h2>
       <div className="flex flex-wrap items-center gap-2">
-        <input type="date" className="rounded border border-border bg-background px-2 py-1.5 text-sm"
+        <Input type="date" 
           value={from} onChange={(e) => setFrom(e.target.value)} />
-        <input type="date" className="rounded border border-border bg-background px-2 py-1.5 text-sm"
+        <Input type="date" 
           value={to} onChange={(e) => setTo(e.target.value)} />
       </div>
       <div className="flex gap-3">

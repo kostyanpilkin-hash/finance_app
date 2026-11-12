@@ -204,7 +204,7 @@ export function DonutChart({ data, currency, totalLabel, emptyLabel = "—", oth
               <CategoryIcon icon={s.iconId} color={s.fill} size={20} />
             ) : s.initial ? (
               <span
-                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
                 style={{ background: `linear-gradient(135deg, ${shade(s.fill, 16)}, ${shade(s.fill, -12)})` }}
               >
                 {s.initial}

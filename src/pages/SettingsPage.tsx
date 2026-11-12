@@ -22,6 +22,10 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useUpdateStore } from "@/stores/updateStore";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select } from "@/components/ui/select";
+import { Field } from "@/components/ui/field";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -44,8 +48,8 @@ function RatesSection() {
   });
   return (
     <div className="space-y-2 text-sm">
-      <Button size="sm" onClick={() => refresh.mutate()} disabled={refresh.isPending}>
-        {refresh.isPending ? "…" : t("ui.refreshRates")}
+      <Button size="sm" onClick={() => refresh.mutate()} loading={refresh.isPending}>
+        {t("ui.refreshRates")}
       </Button>
       {(rates.data ?? []).map((r) => (
         <div key={r.currency} className="flex justify-between border-b border-border/50 pb-1">
@@ -66,7 +70,7 @@ function RatesSection() {
 }
 
 function TgSection() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
   const [token, setToken] = useState("");
   const status = useQuery({ queryKey: ["tg-status"], queryFn: api.tgStatus, refetchInterval: 15000 });
@@ -85,7 +89,7 @@ function TgSection() {
     onSuccess: (c, userId) => setCode((s) => ({ ...s, [userId]: c })),
   });
   const s = status.data;
-  const stamp = (iso?: string | null) => (iso ? new Date(iso).toLocaleString() : "—");
+  const stamp = (iso?: string | null) => (iso ? new Date(iso).toLocaleString(i18n.language) : "—");
   const health = s?.health ?? "stopped";
   return (
     <div className="space-y-3 text-sm">
@@ -107,8 +111,10 @@ function TgSection() {
       )}
       {!s?.enabled ? (
         <div className="space-y-2">
-          <input className="w-full rounded border border-border bg-background px-3 py-2" type="password"
-            placeholder="Bot token (BotFather)" value={token} onChange={(e) => setToken(e.target.value)} />
+          <Field label={t("ui.tgToken")}>
+            <Input type="password"
+              placeholder="Bot token (BotFather)" value={token} onChange={(e) => setToken(e.target.value)} />
+          </Field>
           <Button size="sm" onClick={() => connect.mutate()} disabled={!token.trim() || connect.isPending}>
             {t("ui.connect")}
           </Button>
@@ -190,15 +196,8 @@ function DashboardCharts() {
       <div className="mb-2 text-sm font-medium">{t("settings.dashCharts")}</div>
       <div className="flex flex-wrap gap-x-6 gap-y-2">
         {DASH_CHARTS.map(({ key, label }) => (
-          <label key={key} className="flex cursor-pointer items-center gap-2 text-sm font-medium">
-            <input
-              type="checkbox"
-              className="h-4 w-4 accent-[var(--primary)]"
-              checked={get(key, "1") === "1"}
-              onChange={(e) => set(key, e.target.checked ? "1" : "0")}
-            />
-            {t(label)}
-          </label>
+          <Checkbox key={key} className="font-medium" checked={get(key, "1") === "1"} label={t(label)}
+            onCheckedChange={(v) => set(key, v ? "1" : "0")} />
         ))}
       </div>
     </div>
@@ -208,16 +207,13 @@ function DashboardCharts() {
 function BotNotifySection() {
   const { t } = useTranslation();
   const { get, set } = useLocalSettings();
-  const input = "rounded border border-border bg-background px-2 py-1 text-sm";
+  const input = "h-9 w-auto";
   const toggle = (key: string, fallback: string, label: string) => (
-    <label className="flex min-w-52 cursor-pointer items-center gap-2 font-medium">
-      <input type="checkbox" className="h-4 w-4 accent-[var(--primary)]" checked={get(key, fallback) === "1"}
-        onChange={(e) => set(key, e.target.checked ? "1" : "0")} />
-      {label}
-    </label>
+    <Checkbox className="min-w-52 font-medium" checked={get(key, fallback) === "1"} label={label}
+      onCheckedChange={(v) => set(key, v ? "1" : "0")} />
   );
   const time = (key: string, fallback: string) => (
-    <input type="time" className={input} value={get(key, fallback)}
+    <Input type="time" className={input} value={get(key, fallback)}
       onChange={(e) => e.target.value && set(key, e.target.value)} />
   );
   const row = (children: React.ReactNode, hint?: string) => (
@@ -231,16 +227,16 @@ function BotNotifySection() {
       {row(<>{toggle("bot_daily_enabled", "1", t("settings.bot.daily"))}<span>{t("settings.bot.at")}</span>{time("bot_daily_time", "23:00")}</>)}
       {row(<>
         {toggle("bot_weekly_enabled", "0", t("settings.bot.weekly"))}
-        <select className={input} value={get("bot_weekly_day", "7")} onChange={(e) => set("bot_weekly_day", e.target.value)}>
+        <Select className={input} value={get("bot_weekly_day", "7")} onChange={(e) => set("bot_weekly_day", e.target.value)}>
           {[1, 2, 3, 4, 5, 6, 7].map((d) => <option key={d} value={d}>{t(`ui.wd.${d}`)}</option>)}
-        </select>
+        </Select>
         <span>{t("settings.bot.at")}</span>{time("bot_weekly_time", "20:00")}
       </>, t("settings.bot.weeklyHint"))}
       {row(<>
         {toggle("bot_monthly_enabled", "0", t("settings.bot.monthly"))}
-        <select className={input} value={get("bot_monthly_day", "1")} onChange={(e) => set("bot_monthly_day", e.target.value)}>
+        <Select className={input} value={get("bot_monthly_day", "1")} onChange={(e) => set("bot_monthly_day", e.target.value)}>
           {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d}</option>)}
-        </select>
+        </Select>
         <span>{t("settings.bot.day")}</span>
         <span>{t("settings.bot.at")}</span>{time("bot_monthly_time", "20:00")}
       </>, t("settings.bot.monthlyHint"))}
@@ -260,6 +256,7 @@ function SyncSection() {
   const status = useQuery({ queryKey: ["sync-status"], queryFn: api.syncStatus, refetchInterval: 10000 });
   const users = useQuery({ queryKey: ["users"], queryFn: () => api.entityList<{ id: string; name: string }>("users") });
   const [hostUrl, setHostUrl] = useState("http://192.168.");
+  const [finding, setFinding] = useState(false);
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [pairCode, setPairCode] = useState<Record<string, string>>({});
@@ -309,16 +306,25 @@ function SyncSection() {
       </div>
       <div>
         <div className="mb-1 font-medium">{t("ui.joinHost")}</div>
-        <div className="flex flex-wrap gap-2">
-          <input className="flex-1 rounded border border-border bg-background px-3 py-2" placeholder="http://192.168.1.10:45322"
-            value={hostUrl} onChange={(e) => setHostUrl(e.target.value)} />
-          <input className="w-24 rounded border border-border bg-background px-3 py-2" placeholder={t("ui.code")}
-            value={code} onChange={(e) => setCode(e.target.value)} />
-          <input className="w-32 rounded border border-border bg-background px-3 py-2" placeholder={t("ui.deviceName")}
-            value={name} onChange={(e) => setName(e.target.value)} />
-          <Button size="sm" variant="outline" onClick={async () => {
-            const hosts = await api.discoverHosts();
-            if (hosts[0]?.url) setHostUrl(hosts[0].url);
+        <div className="flex flex-wrap items-end gap-2">
+          <Field label={t("ui.hostUrl")} className="min-w-48 flex-1">
+            <Input placeholder="http://192.168.1.10:45322"
+              value={hostUrl} onChange={(e) => setHostUrl(e.target.value)} />
+          </Field>
+          <Field label={t("ui.code")} className="w-24">
+            <Input value={code} onChange={(e) => setCode(e.target.value)} />
+          </Field>
+          <Field label={t("ui.deviceName")} className="w-40">
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </Field>
+          <Button size="sm" variant="outline" loading={finding} onClick={async () => {
+            setFinding(true);
+            try {
+              const hosts = await api.discoverHosts();
+              if (hosts[0]?.url) setHostUrl(hosts[0].url);
+            } finally {
+              setFinding(false);
+            }
           }}>{t("ui.findHost")}</Button>
           <Button size="sm" onClick={() => pair.mutate()} disabled={pair.isPending}>{t("ui.connect")}</Button>
         </div>
@@ -392,10 +398,12 @@ function SecuritySection() {
           <Button size="sm" variant="outline" onClick={() => clear.mutate()}>{t("ui.pinOff")}</Button>
         </div>
       ) : (
-        <div className="flex items-center gap-2">
-          <input className="w-36 rounded border border-border bg-background px-3 py-2" type="password" inputMode="numeric"
-            maxLength={8} placeholder="PIN (4–8)" value={pin}
-            onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))} />
+        <div className="flex items-end gap-2">
+          <Field label={t("ui.pin")} className="w-36">
+            <Input type="password" inputMode="numeric"
+              maxLength={8} placeholder="4–8" value={pin}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))} />
+          </Field>
           <Button size="sm" onClick={() => set_.mutate()} disabled={pin.length < 4 || set_.isPending}>{t("ui.setPin")}</Button>
         </div>
       )}
@@ -422,7 +430,7 @@ function BackupSection() {
   return (
     <div className="space-y-3 text-sm">
       <div className="flex items-center gap-3">
-        <Button size="sm" onClick={() => create.mutate()} disabled={create.isPending}>{t("ui.backupNow")}</Button>
+        <Button size="sm" onClick={() => create.mutate()} loading={create.isPending}>{t("ui.backupNow")}</Button>
         {create.data && <span className="text-xs text-muted-foreground">{create.data}</span>}
       </div>
       <p className="text-xs text-muted-foreground">{t("ui.backupHint")}</p>
@@ -520,19 +528,19 @@ export function SettingsPage() {
               </div>
               <DisplayCurrency />
               <DashboardCharts />
-              <label className="mt-4 flex cursor-pointer items-start gap-3 border-t border-border/50 pt-4">
-                <input
-                  type="checkbox"
-                  className="mt-1 h-4 w-4 accent-[var(--primary)]"
+              <div className="mt-4 border-t border-border/50 pt-4">
+                <Checkbox
                   checked={autostart.data ?? false}
                   disabled={autostart.isPending || toggleAutostart.isPending}
-                  onChange={(e) => toggleAutostart.mutate(e.target.checked)}
+                  onCheckedChange={(v) => toggleAutostart.mutate(v)}
+                  label={
+                    <span>
+                      <span className="block text-sm font-medium">{t("settings.autostart")}</span>
+                      <span className="block text-xs text-muted-foreground">{t("settings.autostartHint")}</span>
+                    </span>
+                  }
                 />
-                <span>
-                  <span className="block text-sm font-medium">{t("settings.autostart")}</span>
-                  <span className="block text-xs text-muted-foreground">{t("settings.autostartHint")}</span>
-                </span>
-              </label>
+              </div>
             </Section>
           )}
 

@@ -7,8 +7,8 @@ import { useDisplayMoney, useEnsureRates } from "@/lib/useDisplayMoney";
 import { DonutChart, type DonutItem } from "@/components/ui/donut-chart";
 import { AccountCard } from "@/components/accounts/AccountCard";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
 import type { CategoryRow, DashboardData, TransactionRow, UserRow } from "@/lib/types";
+import { Segmented } from "@/components/ui/segmented";
 
 type DashPeriod = "week" | "month" | "days30";
 const PERIODS: DashPeriod[] = ["week", "month", "days30"];
@@ -123,21 +123,8 @@ export function DashboardPage() {
     <div className="animate-fade-up mx-auto w-full max-w-4xl space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="font-display text-2xl font-semibold tracking-tight">{t("nav.dashboard")}</h2>
-        <div className="flex gap-1 rounded-xl border border-border bg-card p-1">
-          {PERIODS.map((p) => (
-            <button
-              key={p}
-              type="button"
-              className={cn(
-                "rounded-lg px-3 py-1 text-xs font-medium transition-colors",
-                period === p ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
-              )}
-              onClick={() => setPeriod(p)}
-            >
-              {t(`ui.period.${p}`)}
-            </button>
-          ))}
-        </div>
+        <Segmented value={period} onChange={setPeriod}
+          options={PERIODS.map((p) => ({ value: p, label: t(`ui.period.${p}`) }))} />
       </div>
 
       {loading ? (
