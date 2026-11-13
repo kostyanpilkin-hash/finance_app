@@ -173,7 +173,7 @@ export function DashboardPage() {
             </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 lg:grid-cols-2">
             <div className={card}>
               <div className="mb-2 text-sm font-medium">{t("ui.pieMonth")}</div>
               <DonutChart data={catSlices("expense")} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.rest")} onSelect={openPeek("expense")} />

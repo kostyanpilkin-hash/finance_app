@@ -118,7 +118,10 @@ export function JournalPage() {
       <div className="space-y-1">
         {(log.data ?? []).map((e) => {
           let changes: { field: string; before: unknown; after: unknown }[] = [];
-          try { changes = e.changesJson ? JSON.parse(e.changesJson) : []; } catch { /* ignore */ }
+          try {
+            const parsed = e.changesJson ? JSON.parse(e.changesJson) : [];
+            changes = Array.isArray(parsed) ? parsed : [];
+          } catch { /* ignore */ }
           changes = changes.filter((c) => !SKIP_FIELDS.has(c.field));
           let after: Record<string, unknown> | null = null;
           try { after = e.afterJson ? JSON.parse(e.afterJson) : null; } catch { /* ignore */ }

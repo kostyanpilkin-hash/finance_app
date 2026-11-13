@@ -204,7 +204,7 @@ export function AccountsPage() {
 
       {archived.length > 0 && (
         <div>
-          <button type="button" className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+          <button type="button" className="mb-3 flex min-h-9 cursor-pointer items-center gap-2 rounded-lg px-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
             onClick={() => setShowArchived((v) => !v)}>
             <span className={cn("transition-transform", showArchived && "rotate-90")}>▸</span>
             {t("ui.archivedAccounts")} ({archived.length})

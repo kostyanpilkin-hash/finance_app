@@ -142,13 +142,13 @@ export function TransactionsPage() {
         </div>
       ) : (
         <div className="relative flex items-center justify-center gap-1">
-          <button type="button" className="rounded-lg p-1.5 transition-colors hover:bg-muted" onClick={() => shiftDay(-1)}>
+          <button type="button" className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-muted" onClick={() => shiftDay(-1)}>
             <ChevronLeft className="h-4 w-4" />
           </button>
           <button
             type="button"
             className={cn(
-              "flex items-center gap-2 rounded-xl border px-3 py-1.5 text-sm font-medium transition-colors",
+              "flex h-9 cursor-pointer items-center gap-2 rounded-xl border px-3 py-1.5 text-sm font-medium transition-colors",
               calOpen ? "border-primary bg-primary/10" : "border-border bg-card hover:bg-muted/60",
             )}
             onClick={() => setCalOpen((v) => !v)}
@@ -156,7 +156,7 @@ export function TransactionsPage() {
             <CalendarDays className="h-4 w-4 text-muted-foreground" />
             {dayLabel(day)}
           </button>
-          <button type="button" className="rounded-lg p-1.5 transition-colors hover:bg-muted" onClick={() => shiftDay(1)}>
+          <button type="button" className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-muted" onClick={() => shiftDay(1)}>
             <ChevronRight className="h-4 w-4" />
           </button>
           {calOpen && (

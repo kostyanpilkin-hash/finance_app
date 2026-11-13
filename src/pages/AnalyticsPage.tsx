@@ -291,7 +291,7 @@ export function AnalyticsPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         <div className={card}>
           <div className="mb-2 text-sm font-medium">{t("ui.balanceTrend")} · {displayCurrency}</div>
           <div className="h-56">
