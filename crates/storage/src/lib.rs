@@ -751,6 +751,39 @@ mod tests {
     }
 
     #[test]
+    fn stale_payload_version_cannot_rewind() {
+        let d = db();
+        d.write(|c| {
+            let a = actor(&d);
+            let acc = repos::account_upsert(
+                c,
+                &d,
+                &a,
+                json!({"name":"A","kind":"cash","currency":"BYN"}),
+            )?;
+            let id = acc["id"].as_str().unwrap().to_string();
+            for _ in 0..3 {
+                repos::account_upsert(c, &d, &a, json!({"id": id, "name": "B"}))?;
+            }
+            let v_before = db::row_json(c, "accounts", &id)?.unwrap()["version"]
+                .as_i64()
+                .unwrap();
+            repos::account_upsert(
+                c,
+                &d,
+                &a,
+                json!({"id": id, "name": "C", "version": 1}),
+            )?;
+            let v_after = db::row_json(c, "accounts", &id)?.unwrap()["version"]
+                .as_i64()
+                .unwrap();
+            assert_eq!(v_after, v_before + 1);
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
     fn write_rolls_back_on_error() {
         let d = db();
         let r: Result<(), Error> = d.write(|c| {

@@ -241,6 +241,25 @@ pub fn apply_change(
     let prep = |mut row: Value, id: &str, extra: &[(&str, Value)]| -> Value {
         let map = row.as_object_mut().unwrap();
         map.insert("id".into(), json!(id));
+        // Server-owned fields come from the stored row, never from the
+        // payload — a stale client can't rewind version/seq/timestamps.
+        for k in ["version", "seq", "updatedByDevice"] {
+            match before.as_ref().and_then(|b| b.get(k)).filter(|v| !v.is_null()) {
+                Some(v) => {
+                    map.insert(k.into(), v.clone());
+                }
+                None => {
+                    map.remove(k);
+                }
+            }
+        }
+        if let Some(v) = before
+            .as_ref()
+            .and_then(|b| b.get("createdAt"))
+            .filter(|v| !v.is_null())
+        {
+            map.insert("createdAt".into(), v.clone());
+        }
         for (k, v) in extra {
             map.insert((*k).to_string(), v.clone());
         }
