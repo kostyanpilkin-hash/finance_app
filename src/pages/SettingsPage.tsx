@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import { LANGUAGES } from "@/i18n";
 import { api } from "@/lib/api";
+import { qk } from "@/lib/queryKeys";
+import { useSettings, useUsers } from "@/lib/queries";
 import { WhatsNewDialog } from "@/components/WhatsNewDialog";
 import { pairErrorText, syncErrorText } from "@/lib/syncError";
 import { THEMES, type ThemeKind } from "@/lib/themes";
@@ -42,10 +44,10 @@ interface RateRow { currency: string; rateBynScaled: number; scale: number; date
 function RatesSection() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const rates = useQuery({ queryKey: ["rates"], queryFn: () => api.ratesLatest<RateRow>() });
+  const rates = useQuery({ queryKey: qk.rates, queryFn: () => api.ratesLatest<RateRow>() });
   const refresh = useMutation({
     mutationFn: api.ratesRefresh,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["rates"] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.rates }),
   });
   return (
     <div className="space-y-2 text-sm">
@@ -74,16 +76,16 @@ function TgSection() {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
   const [token, setToken] = useState("");
-  const status = useQuery({ queryKey: ["tg-status"], queryFn: api.tgStatus, refetchInterval: 15000 });
-  const users = useQuery({ queryKey: ["users"], queryFn: () => api.entityList<{ id: string; name: string }>("users") });
+  const status = useQuery({ queryKey: qk.tgStatus, queryFn: api.tgStatus, refetchInterval: 15000 });
+  const users = useUsers();
   const [code, setCode] = useState<Record<string, string>>({});
   const connect = useMutation({
     mutationFn: () => api.tgConnect(token),
-    onSuccess: () => { setToken(""); queryClient.invalidateQueries({ queryKey: ["tg-status"] }); },
+    onSuccess: () => { setToken(""); queryClient.invalidateQueries({ queryKey: qk.tgStatus }); },
   });
   const disconnect = useMutation({
     mutationFn: api.tgDisconnect,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["tg-status"] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.tgStatus }),
   });
   const pair = useMutation({
     mutationFn: (userId: string) => api.tgPairCode(userId),
@@ -155,10 +157,10 @@ function TgSection() {
 
 function useLocalSettings() {
   const qc = useQueryClient();
-  const settings = useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
+  const settings = useSettings();
   const set = useMutation({
     mutationFn: ({ key, value }: { key: string; value: string }) => api.setSetting(key, value),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["settings"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.settings }),
   });
   const get = (key: string, fallback: string) => settings.data?.[key] || fallback;
   return { get, set: (key: string, value: string) => set.mutate({ key, value }) };
@@ -254,15 +256,15 @@ function BotNotifySection() {
 
 function SyncSection() {
   const { t } = useTranslation();
-  const status = useQuery({ queryKey: ["sync-status"], queryFn: api.syncStatus, refetchInterval: 10000 });
-  const users = useQuery({ queryKey: ["users"], queryFn: () => api.entityList<{ id: string; name: string }>("users") });
+  const status = useQuery({ queryKey: qk.syncStatus, queryFn: api.syncStatus, refetchInterval: 10000 });
+  const users = useUsers();
   const [hostUrl, setHostUrl] = useState("http://192.168.");
   const [finding, setFinding] = useState(false);
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [pairCode, setPairCode] = useState<Record<string, string>>({});
   const addresses = useQuery({ queryKey: ["host-addresses"], queryFn: api.hostAddresses });
-  const pairing = useQuery({ queryKey: ["pairing-requests"], queryFn: api.pairingRequests, refetchInterval: 3000 });
+  const pairing = useQuery({ queryKey: qk.pairingRequests, queryFn: api.pairingRequests, refetchInterval: 3000 });
   const pairingLocked = pairing.data?.locked === true;
   const pair = useMutation({
     mutationFn: () => api.pairToHost(hostUrl, code, name),
@@ -344,12 +346,12 @@ function SyncSection() {
 function ConflictsBlock() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const list = useQuery({ queryKey: ["conflicts"], queryFn: api.conflictList, refetchInterval: 15000 });
+  const list = useQuery({ queryKey: qk.conflicts, queryFn: api.conflictList, refetchInterval: 15000 });
   const resolve = useMutation({
     mutationFn: ({ id, winner }: { id: string; winner: "local" | "server" }) => api.conflictResolve(id, winner),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["conflicts"] });
-      queryClient.invalidateQueries({ queryKey: ["sync-status"] });
+      queryClient.invalidateQueries({ queryKey: qk.conflicts });
+      queryClient.invalidateQueries({ queryKey: qk.syncStatus });
     },
   });
   if (!list.data?.length) return null;
@@ -383,15 +385,15 @@ function ConflictsBlock() {
 function SecuritySection() {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const enabled = useQuery({ queryKey: ["pin-enabled"], queryFn: api.pinEnabled });
+  const enabled = useQuery({ queryKey: qk.pinEnabled, queryFn: api.pinEnabled });
   const [pin, setPin] = useState("");
   const set_ = useMutation({
     mutationFn: () => api.pinSet(pin),
-    onSuccess: () => { setPin(""); qc.invalidateQueries({ queryKey: ["pin-enabled"] }); },
+    onSuccess: () => { setPin(""); qc.invalidateQueries({ queryKey: qk.pinEnabled }); },
   });
   const clear = useMutation({
     mutationFn: api.pinClear,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["pin-enabled"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.pinEnabled }),
   });
   return (
     <div className="space-y-3 text-sm">
@@ -418,10 +420,10 @@ function SecuritySection() {
 function BackupSection() {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const list = useQuery({ queryKey: ["backups"], queryFn: api.backupList });
+  const list = useQuery({ queryKey: qk.backups, queryFn: api.backupList });
   const create = useMutation({
     mutationFn: api.backupCreate,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["backups"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.backups }),
   });
   const restore = useMutation({
     mutationFn: api.backupRestore,
@@ -487,7 +489,7 @@ export function SettingsPage() {
   const [section, setSection] = useState<SettingsSectionId>("general");
   const [whatsNewOpen, setWhatsNewOpen] = useState(false);
 
-  const info = useQuery({ queryKey: ["app-info"], queryFn: api.appInfo });
+  const info = useQuery({ queryKey: qk.appInfo, queryFn: api.appInfo });
   const autostart = useQuery({ queryKey: ["autostart"], queryFn: isEnabled });
   const toggleAutostart = useMutation({
     mutationFn: (on: boolean) => (on ? enable() : disable()),

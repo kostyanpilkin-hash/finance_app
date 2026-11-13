@@ -1,6 +1,8 @@
 import { useCallback, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { qk } from "@/lib/queryKeys";
+import { useSettings } from "@/lib/queries";
 import { todayIso } from "@/lib/money";
 
 interface RateRow { currency: string; rateBynScaled: number; scale: number; date: string }
@@ -10,8 +12,8 @@ interface RateRow { currency: string; rateBynScaled: number; scale: number; date
  * Returns null from toDisplay when a rate is missing.
  */
 export function useDisplayMoney() {
-  const settings = useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
-  const rates = useQuery({ queryKey: ["rates"], queryFn: () => api.ratesLatest<RateRow>() });
+  const settings = useSettings();
+  const rates = useQuery({ queryKey: qk.rates, queryFn: () => api.ratesLatest<RateRow>() });
   const displayCurrency = settings.data?.display_currency || "BYN";
 
   // All stored rates are scaled by 1e6; BYN is 1.0 = 1e6 scaled.
@@ -36,7 +38,7 @@ export function useDisplayMoney() {
  */
 export function useEnsureRates(currencies: (string | undefined | null)[]) {
   const qc = useQueryClient();
-  const rates = useQuery({ queryKey: ["rates"], queryFn: () => api.ratesLatest<RateRow>() });
+  const rates = useQuery({ queryKey: qk.rates, queryFn: () => api.ratesLatest<RateRow>() });
   const have = new Set((rates.data ?? []).map((r) => r.currency));
   const missing = [
     ...new Set(currencies.filter((c): c is string => !!c && c !== "BYN" && !have.has(c))),
@@ -53,7 +55,7 @@ export function useEnsureRates(currencies: (string | undefined | null)[]) {
           // offline or NBRB has no rate — leave it missing.
         }
       }
-      if (alive) qc.invalidateQueries({ queryKey: ["rates"] });
+      if (alive) qc.invalidateQueries({ queryKey: qk.rates });
     })();
     return () => {
       alive = false;

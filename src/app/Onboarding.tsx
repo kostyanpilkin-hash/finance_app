@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { api } from "@/lib/api";
+import { qk } from "@/lib/queryKeys";
 import { WHATSNEW_SEEN_KEY } from "@/lib/whatsnew";
 import { pairErrorText } from "@/lib/syncError";
 import { LANGUAGES } from "@/i18n";
@@ -51,7 +52,8 @@ export function Onboarding() {
       }),
     onSuccess: async () => {
       await markSeen();
-      queryClient.invalidateQueries({ queryKey: ["onboarding", "settings"] });
+      void queryClient.invalidateQueries({ queryKey: qk.onboarding });
+      void queryClient.invalidateQueries({ queryKey: qk.settings });
     },
   });
 
