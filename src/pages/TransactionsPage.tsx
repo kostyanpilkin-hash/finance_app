@@ -18,7 +18,7 @@ import { useAccounts, useCategories } from "@/lib/queries";
 import { TxThumb } from "@/components/attachments/TxAttachments";
 import type { CategoryRow, TransactionRow } from "@/lib/types";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { RichSelect } from "@/components/ui/rich-select";
 
 function isoOf(d: Date) {
   const p = (n: number) => String(n).padStart(2, "0");
@@ -108,16 +108,21 @@ export function TransactionsPage() {
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Input className="flex-1"
+        <Input className="min-w-40 flex-1"
           placeholder={t("ui.searchComment")} value={search} onChange={(e) => setSearch(e.target.value)} />
-        <Select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
-          <option value="">{t("ui.allAccounts")}</option>
-          {(accounts.data ?? []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-        </Select>
-        <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-          <option value="">{t("ui.allCategories")}</option>
-          {(categories.data ?? []).map((c) => <option key={c.id} value={c.id}>{catName(c)}</option>)}
-        </Select>
+        <RichSelect className="w-full sm:w-56" value={accountId} onChange={setAccountId}
+          items={[
+            { value: "", label: t("ui.allAccounts") },
+            ...(accounts.data ?? []).map((a) => ({ value: a.id, label: a.name, dot: a.color })),
+          ]} />
+        <RichSelect className="w-full sm:w-56" value={categoryId} onChange={setCategoryId}
+          items={[
+            { value: "", label: t("ui.allCategories") },
+            ...(categories.data ?? []).map((c) => ({
+              value: c.id, label: catName(c),
+              icon: <CategoryIcon icon={c.icon} color={c.color} size={20} />,
+            })),
+          ]} />
       </div>
 
       {searching ? (

@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { TxForm } from "@/components/transactions/TxForm";
 import { formatMinor, parseMinor } from "@/lib/money";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { RichSelect } from "@/components/ui/rich-select";
 import { Field } from "@/components/ui/field";
 import { ColorSwatches } from "@/components/ui/color-swatches";
 
@@ -83,28 +83,29 @@ export function GoalsPage() {
               </Field>
             )}
             <Field label={t("ui.currency")}>
-              <Select
-                value={editing.currency ?? "BYN"} onChange={(e) => setEditing({ ...editing, currency: e.target.value })}
-                disabled={!!editing.accountId}>
-                {["BYN", "USD", "EUR", "RUB"].map((c) => <option key={c}>{c}</option>)}
-              </Select>
+              <RichSelect
+                value={editing.currency ?? "BYN"} onChange={(v) => setEditing({ ...editing, currency: v })}
+                disabled={!!editing.accountId}
+                items={["BYN", "USD", "EUR", "RUB"].map((c) => ({ value: c, label: c }))} />
             </Field>
             <Field label={t("ui.account")}>
-              <Select
+              <RichSelect
+                placeholder={t("ui.goalAccountNone")}
                 value={editing.accountId ?? ""}
-                onChange={(e) => {
-                  const acc = (accounts.data ?? []).find((a) => a.id === e.target.value);
+                onChange={(v) => {
+                  const acc = (accounts.data ?? []).find((a) => a.id === v);
                   setEditing({
                     ...editing,
-                    accountId: e.target.value || null,
+                    accountId: v || null,
                     currency: acc?.currency ?? editing.currency,
                   });
-                }}>
-              <option value="">{t("ui.goalAccountNone")}</option>
-              {(accounts.data ?? []).filter((a) => !a.archived).map((a) => (
-                <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>
-              ))}
-            </Select>
+                }}
+                items={[
+                  { value: "", label: t("ui.goalAccountNone") },
+                  ...(accounts.data ?? []).filter((a) => !a.archived).map((a) => ({
+                    value: a.id, label: `${a.name} (${a.currency})`, dot: a.color,
+                  })),
+                ]} />
             </Field>
             <div>
               <div className="mb-2 text-xs font-medium text-muted-foreground">{t("ui.color")}</div>

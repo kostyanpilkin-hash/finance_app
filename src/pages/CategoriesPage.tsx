@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 import type { CategoryRow } from "@/lib/types";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
-import { Select } from "@/components/ui/select";
+import { RichSelect } from "@/components/ui/rich-select";
 import { ColorSwatches } from "@/components/ui/color-swatches";
 
 export function CategoriesPage() {
@@ -105,13 +105,16 @@ export function CategoriesPage() {
                   <Button size="sm" variant="ghost" onClick={() => setEditing(c)}>{t("ui.edit")}</Button>
                   {c.isSystem === 0 && (
                     <>
-                      <Select 
-                        value={moveTo[c.id] ?? ""} onChange={(e) => setMoveTo({ ...moveTo, [c.id]: e.target.value })}>
-                        <option value="">{t("ui.moveToMisc")}</option>
-                        {list.filter((x) => x.id !== c.id && x.archived === 0).map((x) => (
-                          <option key={x.id} value={x.id}>{name(x)}</option>
-                        ))}
-                      </Select>
+                      <RichSelect className="w-48"
+                        placeholder={t("ui.moveToMisc")}
+                        value={moveTo[c.id] ?? ""} onChange={(v) => setMoveTo({ ...moveTo, [c.id]: v })}
+                        items={[
+                          { value: "", label: t("ui.moveToMisc") },
+                          ...list.filter((x) => x.id !== c.id && x.archived === 0).map((x) => ({
+                            value: x.id, label: name(x),
+                            icon: <CategoryIcon icon={x.icon} color={x.color} size={20} />,
+                          })),
+                        ]} />
                       <Button size="sm" variant="ghost" onClick={() => del.mutate({ id: c.id, to: moveTo[c.id] || undefined })}>
                         {t("ui.delete")}
                       </Button>

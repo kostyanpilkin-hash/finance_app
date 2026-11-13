@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import { TxForm } from "@/components/transactions/TxForm";
 import { formatMinor, parseMinor, nowLocalIso } from "@/lib/money";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { RichSelect } from "@/components/ui/rich-select";
+import { CategoryIcon } from "@/components/ui/category-icon";
 import { Field } from "@/components/ui/field";
 
 interface ReminderRow {
@@ -101,12 +102,13 @@ export function RemindersPage() {
               onChange={(e) => { setAmountStr(e.target.value); setEditing({ ...editing, amountMinor: parseMinor(e.target.value) ?? null }); }} />
             </Field>
             <Field label={t("ui.frequency")}>
-              <Select
-                value={editing.ruleType ?? "monthly"} onChange={(e) => setEditing({ ...editing, ruleType: e.target.value })}>
-                <option value="monthly">{t("ui.rule.monthly")}</option>
-                <option value="weekly">{t("ui.rule.weekly")}</option>
-                <option value="yearly">{t("ui.rule.yearly")}</option>
-              </Select>
+              <RichSelect
+                value={editing.ruleType ?? "monthly"} onChange={(v) => setEditing({ ...editing, ruleType: v })}
+                items={[
+                  { value: "monthly", label: t("ui.rule.monthly") },
+                  { value: "weekly", label: t("ui.rule.weekly") },
+                  { value: "yearly", label: t("ui.rule.yearly") },
+                ]} />
             </Field>
             <Field label={editing.ruleType === "weekly" ? t("ui.wdDay") : t("ui.day")}>
               <Input type="number" min={1} max={editing.ruleType === "weekly" ? 7 : 31}
@@ -120,27 +122,33 @@ export function RemindersPage() {
               </Field>
             )}
             <Field label={t("ui.kind")}>
-              <Select
-                value={editing.kind ?? "expense"} onChange={(e) => setEditing({ ...editing, kind: e.target.value })}>
-                <option value="expense">{t("ui.txKind.expense")}</option>
-                <option value="income">{t("ui.txKind.income")}</option>
-              </Select>
+              <RichSelect
+                value={editing.kind ?? "expense"} onChange={(v) => setEditing({ ...editing, kind: v })}
+                items={[
+                  { value: "expense", label: t("ui.txKind.expense") },
+                  { value: "income", label: t("ui.txKind.income") },
+                ]} />
             </Field>
             <Field label={t("ui.account")}>
-              <Select
-                value={editing.accountId ?? ""} onChange={(e) => setEditing({ ...editing, accountId: e.target.value || null })}>
-                <option value="">{t("ui.account")}</option>
-                {(accounts.data ?? []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </Select>
+              <RichSelect
+                placeholder={t("ui.account")}
+                value={editing.accountId ?? ""} onChange={(v) => setEditing({ ...editing, accountId: v || null })}
+                items={[
+                  { value: "", label: t("ui.account") },
+                  ...(accounts.data ?? []).map((a) => ({ value: a.id, label: a.name, dot: a.color })),
+                ]} />
             </Field>
             <Field label={t("ui.category")}>
-              <Select
-                value={editing.categoryId ?? ""} onChange={(e) => setEditing({ ...editing, categoryId: e.target.value || null })}>
-                <option value="">{t("ui.category")}</option>
-                {(categories.data ?? []).filter((c) => c.kind === (editing.kind ?? "expense")).map((c) => (
-                  <option key={c.id} value={c.id}>{c.key ? t(`categories.${c.key}`, c.name) : c.name}</option>
-                ))}
-              </Select>
+              <RichSelect
+                placeholder={t("ui.category")}
+                value={editing.categoryId ?? ""} onChange={(v) => setEditing({ ...editing, categoryId: v || null })}
+                items={[
+                  { value: "", label: t("ui.category") },
+                  ...(categories.data ?? []).filter((c) => c.kind === (editing.kind ?? "expense")).map((c) => ({
+                    value: c.id, label: c.key ? t(`categories.${c.key}`, c.name) : c.name,
+                    icon: <CategoryIcon icon={c.icon} color={c.color} size={20} />,
+                  })),
+                ]} />
             </Field>
           </div>
           <div className="flex gap-2">

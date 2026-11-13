@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Select } from "@/components/ui/select";
+import { RichSelect } from "@/components/ui/rich-select";
 import { Field } from "@/components/ui/field";
 import { useLocalSettings } from "./useLocalSettings";
 
@@ -98,7 +98,7 @@ export function TgSection() {
 export function BotNotifySection() {
   const { t } = useTranslation();
   const { get, set } = useLocalSettings();
-  const input = "h-9 w-auto";
+  const input = "inline-block w-40";
   const toggle = (key: string, fallback: string, label: string) => (
     <Checkbox className="min-w-52 font-medium" checked={get(key, fallback) === "1"} label={label}
       onCheckedChange={(v) => set(key, v ? "1" : "0")} />
@@ -118,16 +118,14 @@ export function BotNotifySection() {
       {row(<>{toggle("bot_daily_enabled", "1", t("settings.bot.daily"))}<span>{t("settings.bot.at")}</span>{time("bot_daily_time", "23:00")}</>)}
       {row(<>
         {toggle("bot_weekly_enabled", "0", t("settings.bot.weekly"))}
-        <Select className={input} value={get("bot_weekly_day", "7")} onChange={(e) => set("bot_weekly_day", e.target.value)}>
-          {[1, 2, 3, 4, 5, 6, 7].map((d) => <option key={d} value={d}>{t(`ui.wd.${d}`)}</option>)}
-        </Select>
+        <RichSelect className={input} value={get("bot_weekly_day", "7")} onChange={(v) => set("bot_weekly_day", v)}
+          items={[1, 2, 3, 4, 5, 6, 7].map((d) => ({ value: String(d), label: t(`ui.wd.${d}`) }))} />
         <span>{t("settings.bot.at")}</span>{time("bot_weekly_time", "20:00")}
       </>, t("settings.bot.weeklyHint"))}
       {row(<>
         {toggle("bot_monthly_enabled", "0", t("settings.bot.monthly"))}
-        <Select className={input} value={get("bot_monthly_day", "1")} onChange={(e) => set("bot_monthly_day", e.target.value)}>
-          {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d}</option>)}
-        </Select>
+        <RichSelect className={input} value={get("bot_monthly_day", "1")} onChange={(v) => set("bot_monthly_day", v)}
+          items={Array.from({ length: 31 }, (_, i) => ({ value: String(i + 1), label: String(i + 1) }))} />
         <span>{t("settings.bot.day")}</span>
         <span>{t("settings.bot.at")}</span>{time("bot_monthly_time", "20:00")}
       </>, t("settings.bot.monthlyHint"))}

@@ -12,7 +12,7 @@ import { formatMinor } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import type { AccountRow, DashboardData, PaymentSystem } from "@/lib/types";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { RichSelect } from "@/components/ui/rich-select";
 import { Field } from "@/components/ui/field";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ColorSwatches } from "@/components/ui/color-swatches";
@@ -129,10 +129,9 @@ export function AccountsPage() {
               <Input value={editing.name ?? ""} onChange={(e) => setEditing({ ...editing, name: e.target.value })} autoFocus />
             </Field>
             <Field label={t("ui.kind")}>
-              <Select value={editing.kind ?? "card"}
-                onChange={(e) => setEditing({ ...editing, kind: e.target.value as AccountRow["kind"] })}>
-                {KINDS.map((k) => <option key={k} value={k}>{t(`ui.accountKind.${k}`)}</option>)}
-              </Select>
+              <RichSelect value={editing.kind ?? "card"}
+                onChange={(v) => setEditing({ ...editing, kind: v as AccountRow["kind"] })}
+                items={KINDS.map((k) => ({ value: k, label: t(`ui.accountKind.${k}`) }))} />
             </Field>
             {editing.kind === "card" && (
               <>
@@ -162,17 +161,17 @@ export function AccountsPage() {
               </>
             )}
             <Field label={t("ui.currency")}>
-              <Select value={editing.currency ?? "BYN"}
-                onChange={(e) => setEditing({ ...editing, currency: e.target.value })}>
-                {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
-              </Select>
+              <RichSelect value={editing.currency ?? "BYN"}
+                onChange={(v) => setEditing({ ...editing, currency: v })}
+                items={CURRENCIES.map((c) => ({ value: c, label: c }))} />
             </Field>
             <Field label={t("ui.owner")}>
-              <Select
-                value={editing.ownerUserId ?? ""} onChange={(e) => setEditing({ ...editing, ownerUserId: e.target.value || null })}>
-                <option value="">{t("ui.noOwner")}</option>
-                {users.data?.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </Select>
+              <RichSelect
+                value={editing.ownerUserId ?? ""} onChange={(v) => setEditing({ ...editing, ownerUserId: v || null })}
+                items={[
+                  { value: "", label: t("ui.noOwner") },
+                  ...(users.data ?? []).map((u) => ({ value: u.id, label: u.name, dot: u.color })),
+                ]} />
             </Field>
             <div>
               <div className="mb-2 text-xs font-medium text-muted-foreground">{t("ui.color")}</div>
