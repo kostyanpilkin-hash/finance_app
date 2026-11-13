@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { formatMinor, isoOf, todayIso } from "@/lib/money";
-import { ownerOf } from "@/lib/owners";
 import { useDisplayMoney, useEnsureRates } from "@/lib/useDisplayMoney";
 import { qk } from "@/lib/queryKeys";
 import { useCategories, useSettings, useUsers } from "@/lib/queries";
@@ -11,7 +10,7 @@ import { DonutChart, type DonutItem } from "@/components/ui/donut-chart";
 import { CategoryTxDialog, type CategoryPeek } from "@/components/transactions/CategoryTxDialog";
 import { AccountCard } from "@/components/accounts/AccountCard";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { DashboardData, TransactionRow } from "@/lib/types";
+import type { DashboardData } from "@/lib/types";
 import { Segmented } from "@/components/ui/segmented";
 
 type DashPeriod = "week" | "month" | "days30";
@@ -39,15 +38,15 @@ export function DashboardPage() {
     [],
   );
 
+  const { displayCurrency, toDisplay } = useDisplayMoney();
   const dash = useQuery({ queryKey: qk.dashboard(from, to), queryFn: () => api.dashboard<DashboardData>(from, to) });
-  const tx = useQuery({
-    queryKey: qk.txList("dash", from, to),
-    queryFn: () => api.transactionList<TransactionRow>({ from, to, limit: 2000 }),
+  const sum = useQuery({
+    queryKey: qk.analytics("summary", from, to, displayCurrency),
+    queryFn: () => api.analyticsSummary(from, to, displayCurrency),
   });
   const categories = useCategories();
   const users = useUsers();
   const settings = useSettings();
-  const { displayCurrency, toDisplay } = useDisplayMoney();
   const chartOn = useCallback(
     (key: string) => (settings.data?.[key] ?? "1") === "1",
     [settings.data],
@@ -68,68 +67,50 @@ export function DashboardPage() {
     return { sum, currency: displayCurrency, missing };
   }, [accounts, toDisplay, displayCurrency]);
 
-  // Transactions converted to the display currency once; charts group the result.
-  const converted = useMemo(() => {
-    const curOf = new Map((dash.data?.accounts ?? []).map((a) => [a.id, a.currency]));
-    const out: { x: TransactionRow; v: number }[] = [];
-    for (const x of tx.data ?? []) {
-      const v = toDisplay(x.amountMinor, curOf.get(x.accountId) ?? "BYN");
-      if (v != null) out.push({ x, v });
-    }
-    return out;
-  }, [tx.data, dash.data?.accounts, toDisplay]);
-
   const catSlices = useCallback((kind: "expense" | "income"): DonutItem[] => {
-    const byCat = new Map<string, number>();
-    for (const { x, v } of converted) {
-      if (x.kind !== kind) continue;
-      const id = x.categoryId ?? "";
-      byCat.set(id, (byCat.get(id) ?? 0) + v);
-    }
     const catOf = (id: string) => categories.data?.find((c) => c.id === id);
     const name = (id: string) => {
       const c = catOf(id);
       return c ? (c.key ? t(`categories.${c.key}`, c.name) : c.name) : t("ui.noCategory");
     };
-    return [...byCat.entries()]
-      .map(([id, v]) => ({
-        id: id || null,
-        name: name(id),
-        value: v,
-        fill: catOf(id)?.color ?? FALLBACK_COLOR,
-        iconId: catOf(id)?.icon,
-      }))
+    return (sum.data?.byCategory ?? [])
+      .map((b) => ({ b, v: kind === "expense" ? b.expense : b.income }))
+      .filter(({ v }) => v > 0)
+      .map(({ b, v }) => {
+        const id = b.key ?? "";
+        return {
+          id: id || null,
+          name: name(id),
+          value: v,
+          fill: catOf(id)?.color ?? FALLBACK_COLOR,
+          iconId: catOf(id)?.icon,
+        };
+      })
       .sort((a, b) => b.value - a.value);
-  }, [converted, categories.data, t]);
+  }, [sum.data, categories.data, t]);
 
   const peopleSlices = useCallback((kind: "expense" | "income"): DonutItem[] => {
     const userColor = new Map((users.data ?? []).map((u) => [u.id, u.color]));
     const userName = new Map((users.data ?? []).map((u) => [u.id, u.name]));
-    const byUser = new Map<string, { value: number; name: string }>();
-    for (const { x, v } of converted) {
-      if (x.kind !== kind) continue;
-      // Entries are attributed to their owner (spent_by), author as fallback.
-      const { id, name: who } = ownerOf(x, (i) => userName.get(i));
-      const g = byUser.get(id) ?? { value: 0, name: who };
-      g.value += v;
-      byUser.set(id, g);
-    }
-    return [...byUser.entries()]
-      .map(([id, g]) => {
-        const name = g.name || (id ? "?" : t("ui.noAuthor"));
+    return (sum.data?.byOwner ?? [])
+      .map((b) => ({ b, v: kind === "expense" ? b.expense : b.income }))
+      .filter(({ v }) => v > 0)
+      .map(({ b, v }) => {
+        const id = b.key;
+        const name = (id ? userName.get(id) : undefined) ?? (id ? "?" : t("ui.noAuthor"));
         return {
           name,
-          value: g.value,
+          value: v,
           fill: id ? userColor.get(id) ?? FALLBACK_COLOR : FALLBACK_COLOR,
           initial: name[0]?.toUpperCase(),
         };
       })
       .sort((a, b) => b.value - a.value);
-  }, [converted, users.data, t]);
+  }, [sum.data, users.data, t]);
 
   const card = "rounded-2xl border border-border bg-card p-4";
   const sumFor = (kind: string) => totals.filter((x) => x.kind === kind);
-  const loading = dash.isLoading || tx.isLoading;
+  const loading = dash.isLoading || sum.isLoading;
 
   return (
     <div className="animate-fade-up mx-auto w-full max-w-4xl space-y-5">
