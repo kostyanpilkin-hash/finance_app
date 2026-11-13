@@ -103,7 +103,8 @@ pub async fn complete_onboarding(
             seed_categories(c, &db, &actor)?;
             let mut ids = Vec::new();
             for (i, name) in input.user_names.iter().enumerate() {
-                let u = repos::user_upsert(c, &db, &actor, json!({"name": name, "sort": i as i64}))?;
+                let u =
+                    repos::user_upsert(c, &db, &actor, json!({"name": name, "sort": i as i64}))?;
                 ids.push(u["id"].as_str().unwrap().to_string());
             }
             let owner = ids
@@ -470,18 +471,9 @@ pub async fn pin_enabled(state: State<'_, AppState>) -> Result<bool, String> {
 pub async fn backup_create(state: State<'_, AppState>) -> Result<String, String> {
     let db = state.db.share();
     run(move || {
-        let dir = std::path::Path::new(&db.attachments_dir)
-            .join("..")
-            .join("backups");
-        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let name = format!("backup-{}.db", chrono::Local::now().format("%Y%m%d-%H%M%S"));
-        let dest = dir.join(&name);
-        db.with_conn(|c| {
-            c.execute("VACUUM INTO ?1", [dest.to_string_lossy().as_ref()])?;
-            Ok(())
-        })
-        .map_err(|e| e.to_string())?;
-        Ok(dest.to_string_lossy().into_owned())
+        finance_storage::backup::create(&db, &db.data_dir())
+            .map(|p| p.to_string_lossy().into_owned())
+            .map_err(|e| e.to_string())
     })
     .await
 }

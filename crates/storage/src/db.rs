@@ -244,7 +244,11 @@ pub fn apply_change(
         // Server-owned fields come from the stored row, never from the
         // payload — a stale client can't rewind version/seq/timestamps.
         for k in ["version", "seq", "updatedByDevice"] {
-            match before.as_ref().and_then(|b| b.get(k)).filter(|v| !v.is_null()) {
+            match before
+                .as_ref()
+                .and_then(|b| b.get(k))
+                .filter(|v| !v.is_null())
+            {
                 Some(v) => {
                     map.insert(k.into(), v.clone());
                 }

@@ -80,42 +80,11 @@ fn auto_backup(app: &AppHandle) {
     if last.as_deref() == Some(&month) {
         return;
     }
-    let dir = std::path::Path::new(&state.db.attachments_dir)
-        .join("..")
-        .join("backups");
-    let _ = std::fs::create_dir_all(&dir);
-    let name = format!("backup-{}.db", chrono::Local::now().format("%Y%m%d-%H%M%S"));
-    let ok = state
-        .db
-        .with_conn(|c| {
-            c.execute(
-                "VACUUM INTO ?1",
-                [dir.join(&name).to_string_lossy().as_ref()],
-            )?;
-            Ok(())
-        })
-        .is_ok();
-    if ok {
+    let data_dir = state.db.data_dir();
+    if finance_storage::backup::create(&state.db, &data_dir).is_ok() {
         let _ = state
             .db
-            .with_conn(|c| finance_storage::repos::setting_set(c, "auto_backup_month", &month));
-        // Prune only our own backup-*.db files — never pre-restore copies or
-        // -wal/-shm sidecars left by a staged restore.
-        if let Ok(mut files) = std::fs::read_dir(&dir).map(|rd| {
-            rd.flatten()
-                .filter(|f| {
-                    let n = f.file_name();
-                    let n = n.to_string_lossy();
-                    n.starts_with("backup-") && n.ends_with(".db")
-                })
-                .collect::<Vec<_>>()
-        }) {
-            files.sort_by_key(|f| f.file_name());
-            if files.len() > 12 {
-                for f in files.drain(..files.len() - 12) {
-                    let _ = std::fs::remove_file(f.path());
-                }
-            }
-        }
+            .write(|c| finance_storage::repos::setting_set(c, "auto_backup_month", &month));
+        finance_storage::backup::prune(&data_dir, 12);
     }
 }

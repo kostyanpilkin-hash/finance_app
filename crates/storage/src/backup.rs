@@ -49,7 +49,9 @@ pub fn create(db: &crate::db::Db, data_dir: &Path) -> Result<PathBuf, Error> {
 /// pre-restore / pre-migrate copies or sidecars.
 pub fn prune(data_dir: &Path, keep: usize) {
     let dir = data_dir.join(BACKUP_DIR);
-    let Ok(rd) = std::fs::read_dir(&dir) else { return };
+    let Ok(rd) = std::fs::read_dir(&dir) else {
+        return;
+    };
     let mut files: Vec<_> = rd
         .flatten()
         .filter(|f| {

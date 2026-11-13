@@ -42,11 +42,7 @@ impl db::Db {
         apply_key(&conn, key)?;
         let stored = migrations::stored_version(&conn);
         if stored > 0 && stored < migrations::SCHEMA_VERSION {
-            backup::pre_migration_snapshot(
-                &conn,
-                path.parent().unwrap_or(Path::new(".")),
-                stored,
-            )?;
+            backup::pre_migration_snapshot(&conn, path.parent().unwrap_or(Path::new(".")), stored)?;
         }
         let read_conn = Connection::open(path)?;
         apply_key(&read_conn, key)?;
@@ -821,7 +817,10 @@ mod tests {
         })
         .unwrap();
         drop(d);
-        let err = db::Db::open(&p, Some(&[3u8; 32])).err().unwrap().to_string();
+        let err = db::Db::open(&p, Some(&[3u8; 32]))
+            .err()
+            .unwrap()
+            .to_string();
         assert!(err.contains("db_newer_than_app"), "{err}");
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -844,12 +843,7 @@ mod tests {
             let v_before = db::row_json(c, "accounts", &id)?.unwrap()["version"]
                 .as_i64()
                 .unwrap();
-            repos::account_upsert(
-                c,
-                &d,
-                &a,
-                json!({"id": id, "name": "C", "version": 1}),
-            )?;
+            repos::account_upsert(c, &d, &a, json!({"id": id, "name": "C", "version": 1}))?;
             let v_after = db::row_json(c, "accounts", &id)?.unwrap()["version"]
                 .as_i64()
                 .unwrap();
@@ -867,10 +861,14 @@ mod tests {
             Err(Error::Invalid("boom".into()))
         });
         assert!(r.is_err());
-        let v = d.with_read_conn(|c| repos::setting_get(c, "probe")).unwrap();
+        let v = d
+            .with_read_conn(|c| repos::setting_get(c, "probe"))
+            .unwrap();
         assert_eq!(v, None);
         d.write(|c| repos::setting_set(c, "probe", "2")).unwrap();
-        let v = d.with_read_conn(|c| repos::setting_get(c, "probe")).unwrap();
+        let v = d
+            .with_read_conn(|c| repos::setting_get(c, "probe"))
+            .unwrap();
         assert_eq!(v.as_deref(), Some("2"));
     }
 
