@@ -176,6 +176,11 @@ impl Tg {
             .http
             .post(format!("{}/{}", self.base(), method))
             .json(body)
+            .timeout(Duration::from_secs(if method == "getUpdates" {
+                40
+            } else {
+                20
+            }))
             .send()
             .await
             .map_err(|e| format!("{method}: {}", e.without_url()))?
@@ -414,10 +419,7 @@ pub fn start_polling(app: AppHandle) {
         return;
     }
     tauri::async_runtime::spawn(async move {
-        let http = reqwest::Client::builder()
-            .timeout(Duration::from_secs(60))
-            .build()
-            .unwrap_or_default();
+        let http = crate::net::client().clone();
         let mut offset = 0i64;
         let mut commands_for = String::new();
         status_update(|s| s.running = true);
