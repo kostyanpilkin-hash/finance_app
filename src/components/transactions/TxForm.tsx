@@ -8,8 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { convertMinorLocal, formatMinor, nowLocalIso, parseMinor, todayIso, type StoredRate } from "@/lib/money";
 import { ownerLabelKey } from "@/lib/owners";
+import { qk, invalidateMoney } from "@/lib/queryKeys";
+import { useAccounts, useCategories, useSettings, useUsers } from "@/lib/queries";
 import { useEnsureRates } from "@/lib/useDisplayMoney";
-import type { AccountRow, CategoryRow, TransactionRow, UserRow } from "@/lib/types";
+import type { CategoryRow, TransactionRow } from "@/lib/types";
 
 const ENTRY_CURRENCIES = ["BYN", "USD", "EUR", "RUB"];
 /** Receipt photos are capped so a huge file can't stall the app. */
@@ -28,18 +30,13 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
   const [accKey, setAccKey] = useState(0);
   const [tried, setTried] = useState(false);
 
-  const accounts = useQuery({ queryKey: ["accounts"], queryFn: () => api.entityList<AccountRow>("accounts") });
-  const categories = useQuery({ queryKey: ["categories"], queryFn: () => api.entityList<CategoryRow>("categories") });
-  const users = useQuery({ queryKey: ["users"], queryFn: () => api.entityList<UserRow>("users") });
-  const settings = useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
-  const rates = useQuery({ queryKey: ["rates"], queryFn: () => api.ratesLatest<StoredRate>() });
+  const accounts = useAccounts();
+  const categories = useCategories();
+  const users = useUsers();
+  const settings = useSettings();
+  const rates = useQuery({ queryKey: qk.rates, queryFn: () => api.ratesLatest<StoredRate>() });
 
-  const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ["transactions"] });
-    qc.invalidateQueries({ queryKey: ["tx-days"] });
-    qc.invalidateQueries({ queryKey: ["dashboard"] });
-    qc.invalidateQueries({ queryKey: ["attachments"] });
-  };
+  const invalidate = () => invalidateMoney(qc);
   const save = useMutation({
     mutationFn: async (x: Record<string, unknown>) => {
       const row = await api.transactionUpsert<TransactionRow>(x);

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { api } from "@/lib/api";
+import { qk } from "@/lib/queryKeys";
 import { cn } from "@/lib/utils";
 import { todayIso } from "@/lib/money";
 
@@ -16,7 +17,7 @@ export function DayCalendar({ selected, onPick }: { selected: string; onPick: (d
   const { t, i18n } = useTranslation();
   const [month, setMonth] = useState(selected.slice(0, 7));
   const days = useQuery({
-    queryKey: ["tx-days", month],
+    queryKey: qk.txDays(month),
     queryFn: () => api.transactionDays(`${month}-01`, monthEnd(month)),
   });
   const marked = useMemo(() => new Set(days.data ?? []), [days.data]);

@@ -13,15 +13,17 @@ import { useDebounced } from "@/lib/useDebounced";
 import { cn } from "@/lib/utils";
 import { formatMinor, nowLocalIso, todayIso } from "@/lib/money";
 import { ownerLabelKey } from "@/lib/owners";
+import { qk, invalidateMoney } from "@/lib/queryKeys";
+import { useAccounts, useCategories } from "@/lib/queries";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import type { AccountRow, CategoryRow, TransactionRow } from "@/lib/types";
+import type { CategoryRow, TransactionRow } from "@/lib/types";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 
 interface AttachmentRow { id: string; transactionId: string; sha256: string; fileName: string }
 
 function Thumb({ txId }: { txId: string }) {
-  const atts = useQuery({ queryKey: ["attachments"], queryFn: () => api.entityList<AttachmentRow>("attachments") });
+  const atts = useQuery({ queryKey: qk.entity("attachments"), queryFn: () => api.entityList<AttachmentRow>("attachments") });
   const att = atts.data?.find((a) => a.transactionId === txId);
   const path = useQuery({
     queryKey: ["attachment-path", att?.sha256],
@@ -48,14 +50,14 @@ export function TransactionsPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  const accounts = useQuery({ queryKey: ["accounts"], queryFn: () => api.entityList<AccountRow>("accounts") });
-  const categories = useQuery({ queryKey: ["categories"], queryFn: () => api.entityList<CategoryRow>("categories") });
+  const accounts = useAccounts();
+  const categories = useCategories();
 
   // Debounced so a keystroke doesn't hit the whole history every time.
   const q = useDebounced(search.trim());
   const searching = q.length > 0;
   const tx = useQuery({
-    queryKey: ["transactions", "page", searching ? `search:${q}` : `day:${day}`, accountId, categoryId],
+    queryKey: qk.txList("page", searching ? `search:${q}` : `day:${day}`, accountId, categoryId),
     queryFn: () =>
       api.transactionList<TransactionRow>(
         searching
@@ -64,11 +66,7 @@ export function TransactionsPage() {
       ),
   });
 
-  const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ["transactions"] });
-    qc.invalidateQueries({ queryKey: ["tx-days"] });
-    qc.invalidateQueries({ queryKey: ["dashboard"] });
-  };
+  const invalidate = () => invalidateMoney(qc);
   const del = useMutation({
     mutationFn: (id: string) => api.entityDelete("transactions", id),
     onSuccess: invalidate,
