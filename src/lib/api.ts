@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { AnalyticsSummary, Bucket } from "./types";
 
 export interface AppInfo {
   version: string;
@@ -72,6 +73,10 @@ export const api = {
   transactionList: <T = unknown>(filter: TransactionFilter) => invoke<T[]>("transaction_list", { filter }),
   transactionDays: (from: string, to: string) => invoke<string[]>("transaction_days", { from, to }),
   dashboard: <T = unknown>(from: string, to: string) => invoke<T>("dashboard", { from, to }),
+  analyticsSummary: (from: string, to: string, currency?: string) =>
+    invoke<AnalyticsSummary>("analytics_summary", { from, to, currency }),
+  analyticsMonthly: (from: string, to: string, currency?: string) =>
+    invoke<Bucket[]>("analytics_monthly", { from, to, currency }),
   journal: <T = unknown>(filter: JournalFilter) => invoke<T[]>("journal", { filter }),
   goalUpsert: <T = unknown>(input: Record<string, unknown>) => invoke<T>("goal_upsert", { input }),
   reminderUpsert: <T = unknown>(input: Record<string, unknown>) => invoke<T>("reminder_upsert", { input }),

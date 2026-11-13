@@ -84,3 +84,20 @@ export interface DashboardData {
   accounts: AccountRow[];
   totals: { kind: string; currency: string; amount: number }[];
 }
+
+export interface Bucket {
+  key: string | null;
+  income: number;
+  expense: number;
+}
+
+export interface AnalyticsSummary {
+  currency: string;
+  income: number;
+  expense: number;
+  missing: string[];
+  byDay: Bucket[];
+  byCategory: Bucket[];
+  byOwner: Bucket[];
+  byAccount: Bucket[];
+}
