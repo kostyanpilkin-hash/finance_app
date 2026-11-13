@@ -1,4 +1,4 @@
-use finance_storage::{db::Db, secrets, Actor, Source};
+use finance_storage::{db::Db, repos, secrets, Actor, Source};
 use std::sync::OnceLock;
 use tauri::Manager;
 
@@ -27,15 +27,17 @@ pub struct AppState {
     pub new_recovery_key: Option<String>,
 }
 
-impl AppState {
-    #[allow(dead_code)]
-    pub fn actor(&self, user_id: Option<String>) -> Actor {
-        Actor {
-            user_id,
-            device_id: Some(self.db.device_id.clone()),
-            source: Source::Desktop,
-        }
-    }
+/// Current user id read on the write conn — used inside `with_conn`/`write`
+/// closures where the write lock is already held.
+pub(crate) fn actor_on(
+    c: &finance_storage::rusqlite::Connection,
+    db: &Db,
+) -> Result<Actor, finance_storage::Error> {
+    Ok(Actor {
+        user_id: repos::setting_get(c, "current_user_id")?,
+        device_id: Some(db.device_id.clone()),
+        source: Source::Desktop,
+    })
 }
 
 pub fn init_db(app: &tauri::App) -> Result<AppState, String> {

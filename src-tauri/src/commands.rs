@@ -1,10 +1,10 @@
-use finance_storage::{db::Db, models, repos, seed_categories, Actor, Entity, Source};
+use finance_storage::{models, repos, seed_categories, Entity};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager, State};
 
 use crate::blocking::run;
-use crate::state::AppState;
+use crate::state::{actor_on, AppState};
 
 #[tauri::command]
 pub fn app_info(app: AppHandle) -> serde_json::Value {
@@ -28,19 +28,6 @@ pub fn set_tray_labels(
     let menu = crate::tray::build_menu(&app, &open, &quit).map_err(|e| e.to_string())?;
     tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
     tray.set_tooltip(Some(tooltip)).map_err(|e| e.to_string())
-}
-
-/// Current user id read on the write conn — used inside `with_conn` closures
-/// where the write lock is already held.
-fn actor_on(
-    c: &finance_storage::rusqlite::Connection,
-    db: &Db,
-) -> Result<Actor, finance_storage::Error> {
-    Ok(Actor {
-        user_id: repos::setting_get(c, "current_user_id")?,
-        device_id: Some(db.device_id.clone()),
-        source: Source::Desktop,
-    })
 }
 
 fn display_currency_on(
