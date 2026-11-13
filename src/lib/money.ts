@@ -46,6 +46,21 @@ export interface StoredRate {
   scale: number;
 }
 
+/** Rate pair = (rateBynScaled, scale), same formula as Rust convert_with:
+ *  amount * fRate/fScale * tScale/tRate, rounded half away from zero. */
+export function convertMinor(
+  minor: number,
+  from: { rate: number; scale: number },
+  to: { rate: number; scale: number },
+): number | null {
+  if (from.rate <= 0 || to.rate <= 0 || from.scale <= 0 || to.scale <= 0) return null;
+  const num = BigInt(minor) * BigInt(from.rate) * BigInt(to.scale);
+  const den = BigInt(from.scale) * BigInt(to.rate);
+  const half = den / 2n;
+  const v = num >= 0n ? (num + half) / den : (num - half) / den;
+  return Number(v);
+}
+
 /**
  * Converts `minor` between currencies using already-loaded NBRB rates —
  * same math as the backend `convert_with` (rate_byn_scaled / scale per BYN),
@@ -59,11 +74,6 @@ export function convertMinorLocal(minor: number, from: string, to: string, rates
       : rates.find((r) => r.currency === c.toUpperCase());
   const f = rate(from);
   const t = rate(to);
-  if (!f || !t || f.rateBynScaled <= 0 || t.rateBynScaled <= 0) return null;
-  // amount * (f.rate/f.scale) * (t.scale/t.rate), rounded half away from zero.
-  const num = BigInt(minor) * BigInt(f.rateBynScaled) * BigInt(t.scale);
-  const den = BigInt(f.scale) * BigInt(t.rateBynScaled);
-  const half = den / 2n;
-  const v = num >= 0n ? (num + half) / den : (num - half) / den;
-  return Number(v);
+  if (!f || !t) return null;
+  return convertMinor(minor, { rate: f.rateBynScaled, scale: f.scale }, { rate: t.rateBynScaled, scale: t.scale });
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { convertMinorLocal, formatMinor, parseMinor } from "./money";
+import { convertMinor, convertMinorLocal, formatMinor, parseMinor } from "./money";
 
 const RATES = [
   { currency: "USD", rateBynScaled: 3_250_000, scale: 1 },
@@ -25,6 +25,34 @@ describe("convertMinorLocal", () => {
   it("returns null when a rate is missing", () => {
     expect(convertMinorLocal(100, "EUR", "BYN", RATES)).toBeNull();
     expect(convertMinorLocal(100, "USD", "EUR", RATES)).toBeNull();
+  });
+});
+
+describe("convertMinor", () => {
+  const BYN = { rate: 1_000_000, scale: 1 };
+  const USD = { rate: 3_250_000, scale: 1 };
+
+  it("BYN→BYN is unchanged", () => {
+    expect(convertMinor(1234, BYN, BYN)).toBe(1234);
+  });
+
+  it("100 USD → 325 BYN", () => {
+    expect(convertMinor(10000, USD, BYN)).toBe(32500);
+  });
+
+  it("rounds half away from zero for negatives", () => {
+    // −100.00 BYN at 3.25 → −30.7692 → −3077.
+    expect(convertMinor(-10000, BYN, USD)).toBe(-3077);
+  });
+
+  it("null on a zero rate", () => {
+    expect(convertMinor(100, { rate: 0, scale: 1 }, BYN)).toBeNull();
+    expect(convertMinor(100, BYN, { rate: 1_000_000, scale: 0 })).toBeNull();
+  });
+
+  it("keeps precision at 1e12", () => {
+    expect(convertMinor(1e12, BYN, BYN)).toBe(1e12);
+    expect(convertMinor(1e12, USD, BYN)).toBe(3_250_000_000_000);
   });
 });
 

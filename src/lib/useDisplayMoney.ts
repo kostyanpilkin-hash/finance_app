@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
 import { useSettings } from "@/lib/queries";
-import { todayIso } from "@/lib/money";
+import { convertMinor, todayIso } from "@/lib/money";
 
 interface RateRow { currency: string; rateBynScaled: number; scale: number; date: string }
 
@@ -16,14 +16,17 @@ export function useDisplayMoney() {
   const rates = useQuery({ queryKey: qk.rates, queryFn: () => api.ratesLatest<RateRow>() });
   const displayCurrency = settings.data?.display_currency || "BYN";
 
-  // All stored rates are scaled by 1e6; BYN is 1.0 = 1e6 scaled.
   const toDisplay = useCallback(
     (minor: number, cur: string): number | null => {
-      const rate = (c: string) => (c === "BYN" ? 1e6 : rates.data?.find((r) => r.currency === c)?.rateBynScaled);
-      const r = rate(cur);
-      const target = rate(displayCurrency);
-      if (!r || !target) return null;
-      return Math.round(minor * (r / 1e6) / (target / 1e6));
+      const pair = (c: string) =>
+        c === "BYN" ? { rate: 1_000_000, scale: 1 } : (() => {
+          const r = rates.data?.find((x) => x.currency === c);
+          return r ? { rate: r.rateBynScaled, scale: r.scale || 1 } : null;
+        })();
+      const f = pair(cur);
+      const tgt = pair(displayCurrency);
+      if (!f || !tgt) return null;
+      return convertMinor(minor, f, tgt);
     },
     [rates.data, displayCurrency],
   );
