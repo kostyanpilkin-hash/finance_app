@@ -52,6 +52,8 @@ pub fn run() {
             commands::transaction_list,
             commands::transaction_days,
             commands::dashboard,
+            commands::analytics_summary,
+            commands::analytics_monthly,
             commands::journal,
             commands::goal_upsert,
             commands::reminder_upsert,

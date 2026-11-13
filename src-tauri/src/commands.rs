@@ -43,6 +43,14 @@ fn actor_on(
     })
 }
 
+fn display_currency_on(
+    c: &finance_storage::rusqlite::Connection,
+) -> Result<String, finance_storage::Error> {
+    Ok(repos::setting_get(c, "display_currency")?
+        .filter(|s| s.len() == 3)
+        .unwrap_or_else(|| "BYN".into()))
+}
+
 // ---------- onboarding / bootstrap ----------
 
 #[tauri::command]
@@ -323,6 +331,48 @@ pub async fn dashboard(
     run(move || {
         db.with_read_conn(|c| repos::dashboard(c, &from, &to))
             .map_err(|e| e.to_string())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn analytics_summary(
+    state: State<'_, AppState>,
+    from: String,
+    to: String,
+    currency: Option<String>,
+) -> Result<finance_storage::analytics::Summary, String> {
+    let db = state.db.share();
+    run(move || {
+        db.with_read_conn(|c| {
+            let cur = match currency {
+                Some(c) => c,
+                None => display_currency_on(c)?,
+            };
+            finance_storage::analytics::summary(c, &from, &to, &cur)
+        })
+        .map_err(|e| e.to_string())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn analytics_monthly(
+    state: State<'_, AppState>,
+    from: String,
+    to: String,
+    currency: Option<String>,
+) -> Result<Vec<finance_storage::analytics::Bucket>, String> {
+    let db = state.db.share();
+    run(move || {
+        db.with_read_conn(|c| {
+            let cur = match currency {
+                Some(c) => c,
+                None => display_currency_on(c)?,
+            };
+            finance_storage::analytics::monthly(c, &from, &to, &cur)
+        })
+        .map_err(|e| e.to_string())
     })
     .await
 }
