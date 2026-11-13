@@ -751,6 +751,25 @@ mod tests {
     }
 
     #[test]
+    fn newer_schema_is_refused() {
+        let dir = std::env::temp_dir().join(format!("fin-{}", new_id()));
+        let p = dir.join("f.db");
+        let d = db::Db::open(&p, Some(&[3u8; 32])).unwrap();
+        d.write(|c| {
+            c.execute(
+                "UPDATE meta SET value = ?1 WHERE key = 'schema_version'",
+                [(migrations::SCHEMA_VERSION + 1).to_string()],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+        drop(d);
+        let err = db::Db::open(&p, Some(&[3u8; 32])).err().unwrap().to_string();
+        assert!(err.contains("db_newer_than_app"), "{err}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
     fn stale_payload_version_cannot_rewind() {
         let d = db();
         d.write(|c| {

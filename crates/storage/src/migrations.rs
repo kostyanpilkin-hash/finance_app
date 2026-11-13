@@ -276,6 +276,16 @@ const MIGRATIONS: &[&[&str]] = &[
     &["UPDATE transactions SET spent_by_user_id = created_by_user_id WHERE spent_by_user_id IS NULL"],
 ];
 
+/// Schema version stored in `meta`, 0 for a fresh or unreadable db.
+pub fn stored_version(conn: &Connection) -> i64 {
+    conn.query_row(
+        "SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schema_version'",
+        [],
+        |r| r.get(0),
+    )
+    .unwrap_or(0)
+}
+
 /// Applies pending migrations inside a transaction.
 pub fn migrate(conn: &Connection) -> Result<(), Error> {
     conn.execute_batch(
@@ -287,13 +297,12 @@ pub fn migrate(conn: &Connection) -> Result<(), Error> {
         "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
         [],
     )?;
-    let current: i64 = conn
-        .query_row(
-            "SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schema_version'",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap_or(0);
+    let current = stored_version(conn);
+    if current > SCHEMA_VERSION {
+        return Err(Error::Invalid(format!(
+            "db_newer_than_app: db schema v{current}, app supports v{SCHEMA_VERSION}"
+        )));
+    }
     for (i, stmts) in MIGRATIONS.iter().enumerate() {
         let v = (i + 1) as i64;
         if v <= current {
