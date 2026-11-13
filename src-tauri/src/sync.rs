@@ -50,9 +50,11 @@ pub fn migrate_device_token(state: &AppState) {
             })
         });
     match r {
-        Ok(true) => eprintln!("device token migrated to the OS keyring"),
+        Ok(true) => crate::applog::append("sync.log", "device token migrated to the OS keyring"),
         Ok(false) => {}
-        Err(e) => eprintln!("device token migration failed: {e}"),
+        Err(e) => {
+            crate::applog::append("sync.log", &format!("device token migration failed: {e}"))
+        }
     }
 }
 
@@ -140,7 +142,10 @@ pub fn start_host(app: &AppHandle) {
                         Ok(l) => {
                             let _ = finance_api::serve(api_state, l).await;
                         }
-                        Err(e) => eprintln!("sync: bind {ip}:{API_PORT} failed: {e}"),
+                        Err(e) => crate::applog::append(
+                            "sync.log",
+                            &format!("sync: bind {ip}:{API_PORT} failed: {e}"),
+                        ),
                     }
                 });
                 listeners.insert(ip, handle);
