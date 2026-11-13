@@ -22,30 +22,18 @@ mod report;
 mod text;
 mod wizard;
 
-const KEY_SERVICE: &str = "by.kostyan.finance";
-const TG_ACCOUNT: &str = "bot-token";
-
 // ---------- token storage ----------
 
 pub fn save_token(token: &str) -> Result<(), String> {
-    keyring::Entry::new(KEY_SERVICE, TG_ACCOUNT)
-        .map_err(|e| e.to_string())?
-        .set_secret(token.as_bytes())
-        .map_err(|e| e.to_string())
+    crate::keystore::write(crate::keystore::BOT_TOKEN, token.as_bytes())
 }
 
 fn read_token() -> Option<String> {
-    keyring::Entry::new(KEY_SERVICE, TG_ACCOUNT)
-        .ok()?
-        .get_secret()
-        .ok()
-        .map(|b| String::from_utf8_lossy(&b).into_owned())
+    crate::keystore::read_string(crate::keystore::BOT_TOKEN)
 }
 
 pub fn delete_token() {
-    if let Ok(e) = keyring::Entry::new(KEY_SERVICE, TG_ACCOUNT) {
-        let _ = e.delete_credential();
-    }
+    crate::keystore::delete(crate::keystore::BOT_TOKEN);
 }
 
 // ---------- error log & status ----------
