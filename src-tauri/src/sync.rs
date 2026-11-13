@@ -278,19 +278,24 @@ async fn sync_once_inner(state: &AppState) -> Result<bool, String> {
     let http = crate::net::client();
 
     // 1. Push outbox.
-    let ops: Vec<Value> = state.db.with_conn(|c| {
-        let mut st = c.prepare("SELECT op_id, entity, entity_id, op, base_version, payload_json FROM outbox ORDER BY created_at")?;
-        let v = st
-            .query_map([], |r| {
-                Ok(json!({
-                    "opId": r.get::<_, String>(0)?, "entity": r.get::<_, String>(1)?, "id": r.get::<_, String>(2)?,
-                    "op": r.get::<_, String>(3)?, "baseVersion": r.get::<_, Option<i64>>(4)?,
-                    "payload": r.get::<_, Option<String>>(5)?.and_then(|s| serde_json::from_str::<Value>(&s).ok()),
-                }))
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(v)
-    }).map_err(|e| e.to_string())?;
+    let db = state.db.share();
+    let ops: Vec<Value> = crate::blocking::run(move || {
+        db.with_read_conn(|c| {
+            let mut st = c.prepare("SELECT op_id, entity, entity_id, op, base_version, payload_json FROM outbox ORDER BY created_at")?;
+            let v = st
+                .query_map([], |r| {
+                    Ok(json!({
+                        "opId": r.get::<_, String>(0)?, "entity": r.get::<_, String>(1)?, "id": r.get::<_, String>(2)?,
+                        "op": r.get::<_, String>(3)?, "baseVersion": r.get::<_, Option<i64>>(4)?,
+                        "payload": r.get::<_, Option<String>>(5)?.and_then(|s| serde_json::from_str::<Value>(&s).ok()),
+                    }))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(v)
+        })
+        .map_err(|e| e.to_string())
+    })
+    .await?;
 
     if !ops.is_empty() {
         let resp = http
@@ -338,21 +343,24 @@ async fn sync_once_inner(state: &AppState) -> Result<bool, String> {
                     .collect()
             })
             .unwrap_or_default();
-        state
-            .db
-            .write(|c| {
-                for op in &ops {
+        let db = state.db.share();
+        let ops_c = ops.clone();
+        let ok_ids_c = ok_ids.clone();
+        let conflict_ids_c = conflict_ids.clone();
+        crate::blocking::run(move || {
+            db.write(|c| {
+                for op in &ops_c {
                     let id = op["id"].as_str().unwrap_or("");
                     // A conflicted op leaves the queue but the row stays dirty
                     // until the user picks a winner — pull must not overwrite it.
-                    if conflict_ids.iter().any(|x| x == id) {
+                    if conflict_ids_c.iter().any(|x| x == id) {
                         c.execute(
                             "DELETE FROM outbox WHERE op_id = ?1",
                             [op["opId"].as_str().unwrap_or("")],
                         )?;
                         continue;
                     }
-                    if !ok_ids.iter().any(|x| x == id) {
+                    if !ok_ids_c.iter().any(|x| x == id) {
                         continue;
                     }
                     let Some(e) = op["entity"]
@@ -375,18 +383,22 @@ async fn sync_once_inner(state: &AppState) -> Result<bool, String> {
                 }
                 Ok(())
             })
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| e.to_string())
+        })
+        .await?;
     }
 
     // 2. Pull changes.
-    let last: i64 = state
-        .db
-        .with_conn(|c| {
+    let db = state.db.share();
+    let last: i64 = crate::blocking::run(move || {
+        db.with_read_conn(|c| {
             Ok(repos::setting_get(c, "last_seq")?
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(0))
         })
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())
+    })
+    .await?;
     let resp = http
         .get(format!("{host}/api/v1/pull?since={last}&limit=2000"))
         .bearer_auth(&token)
@@ -398,10 +410,11 @@ async fn sync_once_inner(state: &AppState) -> Result<bool, String> {
     }
     let body: Value = resp.json().await.map_err(|e| e.to_string())?;
 
-    state
-        .db
-        .write(|c| {
-            for ch in body["changes"].as_array().unwrap_or(&vec![]) {
+    let db = state.db.share();
+    let body_c = body.clone();
+    crate::blocking::run(move || {
+        db.write(|c| {
+            for ch in body_c["changes"].as_array().unwrap_or(&vec![]) {
                 let entity = ch["entity"].as_str().unwrap_or("");
                 let Some(e) = finance_storage::Entity::parse(entity) else {
                     continue;
@@ -423,10 +436,10 @@ async fn sync_once_inner(state: &AppState) -> Result<bool, String> {
                 }
                 dbm::write_row(c, e.table(), &Value::Object(row))?;
             }
-            let max_seq = body["maxSeq"].as_i64().unwrap_or(last);
+            let max_seq = body_c["maxSeq"].as_i64().unwrap_or(last);
             repos::setting_set(c, "last_seq", &max_seq.to_string())?;
             // Persist unresolved conflicts the host reported.
-            for cf in body["conflicts"].as_array().unwrap_or(&vec![]) {
+            for cf in body_c["conflicts"].as_array().unwrap_or(&vec![]) {
                 c.execute(
                     "INSERT OR REPLACE INTO conflicts (id, entity, entity_id, local_payload, server_payload, created_at)
                      VALUES (?1,?2,?3,?4,?5,?6)",
@@ -439,7 +452,9 @@ async fn sync_once_inner(state: &AppState) -> Result<bool, String> {
             }
             Ok(())
         })
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())
+    })
+    .await?;
 
     Ok(!ops.is_empty() || !body["changes"].as_array().unwrap_or(&vec![]).is_empty())
 }
@@ -592,17 +607,21 @@ pub async fn pair_client(
     // The device token is a secret — keyring only, never a settings row.
     save_device_token(&grant.token)?;
     let user_id = grant.user_id;
-    state
-        .db
-        .write(|c| {
-            repos::setting_set(c, "host_url", host)?;
+    let db = state.db.share();
+    let host_s = host.to_string();
+    let user_id_c = user_id.clone();
+    crate::blocking::run(move || {
+        db.write(|c| {
+            repos::setting_set(c, "host_url", &host_s)?;
             repos::setting_set(c, "last_seq", "0")?;
-            if !user_id.is_empty() {
-                repos::setting_set(c, "current_user_id", &user_id)?;
+            if !user_id_c.is_empty() {
+                repos::setting_set(c, "current_user_id", &user_id_c)?;
             }
             Ok(())
         })
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())
+    })
+    .await?;
     state.db.set_mode("client").map_err(|e| e.to_string())?;
     Ok(user_id)
 }
@@ -619,10 +638,12 @@ pub async fn join_host(state: &AppState, host: &str, code: &str, name: &str) -> 
             Err(e) => return Err(format!("sync failed: {e}")),
         }
     }
-    state
-        .db
-        .with_conn(|c| repos::setting_set(c, "onboarding_done", "1"))
-        .map_err(|e| e.to_string())
+    let db = state.db.share();
+    crate::blocking::run(move || {
+        db.write(|c| repos::setting_set(c, "onboarding_done", "1"))
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 /// Client: unresolved conflicts (id, entity, both versions).
@@ -658,12 +679,14 @@ pub async fn conflict_resolve(
     if !resp.status().is_success() {
         return Err(format!("resolve {}", resp.status()));
     }
-    state
-        .db
-        .write(|c| {
+    let db = state.db.share();
+    let conflict_id = conflict_id.to_string();
+    let winner = winner.to_string();
+    crate::blocking::run(move || {
+        db.write(|c| {
             let (entity, entity_id, server): (String, String, String) = c.query_row(
                 "SELECT entity, entity_id, server_payload FROM conflicts WHERE id=?1",
-                [conflict_id],
+                [&conflict_id],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )?;
             if let Some(e) = finance_storage::Entity::parse(&entity) {
@@ -680,11 +703,13 @@ pub async fn conflict_resolve(
             }
             c.execute(
                 "UPDATE conflicts SET resolved_at=?1 WHERE id=?2",
-                finance_storage::rusqlite::params![dbm::now_iso(), conflict_id],
+                finance_storage::rusqlite::params![dbm::now_iso(), &conflict_id],
             )?;
             Ok(())
         })
         .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 pub fn sync_status(db: &dbm::Db) -> Value {
