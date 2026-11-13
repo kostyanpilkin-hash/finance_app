@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
+import { qk } from "@/lib/queryKeys";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
 import { Onboarding } from "./Onboarding";
@@ -35,8 +36,8 @@ export default function App() {
 
   const dbStatus = useQuery({ queryKey: ["db-status"], queryFn: api.dbStatus });
   const ready = dbStatus.data === "ready";
-  const onboarding = useQuery({ queryKey: ["onboarding"], queryFn: api.onboardingStatus, enabled: ready });
-  const pinEnabled = useQuery({ queryKey: ["pin-enabled"], queryFn: api.pinEnabled, enabled: ready });
+  const onboarding = useQuery({ queryKey: qk.onboarding, queryFn: api.onboardingStatus, enabled: ready });
+  const pinEnabled = useQuery({ queryKey: qk.pinEnabled, queryFn: api.pinEnabled, enabled: ready });
   const [unlockedOnce, setUnlockedOnce] = useState(false);
   const locked = pinEnabled.data === true && !unlockedOnce;
 

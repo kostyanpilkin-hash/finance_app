@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { api } from "@/lib/api";
+import { qk } from "@/lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { DbUnlock } from "@/components/DbUnlock";
 
@@ -13,7 +14,7 @@ export function DbError() {
   const { t } = useTranslation();
   const [showUnlock, setShowUnlock] = useState(false);
   const info = useQuery({ queryKey: ["startup-error"], queryFn: api.startupError });
-  const backups = useQuery({ queryKey: ["backups"], queryFn: api.backupList });
+  const backups = useQuery({ queryKey: qk.backups, queryFn: api.backupList });
   const restore = useMutation({
     mutationFn: (name: string) => api.backupRestore(name),
     onSuccess: async () => {

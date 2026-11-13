@@ -26,7 +26,7 @@ function Thumb({ txId }: { txId: string }) {
   const atts = useQuery({ queryKey: qk.entity("attachments"), queryFn: () => api.entityList<AttachmentRow>("attachments") });
   const att = atts.data?.find((a) => a.transactionId === txId);
   const path = useQuery({
-    queryKey: ["attachment-path", att?.sha256],
+    queryKey: qk.attachmentPath(att?.sha256),
     queryFn: () => api.attachmentPath(att!.sha256),
     enabled: !!att,
   });

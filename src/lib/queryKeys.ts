@@ -21,11 +21,12 @@ export const qk = {
   pairingRequests: ["pairing-requests"] as const,
   conflicts: ["conflicts"] as const,
   tgStatus: ["tg-status"] as const,
+  attachmentPath: (sha: string | undefined) => ["attachment-path", sha] as const,
 };
 
 /** Keys that must NOT refetch on "data-changed" (slow or unrelated to the db). */
 export const NON_DATA_ROOTS = new Set([
-  "db-status", "app-info", "autostart", "discover-hosts", "recovery-key", "host-addresses", "startup-error",
+  "db-status", "app-info", "autostart", "discover-hosts", "recovery-key", "host-addresses", "startup-error", "attachment-path",
 ]);
 
 /** Everything a money movement can affect. */
@@ -33,7 +34,6 @@ export function invalidateMoney(qc: QueryClient) {
   for (const key of [
     qk.transactions, qk.dashboard(), qk.analytics(), qk.journal(),
     qk.entityAll("accounts"), qk.entityAll("attachments"), qk.entityAll("goals"),
-    ["tx"], ["tx-days"],
   ]) {
     void qc.invalidateQueries({ queryKey: key });
   }
