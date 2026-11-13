@@ -609,7 +609,10 @@ pub async fn pair_client(
         .map_err(|e| e.to_string())
     })
     .await?;
-    state.db.set_mode("client").map_err(|e| e.to_string())?;
+    state
+        .db
+        .set_mode(finance_storage::db::Mode::Client)
+        .map_err(|e| e.to_string())?;
     Ok(user_id)
 }
 

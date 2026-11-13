@@ -136,8 +136,8 @@ pub struct Db {
     /// Dedicated read connection (WAL): UI queries don't wait on a busy writer
     /// (sync pushes, bot, backups). Never used for writes.
     pub read_conn: std::sync::Arc<Mutex<Connection>>,
-    /// "host" | "client" — set by the wizard; default host.
-    pub mode: String,
+    /// host | client — set by the wizard; default host.
+    pub mode: Mode,
     /// Stable id of this device (this machine's database).
     pub device_id: String,
     /// Generated once for this installation.
@@ -152,7 +152,7 @@ impl Db {
         Self {
             conn: self.conn.clone(),
             read_conn: self.read_conn.clone(),
-            mode: self.mode.clone(),
+            mode: self.mode,
             device_id: self.device_id.clone(),
             instance_id: self.instance_id.clone(),
             attachments_dir: self.attachments_dir.clone(),
@@ -160,7 +160,7 @@ impl Db {
     }
 
     pub fn mode(&self) -> Mode {
-        Mode::parse(&self.mode)
+        self.mode
     }
     pub fn is_host(&self) -> bool {
         self.mode() == Mode::Host

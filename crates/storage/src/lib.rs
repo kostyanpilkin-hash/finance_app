@@ -109,7 +109,7 @@ impl db::Db {
         if meta("created_at").is_none() {
             set_meta("created_at", &now_iso());
         }
-        let mode = meta("mode").unwrap_or_else(|| "host".into());
+        let mode = db::Mode::parse(&meta("mode").unwrap_or_else(|| "host".into()));
         let device_id = meta("device_id").unwrap();
         let instance_id = meta("instance_id").unwrap();
         Ok(Self {
@@ -165,11 +165,11 @@ impl db::Db {
         Ok(out)
     }
 
-    pub fn set_mode(&self, mode: &str) -> Result<(), Error> {
+    pub fn set_mode(&self, mode: db::Mode) -> Result<(), Error> {
         self.with_conn(|c| {
             c.execute(
                 "INSERT OR REPLACE INTO meta (key, value) VALUES ('mode', ?1)",
-                [mode],
+                [mode.as_str()],
             )?;
             Ok(())
         })
