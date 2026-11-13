@@ -119,7 +119,11 @@ pub enum Mode {
 
 impl Mode {
     pub fn parse(s: &str) -> Self {
-        if s == "client" { Mode::Client } else { Mode::Host }
+        if s == "client" {
+            Mode::Client
+        } else {
+            Mode::Host
+        }
     }
     pub fn as_str(self) -> &'static str {
         match self {

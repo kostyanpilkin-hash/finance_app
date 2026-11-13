@@ -126,8 +126,16 @@ pub async fn set_current_user(state: State<'_, AppState>, user_id: String) -> Re
 
 /// Settings only the backend may write (sync state, onboarding, PIN, bot link).
 const PROTECTED_SETTINGS: &[&str] = &[
-    "pin_hash", "pin_salt", "current_user_id", "onboarding_done", "last_seq",
-    "host_url", "device_token", "auto_backup_month", "tg_bot_username", "tg_enabled",
+    "pin_hash",
+    "pin_salt",
+    "current_user_id",
+    "onboarding_done",
+    "last_seq",
+    "host_url",
+    "device_token",
+    "auto_backup_month",
+    "tg_bot_username",
+    "tg_enabled",
 ];
 
 pub(crate) fn setting_writable(key: &str) -> bool {

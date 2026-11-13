@@ -42,19 +42,15 @@ fn migrate_legacy_token(
 
 /// One-shot migration at startup; failures are logged, never fatal.
 pub fn migrate_device_token(state: &AppState) {
-    let r = state
-        .db
-        .with_conn(|c| {
-            migrate_legacy_token(c, |t| {
-                crate::keystore::write(crate::keystore::DEVICE_TOKEN, t.as_bytes())
-            })
-        });
+    let r = state.db.with_conn(|c| {
+        migrate_legacy_token(c, |t| {
+            crate::keystore::write(crate::keystore::DEVICE_TOKEN, t.as_bytes())
+        })
+    });
     match r {
         Ok(true) => crate::applog::append("sync.log", "device token migrated to the OS keyring"),
         Ok(false) => {}
-        Err(e) => {
-            crate::applog::append("sync.log", &format!("device token migration failed: {e}"))
-        }
+        Err(e) => crate::applog::append("sync.log", &format!("device token migration failed: {e}")),
     }
 }
 
