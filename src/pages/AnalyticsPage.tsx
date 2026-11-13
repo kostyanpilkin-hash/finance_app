@@ -7,7 +7,6 @@ import {
 } from "recharts";
 import { api } from "@/lib/api";
 import { formatMinor, todayIso } from "@/lib/money";
-import { ownerOf } from "@/lib/owners";
 import { useDisplayMoney, useEnsureRates } from "@/lib/useDisplayMoney";
 import { qk } from "@/lib/queryKeys";
 import { useAccounts, useCategories, useUsers } from "@/lib/queries";
@@ -15,7 +14,6 @@ import { DonutChart, type DonutItem } from "@/components/ui/donut-chart";
 import { CategoryTxDialog, type CategoryPeek } from "@/components/transactions/CategoryTxDialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import type { TransactionRow } from "@/lib/types";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
 
@@ -72,48 +70,29 @@ export function AnalyticsPage() {
   const pr = prevRange(kind, r);
   const m6from = monthsBack(6);
 
-  const cur = useQuery({
-    queryKey: qk.txList("analytics", r.from, r.to),
-    queryFn: () => api.transactionList<TransactionRow>({ from: r.from, to: r.to, limit: 5000 }),
-  });
-  const prev = useQuery({
-    queryKey: qk.txList("analytics", pr.from, pr.to),
-    queryFn: () => api.transactionList<TransactionRow>({ from: pr.from, to: pr.to, limit: 5000 }),
-  });
-  const m6 = useQuery({
-    queryKey: qk.txList("analytics-m6", m6from),
-    queryFn: () => api.transactionList<TransactionRow>({ from: m6from, to: todayIso(), limit: 20000 }),
-  });
+  const { displayCurrency } = useDisplayMoney();
   const users = useUsers();
   const categories = useCategories();
   const accounts = useAccounts();
-  const { displayCurrency, toDisplay } = useDisplayMoney();
   useEnsureRates([displayCurrency, ...(accounts.data ?? []).map((a) => a.currency)]);
 
-  /** tx -> converted minor in display currency (null when rate missing) */
-  const conv = useMemo(() => {
-    const fn = (rows: TransactionRow[] | undefined) => {
-      const out: { x: TransactionRow; v: number }[] = [];
-      for (const x of rows ?? []) {
-        const v = toDisplay(x.amountMinor, x.aCurrency ?? "BYN");
-        if (v != null) out.push({ x, v });
-      }
-      return out;
-    };
-    return {
-      cur: fn(cur.data),
-      prev: fn(prev.data),
-      m6: fn(m6.data),
-    };
-  }, [cur.data, prev.data, m6.data, toDisplay]);
+  const cur = useQuery({
+    queryKey: qk.analytics("summary", r.from, r.to, displayCurrency),
+    queryFn: () => api.analyticsSummary(r.from, r.to, displayCurrency),
+  });
+  const prev = useQuery({
+    queryKey: qk.analytics("summary", pr.from, pr.to, displayCurrency),
+    queryFn: () => api.analyticsSummary(pr.from, pr.to, displayCurrency),
+  });
+  const m6 = useQuery({
+    queryKey: qk.analytics("monthly", m6from, displayCurrency),
+    queryFn: () => api.analyticsMonthly(m6from, todayIso(), displayCurrency),
+  });
 
-  const sum = (list: { x: TransactionRow; v: number }[], k: string) =>
-    list.filter((e) => e.x.kind === k).reduce((s, e) => s + e.v, 0);
-
-  const e = sum(conv.cur, "expense");
-  const i = sum(conv.cur, "income");
-  const pe = sum(conv.prev, "expense");
-  const pi = sum(conv.prev, "income");
+  const e = cur.data?.expense ?? 0;
+  const i = cur.data?.income ?? 0;
+  const pe = prev.data?.expense ?? 0;
+  const pi = prev.data?.income ?? 0;
   const delta = (a: number, b: number) => (b === 0 ? (a === 0 ? 0 : 100) : Math.round(((a - b) / b) * 100));
 
   const daysElapsed = Math.max(
@@ -124,17 +103,10 @@ export function AnalyticsPage() {
   const avgDaily = Math.round(e / daysElapsed);
   const forecast = kind === "month" && r.to >= todayIso() ? Math.round((e / daysElapsed) * daysInPeriod) : null;
 
-  const byDay = useMemo(() => {
-    const buckets = new Map<string, { label: string; expense: number; income: number }>();
-    for (const { x, v } of conv.cur) {
-      if (x.kind === "transfer") continue;
-      const day = x.occurredAt.slice(0, 10);
-      const b = buckets.get(day) ?? { label: day.slice(5), expense: 0, income: 0 };
-      b[x.kind as "expense" | "income"] += v;
-      buckets.set(day, b);
-    }
-    return [...buckets.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, v]) => v);
-  }, [conv.cur]);
+  const byDay = useMemo(
+    () => (cur.data?.byDay ?? []).map((b) => ({ label: (b.key ?? "").slice(5), expense: b.expense, income: b.income })),
+    [cur.data],
+  );
 
   const balanceTrend = useMemo(() => {
     const out: { label: string; net: number }[] = [];
@@ -147,81 +119,57 @@ export function AnalyticsPage() {
   }, [byDay]);
 
   const byMonth = useMemo(() => {
-    const buckets = new Map<string, { label: string; expense: number; income: number }>();
-    for (const { x, v } of conv.m6) {
-      if (x.kind === "transfer") continue;
-      const key = x.occurredAt.slice(0, 7);
-      const label = new Date(`${key}-01T00:00:00`).toLocaleDateString(i18n.language, { month: "short" });
-      const b = buckets.get(key) ?? { label, expense: 0, income: 0 };
-      b[x.kind as "expense" | "income"] += v;
-      buckets.set(key, b);
-    }
-    return [...buckets.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([, v]) => ({ ...v, expense: v.expense / 100, income: v.income / 100, net: (v.income - v.expense) / 100 }));
-  }, [conv.m6, i18n.language]);
+    return (m6.data ?? []).map((b) => {
+      const label = new Date(`${b.key}-01T00:00:00`).toLocaleDateString(i18n.language, { month: "short" });
+      return { label, expense: b.expense / 100, income: b.income / 100, net: (b.income - b.expense) / 100 };
+    });
+  }, [m6.data, i18n.language]);
 
   const byCategory = useMemo((): DonutItem[] => {
-    const byCat = new Map<string, number>();
-    for (const { x, v } of conv.cur) {
-      if (x.kind !== "expense") continue;
-      const id = x.categoryId ?? "";
-      byCat.set(id, (byCat.get(id) ?? 0) + v);
-    }
     const name = (id: string) => {
       const c = categories.data?.find((c) => c.id === id);
       return c ? (c.key ? t(`categories.${c.key}`, c.name) : c.name) : t("ui.noCategory");
     };
     const catOf = (id: string) => categories.data?.find((c) => c.id === id);
-    return [...byCat.entries()]
-      .map(([id, v]) => ({ id: id || null, name: name(id), value: v, fill: catOf(id)?.color ?? FALLBACK, iconId: catOf(id)?.icon }))
-      .sort((a, b) => b.value - a.value);
-  }, [conv.cur, categories.data, t]);
+    return (cur.data?.byCategory ?? [])
+      .filter((b) => b.expense > 0)
+      .map((b) => {
+        const id = b.key ?? "";
+        return { id: id || null, name: name(id), value: b.expense, fill: catOf(id)?.color ?? FALLBACK, iconId: catOf(id)?.icon };
+      });
+  }, [cur.data, categories.data, t]);
 
   const byPeople = useMemo((): { expense: DonutItem[]; income: DonutItem[] } => {
     const colorOf = new Map((users.data ?? []).map((u) => [u.id, u.color]));
     const nameOf = new Map((users.data ?? []).map((u) => [u.id, u.name]));
-    const mk = (k: "expense" | "income") => {
-      const byUser = new Map<string, { v: number; name: string }>();
-      for (const { x, v } of conv.cur) {
-        if (x.kind !== k) continue;
-        // Entries are attributed to their owner (spent_by), author as fallback.
-        const { id, name: who } = ownerOf(x, (i) => nameOf.get(i));
-        const g = byUser.get(id) ?? { v: 0, name: who };
-        g.v += v;
-        byUser.set(id, g);
-      }
-      return [...byUser.entries()]
-        .map(([id, g]) => {
-          const name = g.name || (id ? "?" : t("ui.noAuthor"));
+    const mk = (k: "expense" | "income") =>
+      (cur.data?.byOwner ?? [])
+        .map((b) => {
+          const id = b.key;
+          const name = (id ? nameOf.get(id) : undefined) ?? (id ? "?" : t("ui.noAuthor"));
           return {
             name,
-            value: g.v,
+            value: k === "expense" ? b.expense : b.income,
             fill: id ? colorOf.get(id) ?? FALLBACK : FALLBACK,
             initial: name[0]?.toUpperCase(),
           };
         })
-        .sort((a, b) => b.value - a.value);
-    };
+        .filter((d) => d.value > 0);
     return { expense: mk("expense"), income: mk("income") };
-  }, [conv.cur, users.data, t]);
+  }, [cur.data, users.data, t]);
 
   const byAccount = useMemo(() => {
-    const byAcc = new Map<string, number>();
-    for (const { x, v } of conv.cur) {
-      if (x.kind !== "expense") continue;
-      byAcc.set(x.accountId, (byAcc.get(x.accountId) ?? 0) + v);
-    }
     const meta = new Map((accounts.data ?? []).map((a) => [a.id, a]));
-    const rows = [...byAcc.entries()]
-      .map(([id, v]) => {
+    const rows = (cur.data?.byAccount ?? [])
+      .filter((b) => b.expense > 0)
+      .map((b) => {
+        const id = b.key ?? "";
         const a = meta.get(id);
-        return { name: a ? `${a.name}${a.last4 ? ` ·${a.last4}` : ""}` : id, value: v, color: a?.color ?? FALLBACK };
-      })
-      .sort((a, b) => b.value - a.value);
+        return { name: a ? `${a.name}${a.last4 ? ` ·${a.last4}` : ""}` : id, value: b.expense, color: a?.color ?? FALLBACK };
+      });
     const max = rows[0]?.value ?? 0;
     return rows.map((r) => ({ ...r, pct: max ? Math.round((r.value / max) * 100) : 0 }));
-  }, [conv.cur, accounts.data]);
+  }, [cur.data, accounts.data]);
 
   const card = "rounded-2xl border border-border bg-card p-4";
   const stat = (label: string, v: number, pv: number, cls: string, suffix = "") => {
