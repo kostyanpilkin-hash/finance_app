@@ -29,7 +29,6 @@ pub struct AppState {
 
 impl AppState {
     /// Read-only query on the blocking pool.
-    #[allow(dead_code)]
     pub async fn read<T: Send + 'static>(
         &self,
         f: impl FnOnce(&finance_storage::rusqlite::Connection) -> Result<T, finance_storage::Error>
@@ -41,7 +40,6 @@ impl AppState {
     }
 
     /// One transaction on the blocking pool, with the desktop actor resolved inside it.
-    #[allow(dead_code)]
     pub async fn write<T: Send + 'static>(
         &self,
         f: impl FnOnce(

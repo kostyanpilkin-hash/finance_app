@@ -42,22 +42,20 @@ fn display_currency_on(
 
 #[tauri::command]
 pub async fn onboarding_status(state: State<'_, AppState>) -> Result<Value, String> {
-    let db = state.db.share();
     let db_existed = state.db_existed;
-    run(move || {
-        db.with_read_conn(|c| {
+    let mode = state.db.mode().as_str();
+    state
+        .read(move |c| {
             let done = repos::setting_get(c, "onboarding_done")? == Some("1".into());
             let users = repos::list_rows(c, Entity::Users, false)?.len();
             Ok(json!({
                 "done": done,
                 "users": users,
                 "dbExisted": db_existed,
-                "mode": db.mode().as_str(),
+                "mode": mode,
             }))
         })
-        .map_err(|e| e.to_string())
-    })
-    .await
+        .await
 }
 
 /// Shows the freshly generated recovery key once (fresh installs only).
@@ -79,15 +77,12 @@ pub async fn complete_onboarding(
     state: State<'_, AppState>,
     input: OnboardingInput,
 ) -> Result<(), String> {
-    let db = state.db.share();
-    run(move || {
-        db.write(|c| {
-            let actor = actor_on(c, &db)?;
-            seed_categories(c, &db, &actor)?;
+    state
+        .write(move |c, db, a| {
+            seed_categories(c, db, a)?;
             let mut ids = Vec::new();
             for (i, name) in input.user_names.iter().enumerate() {
-                let u =
-                    repos::user_upsert(c, &db, &actor, json!({"name": name, "sort": i as i64}))?;
+                let u = repos::user_upsert(c, db, a, json!({"name": name, "sort": i as i64}))?;
                 ids.push(u["id"].as_str().unwrap().to_string());
             }
             let owner = ids
@@ -102,8 +97,8 @@ pub async fn complete_onboarding(
                 };
                 repos::account_upsert(
                     c,
-                    &db,
-                    &actor,
+                    db,
+                    a,
                     json!({
                         "name": name, "kind": kind, "currency": "BYN", "ownerUserId": owner
                     }),
@@ -117,31 +112,21 @@ pub async fn complete_onboarding(
             )?;
             Ok(())
         })
-        .map_err(|e| e.to_string())
-    })
-    .await
+        .await
 }
 
 #[tauri::command]
 pub async fn set_current_user(state: State<'_, AppState>, user_id: String) -> Result<(), String> {
-    let db = state.db.share();
-    run(move || {
-        db.write(|c| repos::setting_set(c, "current_user_id", &user_id))
-            .map_err(|e| e.to_string())
-    })
-    .await
+    state
+        .write(move |c, _db, _a| repos::setting_set(c, "current_user_id", &user_id))
+        .await
 }
 
 // ---------- settings ----------
 
 #[tauri::command]
 pub async fn get_settings(state: State<'_, AppState>) -> Result<Value, String> {
-    let db = state.db.share();
-    run(move || {
-        db.with_read_conn(repos::settings_all)
-            .map_err(|e| e.to_string())
-    })
-    .await
+    state.read(repos::settings_all).await
 }
 
 #[tauri::command]
@@ -150,12 +135,9 @@ pub async fn set_setting(
     key: String,
     value: String,
 ) -> Result<(), String> {
-    let db = state.db.share();
-    run(move || {
-        db.write(|c| repos::setting_set(c, &key, &value))
-            .map_err(|e| e.to_string())
-    })
-    .await
+    state
+        .write(move |c, _db, _a| repos::setting_set(c, &key, &value))
+        .await
 }
 
 // ---------- generic entity CRUD ----------
@@ -167,12 +149,9 @@ pub async fn entity_list(
     include_deleted: Option<bool>,
 ) -> Result<Vec<Value>, String> {
     let e = Entity::parse(&entity).ok_or("unknown entity")?;
-    let db = state.db.share();
-    run(move || {
-        db.with_read_conn(|c| repos::list_rows(c, e, include_deleted.unwrap_or(false)))
-            .map_err(|e| e.to_string())
-    })
-    .await
+    state
+        .read(move |c| repos::list_rows(c, e, include_deleted.unwrap_or(false)))
+        .await
 }
 
 #[tauri::command]
@@ -182,16 +161,12 @@ pub async fn entity_delete(
     id: String,
 ) -> Result<(), String> {
     let e = Entity::parse(&entity).ok_or("unknown entity")?;
-    let db = state.db.share();
-    run(move || {
-        db.write(|c| {
-            let a = actor_on(c, &db)?;
-            repos::apply(&db, c, &a, e, models::Op::Delete, &id, None)?;
+    state
+        .write(move |c, db, a| {
+            repos::apply(db, c, a, e, models::Op::Delete, &id, None)?;
             Ok(())
         })
-        .map_err(|e| e.to_string())
-    })
-    .await
+        .await
 }
 
 #[tauri::command]
@@ -200,54 +175,30 @@ pub async fn entity_restore(
     entity: String,
     id: String,
 ) -> Result<(), String> {
-    let db = state.db.share();
-    run(move || {
-        db.write(|c| {
-            let a = actor_on(c, &db)?;
-            repos::restore(c, &db, &a, &entity, &id)
-        })
-        .map_err(|e| e.to_string())
-    })
-    .await
+    state
+        .write(move |c, db, a| repos::restore(c, db, a, &entity, &id))
+        .await
 }
 
 #[tauri::command]
 pub async fn user_upsert(state: State<'_, AppState>, input: Value) -> Result<Value, String> {
-    let db = state.db.share();
-    run(move || {
-        db.write(|c| {
-            let a = actor_on(c, &db)?;
-            repos::user_upsert(c, &db, &a, input)
-        })
-        .map_err(|e| e.to_string())
-    })
-    .await
+    state
+        .write(move |c, db, a| repos::user_upsert(c, db, a, input))
+        .await
 }
 
 #[tauri::command]
 pub async fn account_upsert(state: State<'_, AppState>, input: Value) -> Result<Value, String> {
-    let db = state.db.share();
-    run(move || {
-        db.write(|c| {
-            let a = actor_on(c, &db)?;
-            repos::account_upsert(c, &db, &a, input)
-        })
-        .map_err(|e| e.to_string())
-    })
-    .await
+    state
+        .write(move |c, db, a| repos::account_upsert(c, db, a, input))
+        .await
 }
 
 #[tauri::command]
 pub async fn category_upsert(state: State<'_, AppState>, input: Value) -> Result<Value, String> {
-    let db = state.db.share();
-    run(move || {
-        db.write(|c| {
-            let a = actor_on(c, &db)?;
-            repos::category_upsert(c, &db, &a, input)
-        })
-        .map_err(|e| e.to_string())
-    })
-    .await
+    state
+        .write(move |c, db, a| repos::category_upsert(c, db, a, input))
+        .await
 }
 
 #[tauri::command]
@@ -256,28 +207,16 @@ pub async fn category_delete(
     id: String,
     move_to: Option<String>,
 ) -> Result<(), String> {
-    let db = state.db.share();
-    run(move || {
-        db.write(|c| {
-            let a = actor_on(c, &db)?;
-            repos::category_delete(c, &db, &a, &id, move_to.as_deref())
-        })
-        .map_err(|e| e.to_string())
-    })
-    .await
+    state
+        .write(move |c, db, a| repos::category_delete(c, db, a, &id, move_to.as_deref()))
+        .await
 }
 
 #[tauri::command]
 pub async fn transaction_upsert(state: State<'_, AppState>, input: Value) -> Result<Value, String> {
-    let db = state.db.share();
-    run(move || {
-        db.write(|c| {
-            let a = actor_on(c, &db)?;
-            repos::transaction_upsert(c, &db, &a, input)
-        })
-        .map_err(|e| e.to_string())
-    })
-    .await
+    state
+        .write(move |c, db, a| repos::transaction_upsert(c, db, a, input))
+        .await
 }
 
 #[tauri::command]
@@ -286,12 +225,7 @@ pub async fn transaction_list(
     filter: Value,
 ) -> Result<Vec<Value>, String> {
     let f: repos::TransactionFilter = serde_json::from_value(filter).map_err(|e| e.to_string())?;
-    let db = state.db.share();
-    run(move || {
-        db.with_read_conn(|c| repos::transaction_list(c, &f))
-            .map_err(|e| e.to_string())
-    })
-    .await
+    state.read(move |c| repos::transaction_list(c, &f)).await
 }
 
 #[tauri::command]
@@ -300,12 +234,9 @@ pub async fn transaction_days(
     from: String,
     to: String,
 ) -> Result<Vec<String>, String> {
-    let db = state.db.share();
-    run(move || {
-        db.with_read_conn(|c| repos::transaction_days(c, &from, &to))
-            .map_err(|e| e.to_string())
-    })
-    .await
+    state
+        .read(move |c| repos::transaction_days(c, &from, &to))
+        .await
 }
 
 #[tauri::command]
@@ -314,12 +245,7 @@ pub async fn dashboard(
     from: String,
     to: String,
 ) -> Result<Value, String> {
-    let db = state.db.share();
-    run(move || {
-        db.with_read_conn(|c| repos::dashboard(c, &from, &to))
-            .map_err(|e| e.to_string())
-    })
-    .await
+    state.read(move |c| repos::dashboard(c, &from, &to)).await
 }
 
 #[tauri::command]
@@ -367,12 +293,7 @@ pub async fn analytics_monthly(
 #[tauri::command]
 pub async fn journal(state: State<'_, AppState>, filter: Value) -> Result<Vec<Value>, String> {
     let f: repos::JournalFilter = serde_json::from_value(filter).map_err(|e| e.to_string())?;
-    let db = state.db.share();
-    run(move || {
-        db.with_read_conn(|c| repos::journal(c, &f))
-            .map_err(|e| e.to_string())
-    })
-    .await
+    state.read(move |c| repos::journal(c, &f)).await
 }
 
 #[tauri::command]
