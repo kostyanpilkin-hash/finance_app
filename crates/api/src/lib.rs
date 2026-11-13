@@ -353,7 +353,7 @@ async fn pair(
     // held, so concurrent guesses can't slip past the attempt limit.
     // Lock order: DB → hub (same as decide()).
     let uid: Option<String> =
-        s.db.with_conn(|c| {
+        s.db.write(|c| {
             if s.hub.locked() {
                 return Ok(None);
             }
@@ -469,7 +469,7 @@ async fn push(
         .to_string();
 
     let mut results = Vec::new();
-    s.db.with_conn(|c| {
+    s.db.write(|c| {
         let (device_id, user_id) = auth(c, &token)?;
         let actor = models::Actor { user_id, device_id: Some(device_id.clone()), source: Source::Sync };
         for op in ops {
@@ -534,7 +534,7 @@ async fn resolve(
         .and_then(|v| v.strip_prefix("Bearer "))
         .unwrap_or("")
         .to_string();
-    s.db.with_conn(|c| {
+    s.db.write(|c| {
         let (device_id, user_id) = auth(c, &token)?;
         let (entity_s, entity_id, local, server): (String, String, String, String) = c.query_row(
             "SELECT entity, entity_id, local_payload, server_payload FROM conflicts WHERE id=?1 AND resolved_at IS NULL",
