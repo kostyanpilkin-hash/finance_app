@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "@/lib/api";
+import { qk } from "@/lib/queryKeys";
+import { useSettings } from "@/lib/queries";
 import { WHATSNEW_SEEN_KEY, whatsNewFor } from "@/lib/whatsnew";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -9,7 +11,7 @@ import { Button } from "@/components/ui/button";
 /** What's-new dialog content for the currently installed version. */
 export function WhatsNewDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t, i18n } = useTranslation();
-  const info = useQuery({ queryKey: ["app-info"], queryFn: api.appInfo });
+  const info = useQuery({ queryKey: qk.appInfo, queryFn: api.appInfo });
   const version = info.data?.version ?? "";
   const lang = (i18n.language?.slice(0, 2) || "ru") as "ru" | "be" | "en";
   const entry = whatsNewFor(version);
@@ -33,8 +35,8 @@ export function WhatsNewDialog({ open, onClose }: { open: boolean; onClose: () =
 export function WhatsNewAuto() {
   // `dismissed` covers the gap between closing and the settings refetch.
   const [dismissed, setDismissed] = useState(false);
-  const info = useQuery({ queryKey: ["app-info"], queryFn: api.appInfo });
-  const settings = useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
+  const info = useQuery({ queryKey: qk.appInfo, queryFn: api.appInfo });
+  const settings = useSettings();
   const queryClient = useQueryClient();
 
   const version = info.data?.version;
@@ -46,7 +48,7 @@ export function WhatsNewAuto() {
     setDismissed(true);
     if (version) {
       void api.setSetting(WHATSNEW_SEEN_KEY, version)
-        .then(() => queryClient.invalidateQueries({ queryKey: ["settings"] }));
+        .then(() => queryClient.invalidateQueries({ queryKey: qk.settings }));
     }
   };
   return <WhatsNewDialog open={open} onClose={close} />;

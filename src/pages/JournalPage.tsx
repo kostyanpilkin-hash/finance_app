@@ -2,10 +2,12 @@ import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { qk } from "@/lib/queryKeys";
+import { useAccounts, useCategories, useUsers } from "@/lib/queries";
 import { Button } from "@/components/ui/button";
 import { formatMinor } from "@/lib/money";
 import { cn } from "@/lib/utils";
-import type { AccountRow, AuditRow, CategoryRow, UserRow } from "@/lib/types";
+import type { AuditRow } from "@/lib/types";
 import { Input } from "@/components/ui/input";
 
 const ENTITIES = ["transactions", "accounts", "categories", "goals", "reminders", "users"] as const;
@@ -32,13 +34,13 @@ export function JournalPage() {
   const [search, setSearch] = useState("");
   const [entity, setEntity] = useState("");
   const log = useQuery({
-    queryKey: ["journal", search, entity],
+    queryKey: qk.journal(search, entity),
     queryFn: () => api.journal<AuditRow>({ search, entity: entity || undefined, limit: 300 }),
   });
-  const accounts = useQuery({ queryKey: ["accounts"], queryFn: () => api.entityList<AccountRow>("accounts") });
-  const categories = useQuery({ queryKey: ["categories"], queryFn: () => api.entityList<CategoryRow>("categories") });
-  const users = useQuery({ queryKey: ["users"], queryFn: () => api.entityList<UserRow>("users") });
-  const reminders = useQuery({ queryKey: ["reminders"], queryFn: () => api.entityList<ReminderRef>("reminders") });
+  const accounts = useAccounts();
+  const categories = useCategories();
+  const users = useUsers();
+  const reminders = useQuery({ queryKey: qk.entity("reminders"), queryFn: () => api.entityList<ReminderRef>("reminders") });
   const restore = useMutation({
     mutationFn: ({ entity, id }: { entity: string; id: string }) => api.entityRestore(entity as Parameters<typeof api.entityRestore>[0], id),
     onSuccess: () => qc.invalidateQueries(),

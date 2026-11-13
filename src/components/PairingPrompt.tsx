@@ -1,6 +1,8 @@
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { qk } from "@/lib/queryKeys";
+import { useUsers } from "@/lib/queries";
 import { Button } from "@/components/ui/button";
 
 /// Global modal shown on the host when a device asks to pair. It polls the
@@ -9,15 +11,15 @@ import { Button } from "@/components/ui/button";
 export function PairingPrompt() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const reqs = useQuery({ queryKey: ["pairing-requests"], queryFn: api.pairingRequests, refetchInterval: 3000 });
-  const users = useQuery({ queryKey: ["users"], queryFn: () => api.entityList<{ id: string; name: string }>("users") });
+  const reqs = useQuery({ queryKey: qk.pairingRequests, queryFn: api.pairingRequests, refetchInterval: 3000 });
+  const users = useUsers();
   const req = reqs.data?.requests?.[0];
 
   const decide = useMutation({
     mutationFn: (allow: boolean) => api.pairingDecide(req!.id, allow),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["pairing-requests"] });
-      queryClient.invalidateQueries({ queryKey: ["sync-status"] });
+      queryClient.invalidateQueries({ queryKey: qk.pairingRequests });
+      queryClient.invalidateQueries({ queryKey: qk.syncStatus });
     },
   });
 
