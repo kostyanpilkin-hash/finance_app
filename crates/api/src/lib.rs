@@ -581,7 +581,9 @@ async fn pull(
     let limit = q.limit.unwrap_or(2000);
     s.db.with_read_conn(|c| {
         auth(c, &token)?;
-        let mut st = c.prepare(
+        // Read snapshot: the whole page reflects one db state.
+        let snap = c.unchecked_transaction()?;
+        let mut st = snap.prepare(
             "SELECT s.seq, s.entity, s.entity_id, s.op FROM sync_log s WHERE s.seq > ?1 ORDER BY s.seq LIMIT ?2",
         )?;
         let mut rows = st.query_map(finance_storage::rusqlite::params![since, limit], |r| {
@@ -590,10 +592,10 @@ async fn pull(
         let mut changes = Vec::new();
         while let Some(r) = rows.next().transpose()? {
             let (seq, entity, id, op) = r;
-            let payload = dbm::row_json(c, &entity, &id)?;
+            let payload = dbm::row_json(&snap, &entity, &id)?;
             changes.push(json!({"seq": seq, "entity": entity, "id": id, "op": op, "row": payload}));
         }
-        let mut st2 = c.prepare("SELECT id, entity, entity_id, local_payload, server_payload FROM conflicts WHERE resolved_at IS NULL")?;
+        let mut st2 = snap.prepare("SELECT id, entity, entity_id, local_payload, server_payload FROM conflicts WHERE resolved_at IS NULL")?;
         let conflicts: Vec<Value> = st2
             .query_map([], |r| {
                 Ok(json!({
@@ -602,7 +604,13 @@ async fn pull(
                 }))
             })?
             .collect::<Result<_, _>>()?;
-        let max_seq: i64 = c.query_row("SELECT COALESCE(MAX(seq),0) FROM sync_log", [], |r| r.get(0))?;
-        Ok(Json(json!({"changes": changes, "conflicts": conflicts, "maxSeq": max_seq})))
+        // Last seq actually delivered — not the global max, or a paged
+        // response would skip rows the client never saw.
+        let max_seq = changes
+            .last()
+            .and_then(|c| c["seq"].as_i64())
+            .unwrap_or(since);
+        let has_more = changes.len() as i64 >= limit;
+        Ok(Json(json!({"changes": changes, "conflicts": conflicts, "maxSeq": max_seq, "hasMore": has_more})))
     }).map_err(|e| if e.to_string() == "unauthorized" { StatusCode::UNAUTHORIZED } else { StatusCode::INTERNAL_SERVER_ERROR })
 }

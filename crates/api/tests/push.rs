@@ -149,6 +149,41 @@ async fn push_schema_gate() {
 }
 
 #[tokio::test]
+async fn pull_pages_do_not_skip_changes() {
+    let (app, db) = app();
+    seed_device(&db);
+    db.with_conn(|c| {
+        let a = Actor {
+            user_id: None,
+            device_id: Some(db.device_id.clone()),
+            source: Source::Desktop,
+        };
+        for n in ["A", "B", "C"] {
+            repos::account_upsert(
+                c,
+                &db,
+                &a,
+                json!({"name": n, "kind": "cash", "currency": "BYN"}),
+            )?;
+        }
+        Ok(())
+    })
+    .unwrap();
+    let req = Request::get("/api/v1/pull?since=0&limit=2")
+        .header("authorization", "Bearer tok")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(lan_req(req)).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&bytes).unwrap();
+    let changes = body["changes"].as_array().unwrap();
+    assert_eq!(changes.len(), 2);
+    assert_eq!(body["maxSeq"], changes[1]["seq"]);
+    assert_eq!(body["hasMore"], true);
+}
+
+#[tokio::test]
 async fn hello_reports_schema_version() {
     let (app, _db) = app();
     let resp = app
