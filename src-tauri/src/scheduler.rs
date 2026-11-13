@@ -63,7 +63,7 @@ async fn refresh_once(app: &AppHandle) {
     let app = app.clone();
     // Reuse the same code path as the manual command.
     let state = app.state::<AppState>();
-    let _ = crate::commands::rates_refresh(state).await;
+    let _ = crate::rates::refresh(&state).await;
 }
 
 /// Monthly encrypted backup to <appdata>/backups, keeps the last 12.

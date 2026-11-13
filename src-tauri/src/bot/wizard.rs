@@ -431,7 +431,7 @@ async fn ensure_conv_rates(state: &AppState, d: &Draft) {
     };
     let acc = account_currency(state, d).unwrap_or_default();
     for c in [cur, acc] {
-        let _ = crate::commands::ensure_rate(state, &c, &d.date).await;
+        let _ = crate::rates::ensure(state, &c, &d.date).await;
     }
 }
 
@@ -1540,7 +1540,7 @@ async fn action_apply(
             }
         }
         "refresh" => {
-            crate::commands::refresh_rates(state).await?;
+            crate::rates::refresh(state).await?;
         }
         "undo_yes" => {
             if let Some(id) = &d.undo_id {
