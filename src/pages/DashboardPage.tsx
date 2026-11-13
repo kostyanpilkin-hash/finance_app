@@ -5,11 +5,13 @@ import { api } from "@/lib/api";
 import { formatMinor, isoOf, todayIso } from "@/lib/money";
 import { ownerOf } from "@/lib/owners";
 import { useDisplayMoney, useEnsureRates } from "@/lib/useDisplayMoney";
+import { qk } from "@/lib/queryKeys";
+import { useCategories, useSettings, useUsers } from "@/lib/queries";
 import { DonutChart, type DonutItem } from "@/components/ui/donut-chart";
 import { CategoryTxDialog, type CategoryPeek } from "@/components/transactions/CategoryTxDialog";
 import { AccountCard } from "@/components/accounts/AccountCard";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { CategoryRow, DashboardData, TransactionRow, UserRow } from "@/lib/types";
+import type { DashboardData, TransactionRow } from "@/lib/types";
 import { Segmented } from "@/components/ui/segmented";
 
 type DashPeriod = "week" | "month" | "days30";
@@ -37,14 +39,14 @@ export function DashboardPage() {
     [],
   );
 
-  const dash = useQuery({ queryKey: ["dashboard", from, to], queryFn: () => api.dashboard<DashboardData>(from, to) });
+  const dash = useQuery({ queryKey: qk.dashboard(from, to), queryFn: () => api.dashboard<DashboardData>(from, to) });
   const tx = useQuery({
-    queryKey: ["transactions", "dash", from, to],
+    queryKey: qk.txList("dash", from, to),
     queryFn: () => api.transactionList<TransactionRow>({ from, to, limit: 2000 }),
   });
-  const categories = useQuery({ queryKey: ["categories"], queryFn: () => api.entityList<CategoryRow>("categories") });
-  const users = useQuery({ queryKey: ["users"], queryFn: () => api.entityList<UserRow>("users") });
-  const settings = useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
+  const categories = useCategories();
+  const users = useUsers();
+  const settings = useSettings();
   const { displayCurrency, toDisplay } = useDisplayMoney();
   const chartOn = useCallback(
     (key: string) => (settings.data?.[key] ?? "1") === "1",

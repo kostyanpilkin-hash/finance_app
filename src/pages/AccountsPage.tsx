@@ -5,10 +5,12 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { AccountCard, PsLogo } from "@/components/accounts/AccountCard";
 import { useDisplayMoney, useEnsureRates } from "@/lib/useDisplayMoney";
+import { qk, invalidateMoney } from "@/lib/queryKeys";
+import { useUsers } from "@/lib/queries";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatMinor } from "@/lib/money";
 import { cn } from "@/lib/utils";
-import type { AccountRow, DashboardData, PaymentSystem, UserRow } from "@/lib/types";
+import type { AccountRow, DashboardData, PaymentSystem } from "@/lib/types";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Field } from "@/components/ui/field";
@@ -26,10 +28,10 @@ export function AccountsPage() {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const dash = useQuery({
-    queryKey: ["dashboard", "accounts"],
+    queryKey: qk.dashboard("accounts"),
     queryFn: () => api.dashboard<DashboardData>("1970-01-01", "2099-12-31"),
   });
-  const users = useQuery({ queryKey: ["users"], queryFn: () => api.entityList<UserRow>("users") });
+  const users = useUsers();
   const [editing, setEditing] = useState<Partial<AccountRow> | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const { displayCurrency, toDisplay } = useDisplayMoney();
@@ -38,15 +40,11 @@ export function AccountsPage() {
   const save = useMutation({
     mutationFn: (a: Record<string, unknown>) => api.accountUpsert(a),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["accounts"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      invalidateMoney(qc);
       setEditing(null);
     },
   });
-  const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ["accounts"] });
-    qc.invalidateQueries({ queryKey: ["dashboard"] });
-  };
+  const invalidate = () => invalidateMoney(qc);
   const del = useMutation({
     mutationFn: (id: string) => api.entityDelete("accounts", id),
     onSuccess: invalidate,

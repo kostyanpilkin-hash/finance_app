@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "@/lib/api";
 import { formatMinor } from "@/lib/money";
+import { qk } from "@/lib/queryKeys";
 import { Dialog } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -29,7 +30,7 @@ export function CategoryTxDialog({
 }) {
   const { t } = useTranslation();
   const tx = useQuery({
-    queryKey: ["transactions", "cat-peek", from, to, peek?.kind, peek?.categoryIds],
+    queryKey: qk.txList("cat-peek", from, to, peek?.kind, peek?.categoryIds),
     queryFn: () =>
       api.transactionList<TransactionRow>({
         from,
