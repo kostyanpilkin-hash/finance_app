@@ -1,3 +1,4 @@
+mod blocking;
 mod bot;
 mod commands;
 mod net;

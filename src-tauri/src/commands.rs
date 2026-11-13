@@ -3,6 +3,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager, State};
 
+use crate::blocking::run;
 use crate::state::AppState;
 
 #[tauri::command]
@@ -27,19 +28,6 @@ pub fn set_tray_labels(
     let menu = crate::tray::build_menu(&app, &open, &quit).map_err(|e| e.to_string())?;
     tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
     tray.set_tooltip(Some(tooltip)).map_err(|e| e.to_string())
-}
-
-/// Runs SQLite/disk work on the blocking pool: the command future resolves on
-/// the async runtime while a worker thread does the blocking part, so a slow
-/// query can never freeze the window.
-async fn run<T, F>(f: F) -> Result<T, String>
-where
-    T: Send + 'static,
-    F: FnOnce() -> Result<T, String> + Send + 'static,
-{
-    tauri::async_runtime::spawn_blocking(f)
-        .await
-        .map_err(|e| e.to_string())?
 }
 
 /// Current user id read on the write conn — used inside `with_conn` closures
