@@ -340,7 +340,7 @@ async fn handle_unlinked(state: &AppState, tg: &Tg, m: &TgMessage) -> Result<(),
     };
     state
         .db
-        .with_conn(|c| {
+        .write(|c| {
             c.execute(
                 "INSERT OR REPLACE INTO telegram_links (user_id, chat_id, linked_at) VALUES (?1,?2,?3)",
                 finance_storage::rusqlite::params![uid, chat, now_iso()],
@@ -468,7 +468,7 @@ pub async fn tg_connect(state: &AppState, token: String) -> Result<(String, Stri
     let db = state.db.share();
     let uname = username.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        db.with_conn(|c| {
+        db.write(|c| {
             repos::setting_set(c, "tg_bot_username", &uname)?;
             repos::setting_set(c, "tg_enabled", "1")
         })
@@ -484,7 +484,7 @@ pub fn tg_pair_code(db: &finance_storage::db::Db, user_id: &str) -> Result<Strin
         .map(|_| (uuid::Uuid::new_v4().as_bytes()[0] % 10).to_string())
         .collect();
     let exp = (chrono::Utc::now() + chrono::Duration::minutes(10)).to_rfc3339();
-    db.with_conn(|c| {
+    db.write(|c| {
         c.execute(
             "INSERT OR REPLACE INTO tg_pair_codes (code, user_id, expires_at) VALUES (?1,?2,?3)",
             finance_storage::rusqlite::params![code, user_id, exp],
@@ -532,7 +532,7 @@ pub fn tg_status(db: &finance_storage::db::Db) -> Value {
 
 pub fn tg_disconnect(db: &finance_storage::db::Db) -> Result<(), String> {
     delete_token();
-    db.with_conn(|c| {
+    db.write(|c| {
         c.execute("DELETE FROM telegram_links", [])?;
         repos::setting_set(c, "tg_bot_username", "")?;
         repos::setting_set(c, "tg_enabled", "0")

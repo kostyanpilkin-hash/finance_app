@@ -293,9 +293,8 @@ fn resolve_reminder(
     };
     state
         .db
-        .with_conn(|c| {
-            let tx = c.unchecked_transaction()?;
-            let Some(r) = finance_storage::db::row_json(&tx, "reminders", id)? else {
+        .write(|tx| {
+            let Some(r) = finance_storage::db::row_json(tx, "reminders", id)? else {
                 return Ok(None);
             };
             if !r["deletedAt"].is_null() || r["nextDue"].as_str() != Some(due) {
@@ -309,7 +308,7 @@ fn resolve_reminder(
                     r["categoryId"].as_str(),
                 ) {
                     let row = repos::transaction_upsert(
-                        &tx,
+                        tx,
                         &state.db,
                         &actor,
                         json!({
@@ -322,8 +321,7 @@ fn resolve_reminder(
                     created = row["id"].as_str().map(str::to_string);
                 }
             }
-            repos::reminder_resolve(&tx, &state.db, &actor, id, status, created.as_deref())?;
-            tx.commit()?;
+            repos::reminder_resolve(tx, &state.db, &actor, id, status, created.as_deref())?;
             Ok(Some(match (status, created) {
                 ("done", Some(_)) => "rem_paid_tx",
                 ("done", None) => "rem_paid",

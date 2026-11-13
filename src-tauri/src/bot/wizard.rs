@@ -1370,8 +1370,7 @@ fn persist_entry(
         (Some(_), Some(converted)) if d.kind != "transfer" => (converted, Some(d.amount)),
         (Some(_), _) => return Err("account amount required".into()),
     };
-    state.db.with_conn(|c| {
-        let tx = c.unchecked_transaction()?;
+    state.db.write(|tx| {
         let alive: i64 = tx.query_row("SELECT COUNT(*) FROM transactions WHERE id=?1 AND deleted_at IS NULL", [&d.id], |r| r.get(0))?;
         let exists: i64 = tx.query_row("SELECT COUNT(*) FROM transactions WHERE id=?1", [&d.id], |r| r.get(0))?;
         let mut payload = json!({"id":d.id,"kind":d.kind,"occurredAt":occurred,"accountId":d.account,"amountMinor":amount,"categoryId":d.category,"spentByUserId":d.spender,"toAccountId":d.destination,"toAmountMinor":d.credited,"comment":d.comment,"origAmountMinor":orig_amount,"origCurrency":orig_amount.and(d.currency.clone())});
@@ -1384,11 +1383,10 @@ fn persist_entry(
             exists == 0
         };
         if write {
-            repos::transaction_upsert(&tx, &state.db, &actor, payload)?;
-            if let Some(bytes) = &bytes { repos::attachment_add(&tx, &state.db, &actor, &d.id, "receipt.jpg", "image/jpeg", bytes)?; }
+            repos::transaction_upsert(tx, &state.db, &actor, payload)?;
+            if let Some(bytes) = &bytes { repos::attachment_add(tx, &state.db, &actor, &d.id, "receipt.jpg", "image/jpeg", bytes)?; }
         }
         tx.execute("UPDATE tg_sessions SET state_json=?1, updated_at=?2 WHERE chat_id=?3", finance_storage::rusqlite::params![serde_json::to_string(&done)?, now_iso(), chat])?;
-        tx.commit()?;
         Ok(())
     }).map_err(|e| format!("save failed: {e}"))?;
     *d = done;
@@ -1481,10 +1479,8 @@ fn update_goal(state: &AppState, ctx: &Ctx, id: &str, patch: Value) -> Result<()
     let actor = bot_actor(state, ctx);
     state
         .db
-        .with_conn(|c| {
-            let tx = c.unchecked_transaction()?;
-            repos::goal_upsert(&tx, &state.db, &actor, patch)?;
-            tx.commit()?;
+        .write(|tx| {
+            repos::goal_upsert(tx, &state.db, &actor, patch)?;
             Ok(())
         })
         .map_err(|e| format!("goal update failed: {e}"))
@@ -1549,11 +1545,10 @@ async fn action_apply(
         "undo_yes" => {
             if let Some(id) = &d.undo_id {
                 let actor = bot_actor(state, ctx);
-                let removed = state.db.with_conn(|c| {
-                    let tx = c.unchecked_transaction()?;
+                let removed = state.db.write(|tx| {
                     let valid: i64 = tx.query_row("SELECT COUNT(*) FROM transactions WHERE id=?1 AND created_by_user_id=?2 AND source='bot' AND deleted_at IS NULL AND julianday(created_at)>=julianday(?3)", finance_storage::rusqlite::params![id,ctx.db_user,(chrono::Utc::now()-chrono::Duration::minutes(10)).to_rfc3339()], |r|r.get(0))?;
-                    if valid == 1 { repos::apply(&state.db,&tx,&actor,Entity::Transactions,finance_storage::Op::Delete,id,None)?; }
-                    tx.commit()?; Ok(valid == 1)
+                    if valid == 1 { repos::apply(&state.db,tx,&actor,Entity::Transactions,finance_storage::Op::Delete,id,None)?; }
+                    Ok(valid == 1)
                 }).map_err(|_|"undo failed")?;
                 *d = d.fresh();
                 d.notice = tr(&ctx.lang, if removed { "undone" } else { "no_undo" });
@@ -1743,18 +1738,16 @@ async fn action_apply(
             let actor = bot_actor(state, ctx);
             state
                 .db
-                .with_conn(|c| {
-                    let tx = c.unchecked_transaction()?;
+                .write(|tx| {
                     repos::apply(
                         &state.db,
-                        &tx,
+                        tx,
                         &actor,
                         Entity::Transactions,
                         finance_storage::Op::Delete,
                         &id,
                         None,
                     )?;
-                    tx.commit()?;
                     Ok(())
                 })
                 .map_err(|e| format!("delete failed: {e}"))?;
