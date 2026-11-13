@@ -331,23 +331,29 @@ async fn sync_once_inner(state: &AppState) -> Result<bool, String> {
             .unwrap_or_default();
         state
             .db
-            .with_conn(|c| {
-                for (i, op) in ops.iter().enumerate() {
+            .write(|c| {
+                for op in &ops {
                     let id = op["id"].as_str().unwrap_or("");
-                    if ok_ids.iter().any(|x| x == id) {
-                        c.execute(
-                            "DELETE FROM outbox WHERE op_id = ?1",
-                            [op["opId"].as_str().unwrap()],
-                        )?;
-                        c.execute(
-                            &format!(
-                                "UPDATE {} SET local_dirty=0 WHERE id=?1",
-                                op["entity"].as_str().unwrap_or("")
-                            ),
-                            [id],
-                        )?;
+                    if !ok_ids.iter().any(|x| x == id) {
+                        continue;
                     }
-                    let _ = i;
+                    let Some(e) = op["entity"]
+                        .as_str()
+                        .and_then(finance_storage::Entity::parse)
+                    else {
+                        continue;
+                    };
+                    c.execute(
+                        "DELETE FROM outbox WHERE op_id = ?1",
+                        [op["opId"].as_str().unwrap_or("")],
+                    )?;
+                    c.execute(
+                        &format!(
+                            "UPDATE {} SET local_dirty=0 WHERE id=?1 AND NOT EXISTS (SELECT 1 FROM outbox WHERE entity_id=?1)",
+                            e.table()
+                        ),
+                        [id],
+                    )?;
                 }
                 Ok(())
             })
@@ -376,7 +382,7 @@ async fn sync_once_inner(state: &AppState) -> Result<bool, String> {
 
     state
         .db
-        .with_conn(|c| {
+        .write(|c| {
             for ch in body["changes"].as_array().unwrap_or(&vec![]) {
                 let entity = ch["entity"].as_str().unwrap_or("");
                 let Some(e) = finance_storage::Entity::parse(entity) else {
@@ -570,7 +576,7 @@ pub async fn pair_client(
     let user_id = grant.user_id;
     state
         .db
-        .with_conn(|c| {
+        .write(|c| {
             repos::setting_set(c, "host_url", host)?;
             repos::setting_set(c, "last_seq", "0")?;
             if !user_id.is_empty() {
