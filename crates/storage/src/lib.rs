@@ -747,4 +747,191 @@ mod tests {
             k
         );
     }
+
+    /// v5 added transactions.spent_by_user_id and backfills it from the author.
+    #[test]
+    fn migration_v5_spender_column_and_backfill() {
+        let d = db();
+        d.with_conn(|c| {
+            let a = actor(&d);
+            seed_categories(c, &d, &a)?;
+            // Column exists at the migrated schema.
+            let cols: Vec<String> = c
+                .prepare("SELECT name FROM pragma_table_info('transactions')")?
+                .query_map([], |r| r.get(0))?
+                .collect::<Result<_, _>>()?;
+            assert!(cols.iter().any(|n| n == "spent_by_user_id"));
+
+            // A pre-v5 row is simulated by nulling the column; replaying the
+            // migration's backfill statement must copy the author id over.
+            let u = repos::user_upsert(c, &d, &a, json!({"name":"Иван"}))?;
+            let acc =
+                repos::account_upsert(c, &d, &a, json!({"name":"A","kind":"cash","currency":"BYN"}))?;
+            let cat = repos::category_upsert(c, &d, &a, json!({"name":"K","kind":"expense"}))?;
+            let uid = u["id"].as_str().unwrap();
+            let tx = repos::transaction_upsert(
+                c,
+                &d,
+                &a,
+                json!({"kind":"expense","occurredAt":"2026-11-10T10:00:00","accountId":acc["id"],
+                       "amountMinor":500,"categoryId":cat["id"],"createdByUserId":u["id"]}),
+            )?;
+            c.execute("UPDATE transactions SET spent_by_user_id = NULL", [])?;
+            c.execute(
+                "UPDATE transactions SET spent_by_user_id = created_by_user_id WHERE spent_by_user_id IS NULL",
+                [],
+            )?;
+            let row = db::row_json(c, "transactions", tx["id"].as_str().unwrap())?.unwrap();
+            assert_eq!(row["spentByUserId"].as_str(), Some(uid));
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    /// Expense rows carry "who spent": default = author, explicit value is
+    /// validated, income/transfer keep NULL.
+    #[test]
+    fn transaction_spender_defaults_and_validation() {
+        let d = db();
+        d.with_conn(|c| {
+            let a = actor(&d);
+            seed_categories(c, &d, &a)?;
+            let u1 = repos::user_upsert(c, &d, &a, json!({"name":"Иван"}))?;
+            let u2 = repos::user_upsert(c, &d, &a, json!({"name":"Мария"}))?;
+            let acc = repos::account_upsert(
+                c,
+                &d,
+                &a,
+                json!({"name":"A","kind":"cash","currency":"BYN"}),
+            )?;
+            let cash = repos::account_upsert(
+                c,
+                &d,
+                &a,
+                json!({"name":"B","kind":"cash","currency":"BYN"}),
+            )?;
+            let cat = repos::category_upsert(c, &d, &a, json!({"name":"K","kind":"expense"}))?;
+            let icat = repos::category_upsert(c, &d, &a, json!({"name":"I","kind":"income"}))?;
+            let mk = |extra: serde_json::Value| {
+                let mut p = json!({"kind":"expense","occurredAt":"2026-11-10T10:00:00",
+                                   "accountId":acc["id"],"amountMinor":100,"categoryId":cat["id"]});
+                p.as_object_mut()
+                    .unwrap()
+                    .extend(extra.as_object().unwrap().clone());
+                repos::transaction_upsert(c, &d, &a, p)
+            };
+
+            // Not given → author.
+            let x = mk(json!({"createdByUserId":u1["id"]}))?;
+            assert_eq!(x["spentByUserId"], u1["id"]);
+            // Explicit spender kept and exposed via the join.
+            let x = mk(json!({"createdByUserId":u1["id"],"spentByUserId":u2["id"]}))?;
+            assert_eq!(x["spentByUserId"], u2["id"]);
+            let listed = repos::transaction_list(
+                c,
+                &repos::TransactionFilter {
+                    from: Some("2026-11-10".into()),
+                    to: Some("2026-11-10".into()),
+                    ..Default::default()
+                },
+            )?;
+            let row = listed.iter().find(|r| r["id"] == x["id"]).unwrap();
+            assert_eq!(row["suName"], "Мария");
+            assert_eq!(row["uName"], "Иван");
+            // Unknown user rejected.
+            assert!(mk(json!({"spentByUserId":"ghost"})).is_err());
+            // Income and transfers force NULL.
+            let inc = repos::transaction_upsert(
+                c,
+                &d,
+                &a,
+                json!({"kind":"income","occurredAt":"2026-11-10T10:00:00","accountId":acc["id"],
+                       "amountMinor":100,"categoryId":icat["id"],"spentByUserId":u2["id"]}),
+            )?;
+            assert!(inc["spentByUserId"].is_null());
+            let tr = repos::transaction_upsert(
+                c,
+                &d,
+                &a,
+                json!({"kind":"transfer","occurredAt":"2026-11-10T10:00:00","accountId":acc["id"],
+                       "toAccountId":cash["id"],"amountMinor":100,"spentByUserId":u2["id"]}),
+            )?;
+            assert!(tr["spentByUserId"].is_null());
+            // Editing keeps the saved spender when the field is not resent.
+            let kept = repos::transaction_upsert(
+                c,
+                &d,
+                &a,
+                json!({"id":x["id"],"kind":"expense","occurredAt":"2026-11-10T10:00:00",
+                       "accountId":acc["id"],"amountMinor":200,"categoryId":cat["id"],
+                       "comment":"upd"}),
+            )?;
+            assert_eq!(kept["spentByUserId"], x["spentByUserId"]);
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    /// category_ids filters by several categories; "" matches NULL rows.
+    #[test]
+    fn transaction_filter_category_ids() {
+        let d = db();
+        d.with_conn(|c| {
+            let a = actor(&d);
+            seed_categories(c, &d, &a)?;
+            let acc = repos::account_upsert(
+                c,
+                &d,
+                &a,
+                json!({"name":"A","kind":"cash","currency":"BYN"}),
+            )?;
+            let c1 = repos::category_upsert(c, &d, &a, json!({"name":"К1","kind":"expense"}))?;
+            let c2 = repos::category_upsert(c, &d, &a, json!({"name":"К2","kind":"expense"}))?;
+            let mk = |cat: &serde_json::Value| {
+                repos::transaction_upsert(
+                    c,
+                    &d,
+                    &a,
+                    json!({"kind":"expense","occurredAt":"2026-11-10T10:00:00",
+                           "accountId":acc["id"],"amountMinor":100,"categoryId":cat["id"]}),
+                )
+            };
+            let t1 = mk(&c1)?;
+            let t2 = mk(&c2)?;
+            let t3 = mk(&c1)?;
+            // Simulate a category-less row (e.g. after the category was dropped).
+            c.execute(
+                "UPDATE transactions SET category_id = NULL WHERE id = ?1",
+                [t3["id"].as_str().unwrap()],
+            )?;
+            let list = |ids: &[&str]| -> Result<Vec<String>, Error> {
+                Ok(repos::transaction_list(
+                    c,
+                    &repos::TransactionFilter {
+                        category_ids: Some(ids.iter().map(|s| s.to_string()).collect()),
+                        ..Default::default()
+                    },
+                )?
+                .iter()
+                .map(|r| r["id"].as_str().unwrap().to_string())
+                .collect())
+            };
+            let (i1, i2, i3) = (
+                t1["id"].as_str().unwrap(),
+                t2["id"].as_str().unwrap(),
+                t3["id"].as_str().unwrap(),
+            );
+            let (c1id, c2id) = (c1["id"].as_str().unwrap(), c2["id"].as_str().unwrap());
+            assert_eq!(list(&[c1id])?, vec![i1]);
+            assert_eq!(list(&[c2id])?, vec![i2]);
+            assert_eq!(list(&[""])?, vec![i3]);
+            let mut multi = list(&[c1id, "", c2id])?;
+            multi.sort();
+            let mut all = vec![i1, i2, i3];
+            all.sort();
+            assert_eq!(multi, all);
+            Ok(())
+        })
+        .unwrap();
+    }
 }

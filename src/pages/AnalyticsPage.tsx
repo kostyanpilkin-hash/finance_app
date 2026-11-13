@@ -9,6 +9,7 @@ import { api } from "@/lib/api";
 import { formatMinor, todayIso } from "@/lib/money";
 import { useDisplayMoney, useEnsureRates } from "@/lib/useDisplayMoney";
 import { DonutChart, type DonutItem } from "@/components/ui/donut-chart";
+import { CategoryTxDialog, type CategoryPeek } from "@/components/transactions/CategoryTxDialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import type { AccountRow, CategoryRow, TransactionRow, UserRow } from "@/lib/types";
@@ -63,6 +64,7 @@ export function AnalyticsPage() {
   const { t, i18n } = useTranslation();
   const [kind, setKind] = useState<Kind>("month");
   const [custom, setCustom] = useState({ from: todayIso(), to: todayIso() });
+  const [peek, setPeek] = useState<CategoryPeek | null>(null);
   const r = range(kind, new Date(), custom);
   const pr = prevRange(kind, r);
   const m6from = monthsBack(6);
@@ -169,7 +171,7 @@ export function AnalyticsPage() {
     };
     const catOf = (id: string) => categories.data?.find((c) => c.id === id);
     return [...byCat.entries()]
-      .map(([id, v]) => ({ name: name(id), value: v, fill: catOf(id)?.color ?? FALLBACK, iconId: catOf(id)?.icon }))
+      .map(([id, v]) => ({ id: id || null, name: name(id), value: v, fill: catOf(id)?.color ?? FALLBACK, iconId: catOf(id)?.icon }))
       .sort((a, b) => b.value - a.value);
   }, [conv.cur, categories.data, t]);
 
@@ -180,8 +182,10 @@ export function AnalyticsPage() {
       const byUser = new Map<string, { v: number; name: string }>();
       for (const { x, v } of conv.cur) {
         if (x.kind !== k) continue;
-        const id = x.createdByUserId ?? "";
-        const g = byUser.get(id) ?? { v: 0, name: id ? (x.uName ?? nameOf.get(id) ?? "") : "" };
+        // Expenses are attributed to the spender; other kinds to the author.
+        const id = k === "expense" ? (x.spentByUserId ?? x.createdByUserId ?? "") : (x.createdByUserId ?? "");
+        const who = (k === "expense" ? x.suName : undefined) ?? x.uName ?? nameOf.get(id) ?? "";
+        const g = byUser.get(id) ?? { v: 0, name: who };
         g.v += v;
         byUser.set(id, g);
       }
@@ -309,7 +313,8 @@ export function AnalyticsPage() {
         </div>
         <div className={card}>
           <div className="mb-2 text-sm font-medium">{t("ui.byCategory")}</div>
-          <DonutChart data={byCategory} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.rest")} emptyLabel={t("ui.empty")} />
+          <DonutChart data={byCategory} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.rest")} emptyLabel={t("ui.empty")}
+            onSelect={(members, label) => setPeek({ title: label, kind: "expense", categoryIds: members.map((m) => m.id ?? "") })} />
         </div>
       </div>
 
@@ -342,6 +347,7 @@ export function AnalyticsPage() {
         </div>
       </div>
 
+      <CategoryTxDialog peek={peek} from={r.from} to={r.to} onClose={() => setPeek(null)} />
       <div className={card}>
         <div className="mb-3 text-sm font-medium">{t("ui.byAccounts")} · {displayCurrency}</div>
         <div className="space-y-2">

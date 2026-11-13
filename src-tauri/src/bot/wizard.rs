@@ -22,6 +22,7 @@ enum Step {
     Currency,
     ConvAmount,
     Category,
+    Spender,
     ToAccount,
     ToAmount,
     Date,
@@ -57,6 +58,7 @@ fn is_entry(step: Step) -> bool {
             | Currency
             | ConvAmount
             | Category
+            | Spender
             | ToAccount
             | ToAmount
             | Date
@@ -90,6 +92,8 @@ struct Draft {
     destination: Option<String>,
     credited: Option<i64>,
     category: Option<String>,
+    /// User who made the expense (defaults to the linked bot user).
+    spender: Option<String>,
     date: String,
     time: String,
     dated: bool,
@@ -131,6 +135,7 @@ impl Default for Draft {
             destination: None,
             credited: None,
             category: None,
+            spender: None,
             date: report::today().to_string(),
             time: now_hm(),
             dated: false,
@@ -289,6 +294,7 @@ fn choices(state: &AppState, d: &Draft) -> Result<Vec<Value>, String> {
             .into_iter()
             .filter(active)
             .collect(),
+        Step::Spender => rows(state, Entity::Users)?.into_iter().collect(),
         Step::History => {
             let day = (!d.filter_date.is_empty()).then(|| d.filter_date.clone());
             return state
@@ -336,7 +342,9 @@ fn back_step(d: &Draft) -> Step {
                 ToAccount
             }
         }
+        Date if d.kind == "expense" => Spender,
         Date => Category,
+        Spender => Category,
         CustomDate | Time => Date,
         Comment => Time,
         Photo => Comment,
@@ -365,18 +373,21 @@ fn advance(d: &mut Draft, step: Step) {
     d.page = 0;
 }
 
-fn step_number(step: Step) -> i64 {
+fn step_number(d: &Draft) -> i64 {
     use Step::*;
-    match step {
+    // Expenses have one extra step (spender) between category and date.
+    let shift = i64::from(d.kind == "expense");
+    match d.step {
         Amount => 1,
         Account => 2,
         Currency | ConvAmount => 3,
         Category | ToAccount | ToAmount => 4,
-        Date | CustomDate => 5,
-        Time => 6,
-        Comment => 7,
-        Photo => 8,
-        _ => 9,
+        Spender => 5,
+        Date | CustomDate => 5 + shift,
+        Time => 6 + shift,
+        Comment => 7 + shift,
+        Photo => 8 + shift,
+        _ => 9 + shift,
     }
 }
 
@@ -468,6 +479,11 @@ fn entry_lines(state: &AppState, d: &Draft, lang: &str) -> Result<String, String
             .map(|r| category_label(&r))
             .unwrap_or_else(|| "—".into());
         lines.push(format!("{}: {}", tr(lang, "category"), escape(&name)));
+    }
+    if d.kind == "expense" {
+        let name = user_name(state, d.spender.as_deref());
+        let name = if name.is_empty() { "—".into() } else { name };
+        lines.push(format!("{}: {}", tr(lang, "spent_by"), escape(&name)));
     }
     if d.dated {
         lines.push(format!(
@@ -573,6 +589,10 @@ fn tx_details(state: &AppState, id: &str, lang: &str) -> Result<Option<String>, 
     if !author.is_empty() {
         s.push_str(&format!("\n{}: {}", tr(lang, "author"), escape(&author)));
     }
+    let spender = user_name(state, row["spentByUserId"].as_str());
+    if !spender.is_empty() && spender != author {
+        s.push_str(&format!("\n{}: {}", tr(lang, "spent_by"), escape(&spender)));
+    }
     let source = match row["source"].as_str().unwrap_or("") {
         "bot" => "src_bot",
         "desktop" => "src_desktop",
@@ -620,6 +640,7 @@ fn draft_from_row(row: &Value, has_receipt: bool) -> Draft {
         destination: row["toAccountId"].as_str().map(str::to_string),
         credited: row["toAmountMinor"].as_i64(),
         category: row["categoryId"].as_str().map(str::to_string),
+        spender: row["spentByUserId"].as_str().map(str::to_string),
         date: occurred.get(..10).unwrap_or("").into(),
         time: occurred.get(11..16).unwrap_or("12:00").into(),
         dated: true,
@@ -802,13 +823,14 @@ fn view(state: &AppState, d: &Draft, ctx: &Ctx) -> Result<(String, Value), Strin
             keys.push(vec![b("back", "back")]);
         }
         _ => {
-            let n = step_number(d.step);
+            let n = step_number(d);
+            let steps = STEPS + i64::from(d.kind == "expense");
             let lines = entry_lines(state, d, l)?;
             text.push_str(&format!(
-                "<b>{}{}</b>\n{} {n}/{STEPS}\n{}{}\n\n",
+                "<b>{}{}</b>\n{} {n}/{steps}\n{}{}\n\n",
                 if d.existing { "✏️ " } else { "" },
                 tr(l, &d.kind),
-                progress(n, STEPS, STEPS as usize),
+                progress(n, steps, steps as usize),
                 lines,
                 if lines.is_empty() { "" } else { "\n" }
             ));
@@ -821,6 +843,7 @@ fn view(state: &AppState, d: &Draft, ctx: &Ctx) -> Result<(String, Value), Strin
                 ConvAmount if d.kind == "income" => "conv_in",
                 ConvAmount => "conv_out",
                 Category => "category_pick",
+                Spender => "spender_pick",
                 ToAccount => "destination_pick",
                 ToAmount => "credited_hint",
                 Date => "date_pick",
@@ -866,25 +889,39 @@ fn view(state: &AppState, d: &Draft, ctx: &Ctx) -> Result<(String, Value), Strin
                         )]);
                     }
                 }
-                Account | ToAccount | Category => {
+                Account | ToAccount | Category | Spender => {
                     let all = choices(state, d)?;
                     if all.is_empty() {
                         text.push_str(&format!("\n{}", tr(l, "empty")));
                     }
                     let page: Vec<&Value> = all.iter().skip(d.page * PAGE).take(PAGE).collect();
-                    for chunk in page.chunks(if d.step == Category { 2 } else { 1 }) {
+                    for chunk in page.chunks(usize::from(matches!(d.step, Category | Spender)) + 1)
+                    {
                         keys.push(
                             chunk
                                 .iter()
                                 .map(|r| {
-                                    let label = if d.step == Category {
-                                        format!(
+                                    let label = match d.step {
+                                        Category => format!(
                                             "{}{}",
                                             if r["fav"] == true { "⭐" } else { "" },
                                             category_label(r)
-                                        )
-                                    } else {
-                                        account_label(r)
+                                        ),
+                                        Spender => {
+                                            // No pick yet means the author will spend it.
+                                            let marked =
+                                                d.spender.as_deref().or(ctx.db_user.as_deref());
+                                            format!(
+                                                "{}{}",
+                                                if r["id"].as_str() == marked {
+                                                    "✓ "
+                                                } else {
+                                                    ""
+                                                },
+                                                r["name"].as_str().unwrap_or("?")
+                                            )
+                                        }
+                                        _ => account_label(r),
                                     };
                                     (
                                         label,
@@ -940,6 +977,12 @@ fn view(state: &AppState, d: &Draft, ctx: &Ctx) -> Result<(String, Value), Strin
                     keys.push(vec![b("time", "edit:time"), b("comment", "edit:comment")]);
                     if d.kind == "transfer" {
                         keys.push(vec![b("photo", "edit:photo")]);
+                    } else if d.kind == "expense" {
+                        keys.push(vec![
+                            b("currency", "edit:currency"),
+                            b("spent_by", "edit:spender"),
+                            b("photo", "edit:photo"),
+                        ]);
                     } else {
                         keys.push(vec![
                             b("currency", "edit:currency"),
@@ -1182,7 +1225,7 @@ fn accepts(d: &Draft, action: &str) -> bool {
                     "balance" | "summary" | "history" | "goals" | "rates" | "undo" | "help"
                 ) || matches!(action, "kind:expense" | "kind:income" | "kind:transfer")
             }
-            Account | ToAccount | Category => {
+            Account | ToAccount | Category | Spender => {
                 action.starts_with("pick:") || action.starts_with("page:")
             }
             Currency => action.starts_with("cur:"),
@@ -1207,6 +1250,7 @@ fn accepts(d: &Draft, action: &str) -> bool {
                             | "edit:photo"
                     )
                     || (action == "edit:currency" && d.kind != "transfer")
+                    || (action == "edit:spender" && d.kind == "expense")
             }
             Summary => {
                 matches!(
@@ -1315,7 +1359,7 @@ fn persist_entry(
         let tx = c.unchecked_transaction()?;
         let alive: i64 = tx.query_row("SELECT COUNT(*) FROM transactions WHERE id=?1 AND deleted_at IS NULL", [&d.id], |r| r.get(0))?;
         let exists: i64 = tx.query_row("SELECT COUNT(*) FROM transactions WHERE id=?1", [&d.id], |r| r.get(0))?;
-        let mut payload = json!({"id":d.id,"kind":d.kind,"occurredAt":occurred,"accountId":d.account,"amountMinor":amount,"categoryId":d.category,"toAccountId":d.destination,"toAmountMinor":d.credited,"comment":d.comment,"origAmountMinor":orig_amount,"origCurrency":orig_amount.and(d.currency.clone())});
+        let mut payload = json!({"id":d.id,"kind":d.kind,"occurredAt":occurred,"accountId":d.account,"amountMinor":amount,"categoryId":d.category,"spentByUserId":d.spender,"toAccountId":d.destination,"toAmountMinor":d.credited,"comment":d.comment,"origAmountMinor":orig_amount,"origCurrency":orig_amount.and(d.currency.clone())});
         let write = if d.existing {
             if alive == 0 { return Err(finance_storage::Error::NotFound("transaction".into())); }
             true
@@ -1362,6 +1406,7 @@ fn open_screen(state: &AppState, ctx: &Ctx, d: &mut Draft, action: &str) -> Resu
         }
         _ if action.starts_with("kind:") => {
             d.kind = action[5..].into();
+            d.spender = (d.kind == "expense").then(|| ctx.db_user.clone()).flatten();
             d.step = Step::Amount;
         }
         _ if action.starts_with("sum:") => {
@@ -1526,6 +1571,7 @@ async fn action_apply(
                 "choice" if d.kind == "transfer" => Step::ToAccount,
                 "choice" => Step::Category,
                 "currency" => Step::Currency,
+                "spender" => Step::Spender,
                 "date" => Step::Date,
                 "time" => Step::Time,
                 "comment" => Step::Comment,
@@ -1586,6 +1632,14 @@ async fn action_apply(
                 }
                 Step::Category => {
                     d.category = Some(id.into());
+                    if d.kind == "expense" && !d.editing {
+                        d.step = Step::Spender;
+                    } else {
+                        advance(d, Step::Date);
+                    }
+                }
+                Step::Spender => {
+                    d.spender = Some(id.into());
                     advance(d, Step::Date);
                 }
                 Step::ToAccount => {

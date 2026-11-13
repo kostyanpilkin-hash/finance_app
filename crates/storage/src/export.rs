@@ -29,7 +29,8 @@ pub fn export_xlsx(conn: &Connection, dir: &Path, from: &str, to: &str) -> Resul
         "Валюта",
         "Зачислено",
         "Валюта",
-        "Кто",
+        "Автор",
+        "Кто потратил",
         "Комментарий",
     ];
     for (i, h) in headers.iter().enumerate() {
@@ -73,13 +74,19 @@ pub fn export_xlsx(conn: &Connection, dir: &Path, from: &str, to: &str) -> Resul
             ws.write_string(r, 8, s("a2Currency")).map_err(xerr)?;
         }
         ws.write_string(r, 9, s("uName")).map_err(xerr)?;
-        ws.write_string(r, 10, s("comment")).map_err(xerr)?;
+        let spent = if s("kind") == "expense" {
+            s("suName")
+        } else {
+            String::new()
+        };
+        ws.write_string(r, 10, spent).map_err(xerr)?;
+        ws.write_string(r, 11, s("comment")).map_err(xerr)?;
     }
     ws.set_column_width(0, 12).map_err(xerr)?;
     for i in 2..=4 {
         ws.set_column_width(i, 20).map_err(xerr)?;
     }
-    ws.set_column_width(10, 30).map_err(xerr)?;
+    ws.set_column_width(11, 30).map_err(xerr)?;
 
     // ---- Sheet 2: totals by category ----
     let ws2 = wb.add_worksheet().set_name("Итоги").map_err(xerr)?;

@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { convertMinorLocal, formatMinor, nowLocalIso, parseMinor, todayIso, type StoredRate } from "@/lib/money";
 import { useEnsureRates } from "@/lib/useDisplayMoney";
-import type { AccountRow, CategoryRow, TransactionRow } from "@/lib/types";
+import type { AccountRow, CategoryRow, TransactionRow, UserRow } from "@/lib/types";
 
 const ENTRY_CURRENCIES = ["BYN", "USD", "EUR", "RUB"];
 /** Receipt photos are capped so a huge file can't stall the app. */
@@ -29,6 +29,8 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
 
   const accounts = useQuery({ queryKey: ["accounts"], queryFn: () => api.entityList<AccountRow>("accounts") });
   const categories = useQuery({ queryKey: ["categories"], queryFn: () => api.entityList<CategoryRow>("categories") });
+  const users = useQuery({ queryKey: ["users"], queryFn: () => api.entityList<UserRow>("users") });
+  const settings = useQuery({ queryKey: ["settings"], queryFn: api.getSettings });
   const rates = useQuery({ queryKey: ["rates"], queryFn: () => api.ratesLatest<StoredRate>() });
 
   const invalidate = () => {
@@ -51,6 +53,9 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
 
   const catName = (c?: CategoryRow) => (c ? (c.key ? t(`categories.${c.key}`, c.name) : c.name) : "—");
   const cats = (categories.data ?? []).filter((c) => c.kind === editing?.kind);
+  // Expenses carry a spender: on edit it is the saved (or author) user, on
+  // create it defaults to this device's current user.
+  const spenderId = editing?.spentByUserId ?? editing?.createdByUserId ?? settings.data?.["current_user_id"] ?? "";
   const accCurrency = (accounts.data ?? []).find((a) => a.id === editing?.accountId)?.currency;
   const foreign = editing?.kind !== "transfer" && !!editing?.origCurrency && editing.origCurrency !== accCurrency;
   const entryCurrencies = [...new Set([accCurrency, ...ENTRY_CURRENCIES].filter(Boolean) as string[])];
@@ -111,6 +116,7 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
       amountMinor: typeof amount === "number" ? amount : 0,
       origCurrency: foreign ? editing.origCurrency : null,
       origAmountMinor: foreign ? editing.origAmountMinor : null,
+      spentByUserId: editing.kind === "expense" ? spenderId || null : null,
     });
   };
 
@@ -200,6 +206,14 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
             </Select>
           )}
         </Field>
+        {editing.kind === "expense" && (
+          <Field label={t("ui.spentBy")} htmlFor="tx-spent-by">
+            <Select id="tx-spent-by" value={spenderId}
+              onChange={(e) => setEditing({ ...editing, spentByUserId: e.target.value })}>
+              {(users.data ?? []).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </Select>
+          </Field>
+        )}
         <Field label={t("ui.comment")} htmlFor="tx-comment" className="sm:col-span-2">
           <Input id="tx-comment" value={editing.comment ?? ""}
             onChange={(e) => setEditing({ ...editing, comment: e.target.value })} />

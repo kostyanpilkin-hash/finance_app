@@ -341,6 +341,9 @@ pub struct TransactionInput {
     pub comment: String,
     #[serde(default)]
     pub created_by_user_id: Option<String>,
+    /// Whose expense (expense only; falls back to the author).
+    #[serde(default)]
+    pub spent_by_user_id: Option<String>,
     #[serde(default)]
     pub source: Option<String>,
     #[serde(default)]
@@ -427,6 +430,18 @@ pub fn transaction_upsert(
         "createdByUserId",
         actor.user_id.clone().map_or(Value::Null, |u| json!(u)),
     );
+    // "Whose expense" — expense rows only; defaults to the author.
+    let author = map.get("createdByUserId").cloned().unwrap_or(Value::Null);
+    if t.kind == "expense" {
+        match t.spent_by_user_id.as_deref().filter(|s| !s.is_empty()) {
+            Some(uid) => ensure_exists(conn, Entity::Users, uid, "user")?,
+            None => {
+                map.insert("spentByUserId".into(), author);
+            }
+        }
+    } else {
+        map.insert("spentByUserId".into(), Value::Null);
+    }
     if let Some(m) = map
         .get("source")
         .and_then(|v| v.as_str())
@@ -468,6 +483,8 @@ pub struct TransactionFilter {
     pub to: Option<String>,
     pub account_id: Option<String>,
     pub category_id: Option<String>,
+    /// Multi-category filter (chart tail etc.); "" in the list matches NULL.
+    pub category_ids: Option<Vec<String>>,
     pub kind: Option<String>,
     pub search: Option<String>,
     pub limit: Option<i64>,
@@ -480,7 +497,7 @@ pub fn transaction_list(conn: &Connection, f: &TransactionFilter) -> Result<Vec<
     let mut sql = String::from(
         "SELECT t.*, a.name AS a_name, a.currency AS a_currency, a.color AS a_color,
                 c.name AS c_name, c.icon AS c_icon, c.color AS c_color, c.key AS c_key,
-                u.name AS u_name,
+                u.name AS u_name, su.name AS su_name,
                 a2.name AS a2_name, a2.currency AS a2_currency,
                 (SELECT COUNT(*) FROM attachments at WHERE at.transaction_id = t.id AND at.deleted_at IS NULL) AS att_count
          FROM transactions t
@@ -488,6 +505,7 @@ pub fn transaction_list(conn: &Connection, f: &TransactionFilter) -> Result<Vec<
          LEFT JOIN accounts a2 ON a2.id = t.to_account_id
          LEFT JOIN categories c ON c.id = t.category_id
          LEFT JOIN users u ON u.id = t.created_by_user_id
+         LEFT JOIN users su ON su.id = t.spent_by_user_id
          WHERE 1=1",
     );
     let mut params: Vec<rusqlite::types::Value> = Vec::new();
@@ -519,6 +537,27 @@ pub fn transaction_list(conn: &Connection, f: &TransactionFilter) -> Result<Vec<
     }
     if let Some(c) = &f.category_id {
         sql.push_str(&format!(" AND t.category_id = {}", push(c.clone().into())));
+    }
+    if let Some(ids) = &f.category_ids {
+        if !ids.is_empty() {
+            let marks = ids
+                .iter()
+                .filter(|i| !i.is_empty())
+                .map(|i| push(i.clone().into()))
+                .collect::<Vec<_>>()
+                .join(",");
+            let mut cond = String::new();
+            if !marks.is_empty() {
+                cond.push_str(&format!("t.category_id IN ({marks})"));
+            }
+            if ids.iter().any(|i| i.is_empty()) {
+                if !cond.is_empty() {
+                    cond.push_str(" OR ");
+                }
+                cond.push_str("t.category_id IS NULL");
+            }
+            sql.push_str(&format!(" AND ({cond})"));
+        }
     }
     if let Some(k) = &f.kind {
         sql.push_str(&format!(" AND t.kind = {}", push(k.clone().into())));

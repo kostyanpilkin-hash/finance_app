@@ -243,7 +243,11 @@ export function TransactionsPage() {
                         <div className="text-xs text-muted-foreground">
                           {x.origCurrency && x.origAmountMinor ? `${formatMinor(x.origAmountMinor, x.origCurrency)} · ` : ""}
                           {x.occurredAt.slice(11, 16)}
-                          {x.uName ? ` · ${x.uName}` : ""}
+                          {x.kind === "expense"
+                            ? (x.suName || x.uName)
+                              ? ` · ${x.suName || x.uName}${x.spentByUserId && x.spentByUserId !== x.createdByUserId && x.uName ? ` (${t("ui.enteredBy")} ${x.uName})` : ""}`
+                              : ""
+                            : x.uName ? ` · ${x.uName}` : ""}
                           {x.source === "bot" ? " · 🤖" : ""}
                         </div>
                       </div>

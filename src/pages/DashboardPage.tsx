@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { formatMinor, isoOf, todayIso } from "@/lib/money";
 import { useDisplayMoney, useEnsureRates } from "@/lib/useDisplayMoney";
 import { DonutChart, type DonutItem } from "@/components/ui/donut-chart";
+import { CategoryTxDialog, type CategoryPeek } from "@/components/transactions/CategoryTxDialog";
 import { AccountCard } from "@/components/accounts/AccountCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { CategoryRow, DashboardData, TransactionRow, UserRow } from "@/lib/types";
@@ -27,7 +28,13 @@ const FALLBACK_COLOR = "#9ca3af";
 export function DashboardPage() {
   const { t } = useTranslation();
   const [period, setPeriod] = useState<DashPeriod>("month");
+  const [peek, setPeek] = useState<CategoryPeek | null>(null);
   const { from, to } = useMemo(() => rangeFor(period), [period]);
+  const openPeek = useCallback(
+    (kind: "expense" | "income") => (members: DonutItem[], label: string) =>
+      setPeek({ title: label, kind, categoryIds: members.map((m) => m.id ?? "") }),
+    [],
+  );
 
   const dash = useQuery({ queryKey: ["dashboard", from, to], queryFn: () => api.dashboard<DashboardData>(from, to) });
   const tx = useQuery({
@@ -83,6 +90,7 @@ export function DashboardPage() {
     };
     return [...byCat.entries()]
       .map(([id, v]) => ({
+        id: id || null,
         name: name(id),
         value: v,
         fill: catOf(id)?.color ?? FALLBACK_COLOR,
@@ -97,8 +105,11 @@ export function DashboardPage() {
     const byUser = new Map<string, { value: number; name: string }>();
     for (const { x, v } of converted) {
       if (x.kind !== kind) continue;
-      const id = x.createdByUserId ?? "";
-      const g = byUser.get(id) ?? { value: 0, name: id ? (x.uName ?? userName.get(id) ?? "") : "" };
+      // Expenses are attributed to the spender; other kinds to the author.
+      const id =
+        kind === "expense" ? (x.spentByUserId ?? x.createdByUserId ?? "") : (x.createdByUserId ?? "");
+      const who = (kind === "expense" ? x.suName : undefined) ?? x.uName ?? userName.get(id) ?? "";
+      const g = byUser.get(id) ?? { value: 0, name: who };
       g.value += v;
       byUser.set(id, g);
     }
@@ -166,12 +177,12 @@ export function DashboardPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className={card}>
               <div className="mb-2 text-sm font-medium">{t("ui.pieMonth")}</div>
-              <DonutChart data={catSlices("expense")} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.rest")} />
+              <DonutChart data={catSlices("expense")} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.rest")} onSelect={openPeek("expense")} />
             </div>
             {chartOn("dash_chart_income_cat") && (
               <div className={card}>
                 <div className="mb-2 text-sm font-medium">{t("ui.incomeByCat")}</div>
-                <DonutChart data={catSlices("income")} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.rest")} />
+                <DonutChart data={catSlices("income")} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.rest")} onSelect={openPeek("income")} />
               </div>
             )}
             {chartOn("dash_chart_expense_people") && (
@@ -195,6 +206,7 @@ export function DashboardPage() {
           </div>
         </>
       )}
+      <CategoryTxDialog peek={peek} from={from} to={to} onClose={() => setPeek(null)} />
     </div>
   );
 }

@@ -48,6 +48,8 @@ export interface TransactionRow {
   origAmountMinor?: number | null;
   origCurrency?: string | null;
   createdByUserId?: string | null;
+  /** User who made the expense (expenses only; falls back to the author). */
+  spentByUserId?: string | null;
   source: string;
   aName?: string;
   aCurrency?: string;
@@ -59,6 +61,8 @@ export interface TransactionRow {
   cColor?: string;
   cKey?: string;
   uName?: string;
+  /** Spender name for expenses (from the spent_by_user_id join). */
+  suName?: string;
   attCount?: number;
 }
 

@@ -22,6 +22,8 @@ export interface TransactionFilter {
   to?: string;
   accountId?: string;
   categoryId?: string;
+  /** Multi-category filter; an empty string member matches entries without a category. */
+  categoryIds?: string[];
   kind?: string;
   search?: string;
   limit?: number;

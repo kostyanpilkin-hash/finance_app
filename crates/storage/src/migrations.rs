@@ -266,6 +266,11 @@ const MIGRATIONS: &[&[&str]] = &[
     ],
     // ---- v4: a goal can be linked to an account; progress = account balance ----
     &["ALTER TABLE goals ADD COLUMN account_id TEXT"],
+    // ---- v5: who the expense belongs to (≠ author); backfill from the author ----
+    &[
+        "ALTER TABLE transactions ADD COLUMN spent_by_user_id TEXT",
+        "UPDATE transactions SET spent_by_user_id = created_by_user_id WHERE spent_by_user_id IS NULL",
+    ],
 ];
 
 /// Applies pending migrations inside a transaction.
