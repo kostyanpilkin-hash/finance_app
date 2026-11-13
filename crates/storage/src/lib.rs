@@ -134,6 +134,14 @@ impl db::Db {
         f(&conn)
     }
 
+    /// Directory holding finance.db, attachments/ and backups/.
+    pub fn data_dir(&self) -> PathBuf {
+        self.attachments_dir
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."))
+    }
+
     /// Read-only queries on the dedicated read connection. In WAL mode they
     /// run concurrently with the writer; never call this inside `with_conn`.
     pub fn with_read_conn<T>(
@@ -755,6 +763,29 @@ mod tests {
             .unwrap();
         assert!(has_a);
         drop(d2);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn backup_create_and_prune() {
+        let dir = std::env::temp_dir().join(format!("fin-{}", new_id()));
+        let key = [5u8; 32];
+        let d = db::Db::open(&dir.join("finance.db"), Some(&key)).unwrap();
+        for _ in 0..3 {
+            backup::create(&d, &dir).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(1100));
+        }
+        backup::prune(&dir, 2);
+        let names = backup::list(&dir)
+            .into_iter()
+            .filter(|n| n.starts_with("backup-"))
+            .collect::<Vec<_>>();
+        assert_eq!(names.len(), 2, "{names:?}");
+        for n in &names {
+            let p = dir.join(backup::BACKUP_DIR).join(n);
+            assert!(db::Db::open(&p, Some(&key)).is_ok(), "{n}");
+        }
+        drop(d);
         std::fs::remove_dir_all(&dir).ok();
     }
 

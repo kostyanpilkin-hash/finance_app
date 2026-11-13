@@ -29,6 +29,43 @@ pub fn pre_migration_snapshot(
     Ok(dest)
 }
 
+/// Encrypted `backups/backup-<ts>.db` via VACUUM INTO on the READ
+/// connection — writers (UI, bot, sync) are not blocked meanwhile.
+pub fn create(db: &crate::db::Db, data_dir: &Path) -> Result<PathBuf, Error> {
+    let dir = data_dir.join(BACKUP_DIR);
+    std::fs::create_dir_all(&dir)?;
+    let dest = dir.join(format!(
+        "backup-{}.db",
+        chrono::Local::now().format("%Y%m%d-%H%M%S")
+    ));
+    db.with_read_conn(|c| {
+        c.execute("VACUUM INTO ?1", [dest.to_string_lossy().as_ref()])?;
+        Ok(())
+    })?;
+    Ok(dest)
+}
+
+/// Keeps the newest `keep` of our own `backup-*.db` files; never touches
+/// pre-restore / pre-migrate copies or sidecars.
+pub fn prune(data_dir: &Path, keep: usize) {
+    let dir = data_dir.join(BACKUP_DIR);
+    let Ok(rd) = std::fs::read_dir(&dir) else { return };
+    let mut files: Vec<_> = rd
+        .flatten()
+        .filter(|f| {
+            let n = f.file_name();
+            let n = n.to_string_lossy();
+            n.starts_with("backup-") && n.ends_with(".db")
+        })
+        .collect();
+    files.sort_by_key(|f| f.file_name());
+    if files.len() > keep {
+        for f in files.drain(..files.len() - keep) {
+            let _ = std::fs::remove_file(f.path());
+        }
+    }
+}
+
 /// Backup file names in `<data_dir>/backups`, newest first by modified time.
 /// Only "*.db" files — the -wal/-shm sidecars of a copied db are not backups.
 pub fn list(data_dir: &Path) -> Vec<String> {
