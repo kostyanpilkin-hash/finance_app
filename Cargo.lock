@@ -1237,7 +1237,7 @@ dependencies = [
 
 [[package]]
 name = "finance-api"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "axum",
  "finance-storage",
@@ -1251,7 +1251,7 @@ dependencies = [
 
 [[package]]
 name = "finance-app"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "chrono",
  "finance-api",
@@ -1278,7 +1278,7 @@ dependencies = [
 
 [[package]]
 name = "finance-core"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "chrono",
  "serde",
@@ -1288,7 +1288,7 @@ dependencies = [
 
 [[package]]
 name = "finance-storage"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "chrono",
  "data-encoding",
