@@ -13,6 +13,9 @@ function firstOfMonth() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
 }
 
+const esc = (s: string) =>
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
 export function ReportsPage() {
   const { t } = useTranslation();
   const [from, setFrom] = useState(firstOfMonth());
@@ -35,11 +38,11 @@ export function ReportsPage() {
     const rows = (tx.data ?? []).map((x) => {
       const sign = x.kind === "income" ? "+" : x.kind === "expense" ? "−" : "⇄";
       const cat = x.kind === "transfer" ? `${x.aName} → ${x.a2Name}` : `${x.aName} · ${catName(x)}`;
-      return `<tr><td>${x.occurredAt.slice(0, 10)}</td><td>${sign} ${formatMinor(x.amountMinor, x.aCurrency)}</td><td>${cat}</td><td>${x.comment}</td><td>${x.uName ?? ""}</td><td>${x.suName ?? ""}</td></tr>`;
+      return `<tr><td>${esc(x.occurredAt.slice(0, 10))}</td><td>${sign} ${formatMinor(x.amountMinor, x.aCurrency)}</td><td>${esc(cat)}</td><td>${esc(x.comment)}</td><td>${esc(x.uName ?? "")}</td><td>${esc(x.suName ?? "")}</td></tr>`;
     }).join("");
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>${t("nav.reports")}</title>
       <style>body{font-family:system-ui;padding:24px}h1{font-size:20px}table{width:100%;border-collapse:collapse;font-size:12px}td,th{border-bottom:1px solid #ddd;padding:4px;text-align:left}</style>
-      </head><body><h1>${t("app.title")} — ${t("nav.reports")} ${from} — ${to}</h1>
+      </head><body><h1>${t("app.title")} — ${t("nav.reports")} ${esc(from)} — ${esc(to)}</h1>
       <table><tr><th>${t("ui.period.day")}</th><th>${t("ui.amount")}</th><th>${t("ui.category")}</th><th>${t("ui.comment")}</th><th>${t("ui.field.createdByUserId")}</th><th>${t("ui.whoseOp")}</th></tr>${rows}</table>
       </body></html>`;
     const iframe = document.createElement("iframe");

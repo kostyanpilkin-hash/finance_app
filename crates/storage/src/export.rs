@@ -10,7 +10,13 @@ use crate::repos::{transaction_list, TransactionFilter};
 /// Writes `<dir>/Финансы_<from>_<to>.xlsx`, returns the path.
 pub fn export_xlsx(conn: &Connection, dir: &Path, from: &str, to: &str) -> Result<String, Error> {
     std::fs::create_dir_all(dir)?;
-    let path = dir.join(format!("Финансы_{from}_{to}.xlsx"));
+    // `from`/`to` come from renderer input — keep only filename-safe chars.
+    let safe = |s: &str| -> String {
+        s.chars()
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+            .collect()
+    };
+    let path = dir.join(format!("Финансы_{}_{}.xlsx", safe(from), safe(to)));
 
     let mut wb = Workbook::new();
     let bold = Format::new().set_bold();
