@@ -7,6 +7,7 @@ mod scheduler;
 mod state;
 mod sync;
 mod tray;
+mod watch;
 
 use tauri::{Manager, WindowEvent};
 
@@ -132,6 +133,7 @@ pub fn run() {
             bot::start_polling(app.handle().clone());
             sync::start_host(app.handle());
             sync::start_client(app.handle().clone());
+            watch::start(app.handle().clone());
             if std::env::args().any(|a| a == "--minimized") {
                 if let Some(w) = app.get_webview_window("main") {
                     let _ = w.hide();
