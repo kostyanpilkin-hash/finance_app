@@ -17,7 +17,7 @@ import {
 import { LANGUAGES } from "@/i18n";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
-import { useSettings, useUsers } from "@/lib/queries";
+import { useUsers } from "@/lib/queries";
 import { WhatsNewDialog } from "@/components/WhatsNewDialog";
 import { pairErrorText, syncErrorText } from "@/lib/syncError";
 import { THEMES, type ThemeKind } from "@/lib/themes";
@@ -29,15 +29,8 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select } from "@/components/ui/select";
 import { Field } from "@/components/ui/field";
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="rounded-2xl border border-border/80 bg-card/90 p-5 shadow-[var(--card-shadow)]">
-      <h3 className="font-display mb-4 text-lg font-semibold">{title}</h3>
-      {children}
-    </section>
-  );
-}
+import { Section } from "./settings/Section";
+import { useLocalSettings } from "./settings/useLocalSettings";
 
 interface RateRow { currency: string; rateBynScaled: number; scale: number; date: string }
 
@@ -153,17 +146,6 @@ function TgSection() {
       )}
     </div>
   );
-}
-
-function useLocalSettings() {
-  const qc = useQueryClient();
-  const settings = useSettings();
-  const set = useMutation({
-    mutationFn: ({ key, value }: { key: string; value: string }) => api.setSetting(key, value),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.settings }),
-  });
-  const get = (key: string, fallback: string) => settings.data?.[key] || fallback;
-  return { get, set: (key: string, value: string) => set.mutate({ key, value }) };
 }
 
 const DISPLAY_CURRENCIES = ["BYN", "USD", "EUR"];
