@@ -105,10 +105,9 @@ export function DashboardPage() {
     const byUser = new Map<string, { value: number; name: string }>();
     for (const { x, v } of converted) {
       if (x.kind !== kind) continue;
-      // Expenses are attributed to the spender; other kinds to the author.
-      const id =
-        kind === "expense" ? (x.spentByUserId ?? x.createdByUserId ?? "") : (x.createdByUserId ?? "");
-      const who = (kind === "expense" ? x.suName : undefined) ?? x.uName ?? userName.get(id) ?? "";
+      // Entries are attributed to their owner (spent_by), author as fallback.
+      const id = x.spentByUserId ?? x.createdByUserId ?? "";
+      const who = x.suName ?? x.uName ?? userName.get(id) ?? "";
       const g = byUser.get(id) ?? { value: 0, name: who };
       g.value += v;
       byUser.set(id, g);

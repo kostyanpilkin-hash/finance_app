@@ -271,6 +271,9 @@ const MIGRATIONS: &[&[&str]] = &[
         "ALTER TABLE transactions ADD COLUMN spent_by_user_id TEXT",
         "UPDATE transactions SET spent_by_user_id = created_by_user_id WHERE spent_by_user_id IS NULL",
     ],
+    // ---- v6: the field now applies to every kind — backfill the income/transfer
+    // rows v5-era code left NULL; bumps SCHEMA_VERSION so old clients must update ----
+    &["UPDATE transactions SET spent_by_user_id = created_by_user_id WHERE spent_by_user_id IS NULL"],
 ];
 
 /// Applies pending migrations inside a transaction.

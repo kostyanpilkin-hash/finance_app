@@ -182,9 +182,9 @@ export function AnalyticsPage() {
       const byUser = new Map<string, { v: number; name: string }>();
       for (const { x, v } of conv.cur) {
         if (x.kind !== k) continue;
-        // Expenses are attributed to the spender; other kinds to the author.
-        const id = k === "expense" ? (x.spentByUserId ?? x.createdByUserId ?? "") : (x.createdByUserId ?? "");
-        const who = (k === "expense" ? x.suName : undefined) ?? x.uName ?? nameOf.get(id) ?? "";
+        // Entries are attributed to their owner (spent_by), author as fallback.
+        const id = x.spentByUserId ?? x.createdByUserId ?? "";
+        const who = x.suName ?? x.uName ?? nameOf.get(id) ?? "";
         const g = byUser.get(id) ?? { v: 0, name: who };
         g.v += v;
         byUser.set(id, g);

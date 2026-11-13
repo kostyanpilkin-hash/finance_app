@@ -53,9 +53,12 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
 
   const catName = (c?: CategoryRow) => (c ? (c.key ? t(`categories.${c.key}`, c.name) : c.name) : "—");
   const cats = (categories.data ?? []).filter((c) => c.kind === editing?.kind);
-  // Expenses carry a spender: on edit it is the saved (or author) user, on
+  // Every entry carries an owner: on edit it is the saved (or author) user, on
   // create it defaults to this device's current user.
   const spenderId = editing?.spentByUserId ?? editing?.createdByUserId ?? settings.data?.["current_user_id"] ?? "";
+  const spenderLabel = editing?.kind === "income" ? t("ui.receivedBy")
+    : editing?.kind === "transfer" ? t("ui.whoseOp")
+    : t("ui.spentBy");
   const accCurrency = (accounts.data ?? []).find((a) => a.id === editing?.accountId)?.currency;
   const foreign = editing?.kind !== "transfer" && !!editing?.origCurrency && editing.origCurrency !== accCurrency;
   const entryCurrencies = [...new Set([accCurrency, ...ENTRY_CURRENCIES].filter(Boolean) as string[])];
@@ -116,7 +119,7 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
       amountMinor: typeof amount === "number" ? amount : 0,
       origCurrency: foreign ? editing.origCurrency : null,
       origAmountMinor: foreign ? editing.origAmountMinor : null,
-      spentByUserId: editing.kind === "expense" ? spenderId || null : null,
+      spentByUserId: spenderId || null,
     });
   };
 
@@ -206,14 +209,12 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
             </Select>
           )}
         </Field>
-        {editing.kind === "expense" && (
-          <Field label={t("ui.spentBy")} htmlFor="tx-spent-by">
-            <Select id="tx-spent-by" value={spenderId}
-              onChange={(e) => setEditing({ ...editing, spentByUserId: e.target.value })}>
-              {(users.data ?? []).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </Select>
-          </Field>
-        )}
+        <Field label={spenderLabel} htmlFor="tx-spent-by">
+          <Select id="tx-spent-by" value={spenderId}
+            onChange={(e) => setEditing({ ...editing, spentByUserId: e.target.value })}>
+            {(users.data ?? []).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </Select>
+        </Field>
         <Field label={t("ui.comment")} htmlFor="tx-comment" className="sm:col-span-2">
           <Input id="tx-comment" value={editing.comment ?? ""}
             onChange={(e) => setEditing({ ...editing, comment: e.target.value })} />

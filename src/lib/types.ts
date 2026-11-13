@@ -61,7 +61,7 @@ export interface TransactionRow {
   cColor?: string;
   cKey?: string;
   uName?: string;
-  /** Spender name for expenses (from the spent_by_user_id join). */
+  /** Entry-owner name (from the spent_by_user_id join). */
   suName?: string;
   attCount?: number;
 }

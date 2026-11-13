@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { LANGUAGES } from "@/i18n";
 import { api } from "@/lib/api";
+import { WhatsNewDialog } from "@/components/WhatsNewDialog";
 import { pairErrorText, syncErrorText } from "@/lib/syncError";
 import { THEMES, type ThemeKind } from "@/lib/themes";
 import { cn } from "@/lib/utils";
@@ -482,6 +483,7 @@ export function SettingsPage() {
   const { theme, language, setTheme, setLanguage } = useSettingsStore();
   const queryClient = useQueryClient();
   const [section, setSection] = useState<SettingsSectionId>("general");
+  const [whatsNewOpen, setWhatsNewOpen] = useState(false);
 
   const info = useQuery({ queryKey: ["app-info"], queryFn: api.appInfo });
   const autostart = useQuery({ queryKey: ["autostart"], queryFn: isEnabled });
@@ -619,7 +621,9 @@ export function SettingsPage() {
                   {info.data && ` · ${info.data.platform}`}
                 </p>
                 <UpdateCheckButton />
+                <Button variant="outline" onClick={() => setWhatsNewOpen(true)}>{t("whatsnew.show")}</Button>
               </div>
+              <WhatsNewDialog open={whatsNewOpen} onClose={() => setWhatsNewOpen(false)} />
             </Section>
           )}
         </div>

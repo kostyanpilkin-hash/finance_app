@@ -240,15 +240,15 @@ export function TransactionsPage() {
                           {formatMinor(x.amountMinor, x.aCurrency)}
                           {x.kind === "transfer" && x.toAmountMinor ? ` → ${formatMinor(x.toAmountMinor, x.a2Currency)}` : ""}
                         </div>
+                        {x.origCurrency && x.origAmountMinor ? (
+                          <div className="text-xs text-muted-foreground">{formatMinor(x.origAmountMinor, x.origCurrency)}</div>
+                        ) : null}
                         <div className="text-xs text-muted-foreground">
-                          {x.origCurrency && x.origAmountMinor ? `${formatMinor(x.origAmountMinor, x.origCurrency)} · ` : ""}
-                          {x.occurredAt.slice(11, 16)}
-                          {x.kind === "expense"
-                            ? (x.suName || x.uName)
-                              ? ` · ${x.suName || x.uName}${x.spentByUserId && x.spentByUserId !== x.createdByUserId && x.uName ? ` (${t("ui.enteredBy")} ${x.uName})` : ""}`
-                              : ""
-                            : x.uName ? ` · ${x.uName}` : ""}
-                          {x.source === "bot" ? " · 🤖" : ""}
+                          {t("ui.time")}: {x.occurredAt.slice(11, 16)}{x.source === "bot" ? " 🤖" : ""}
+                        </div>
+                        <div className="text-xs text-muted-foreground">{t("ui.entered")}: {x.uName || "—"}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {x.kind === "income" ? t("ui.receivedBy") : x.kind === "transfer" ? t("ui.whoseOp") : t("ui.spentBy")}: {x.suName || x.uName || "—"}
                         </div>
                       </div>
                       <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">

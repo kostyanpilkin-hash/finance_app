@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { api } from "@/lib/api";
+import { WHATSNEW_SEEN_KEY } from "@/lib/whatsnew";
 import { pairErrorText } from "@/lib/syncError";
 import { LANGUAGES } from "@/i18n";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,12 @@ export function Onboarding() {
     refetchOnWindowFocus: false,
   });
 
+  // Fresh installs mark the current version's notes as seen — no what's-new popup.
+  const markSeen = async () => {
+    const info = await api.appInfo();
+    await api.setSetting(WHATSNEW_SEEN_KEY, info.version);
+  };
+
   const finish = useMutation({
     mutationFn: () =>
       api.completeOnboarding({
@@ -42,12 +49,16 @@ export function Onboarding() {
         currentUser: Math.min(current, names.filter((n) => n.trim()).length - 1),
         starterAccounts: starter,
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["onboarding"] }),
+    onSuccess: async () => {
+      await markSeen();
+      queryClient.invalidateQueries({ queryKey: ["onboarding", "settings"] });
+    },
   });
 
   const join = useMutation({
     mutationFn: () => api.joinHost(hostUrl.trim(), joinCode.trim(), deviceName.trim() || "device"),
     onSuccess: async () => {
+      await markSeen();
       await new Promise((r) => setTimeout(r, 1200));
       await relaunch();
     },

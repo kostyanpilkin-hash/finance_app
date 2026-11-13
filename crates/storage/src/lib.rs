@@ -748,9 +748,10 @@ mod tests {
         );
     }
 
-    /// v5 added transactions.spent_by_user_id and backfills it from the author.
+    /// v5 added transactions.spent_by_user_id; v6 extended it to every kind and
+    /// backfills the income/transfer NULLs left by v5-era upserts.
     #[test]
-    fn migration_v5_spender_column_and_backfill() {
+    fn migration_spender_column_and_backfill() {
         let d = db();
         d.with_conn(|c| {
             let a = actor(&d);
@@ -761,6 +762,7 @@ mod tests {
                 .query_map([], |r| r.get(0))?
                 .collect::<Result<_, _>>()?;
             assert!(cols.iter().any(|n| n == "spent_by_user_id"));
+            const { assert!(migrations::SCHEMA_VERSION >= 6) }
 
             // A pre-v5 row is simulated by nulling the column; replaying the
             // migration's backfill statement must copy the author id over.
@@ -788,8 +790,8 @@ mod tests {
         .unwrap();
     }
 
-    /// Expense rows carry "who spent": default = author, explicit value is
-    /// validated, income/transfer keep NULL.
+    /// Every kind carries "whose entry": default = author, explicit value is
+    /// validated and kept for expenses, income and transfers alike.
     #[test]
     fn transaction_spender_defaults_and_validation() {
         let d = db();
@@ -840,7 +842,7 @@ mod tests {
             assert_eq!(row["uName"], "Иван");
             // Unknown user rejected.
             assert!(mk(json!({"spentByUserId":"ghost"})).is_err());
-            // Income and transfers force NULL.
+            // Income and transfers keep the owner too.
             let inc = repos::transaction_upsert(
                 c,
                 &d,
@@ -848,7 +850,7 @@ mod tests {
                 json!({"kind":"income","occurredAt":"2026-11-10T10:00:00","accountId":acc["id"],
                        "amountMinor":100,"categoryId":icat["id"],"spentByUserId":u2["id"]}),
             )?;
-            assert!(inc["spentByUserId"].is_null());
+            assert_eq!(inc["spentByUserId"], u2["id"]);
             let tr = repos::transaction_upsert(
                 c,
                 &d,
@@ -856,7 +858,16 @@ mod tests {
                 json!({"kind":"transfer","occurredAt":"2026-11-10T10:00:00","accountId":acc["id"],
                        "toAccountId":cash["id"],"amountMinor":100,"spentByUserId":u2["id"]}),
             )?;
-            assert!(tr["spentByUserId"].is_null());
+            assert_eq!(tr["spentByUserId"], u2["id"]);
+            // Not given → author for every kind.
+            let inc2 = repos::transaction_upsert(
+                c,
+                &d,
+                &a,
+                json!({"kind":"income","occurredAt":"2026-11-10T10:00:00","accountId":acc["id"],
+                       "amountMinor":100,"categoryId":icat["id"],"createdByUserId":u1["id"]}),
+            )?;
+            assert_eq!(inc2["spentByUserId"], u1["id"]);
             // Editing keeps the saved spender when the field is not resent.
             let kept = repos::transaction_upsert(
                 c,

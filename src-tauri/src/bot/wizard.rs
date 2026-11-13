@@ -92,7 +92,7 @@ struct Draft {
     destination: Option<String>,
     credited: Option<i64>,
     category: Option<String>,
-    /// User who made the expense (defaults to the linked bot user).
+    /// User the entry belongs to (defaults to the linked bot user).
     spender: Option<String>,
     date: String,
     time: String,
@@ -335,15 +335,14 @@ fn back_step(d: &Draft) -> Step {
         Category if d.currency.is_some() => ConvAmount,
         Category => Currency,
         ToAmount => ToAccount,
-        Date if d.kind == "transfer" => {
+        Date => Spender,
+        Spender if d.kind == "transfer" => {
             if d.credited.is_some() {
                 ToAmount
             } else {
                 ToAccount
             }
         }
-        Date if d.kind == "expense" => Spender,
-        Date => Category,
         Spender => Category,
         CustomDate | Time => Date,
         Comment => Time,
@@ -375,19 +374,18 @@ fn advance(d: &mut Draft, step: Step) {
 
 fn step_number(d: &Draft) -> i64 {
     use Step::*;
-    // Expenses have one extra step (spender) between category and date.
-    let shift = i64::from(d.kind == "expense");
+    // Every kind has 10 steps now — the spender/owner step sits before the date.
     match d.step {
         Amount => 1,
         Account => 2,
         Currency | ConvAmount => 3,
         Category | ToAccount | ToAmount => 4,
         Spender => 5,
-        Date | CustomDate => 5 + shift,
-        Time => 6 + shift,
-        Comment => 7 + shift,
-        Photo => 8 + shift,
-        _ => 9 + shift,
+        Date | CustomDate => 6,
+        Time => 7,
+        Comment => 8,
+        Photo => 9,
+        _ => 10,
     }
 }
 
@@ -480,10 +478,15 @@ fn entry_lines(state: &AppState, d: &Draft, lang: &str) -> Result<String, String
             .unwrap_or_else(|| "—".into());
         lines.push(format!("{}: {}", tr(lang, "category"), escape(&name)));
     }
-    if d.kind == "expense" {
+    {
+        let whose_key = match d.kind.as_str() {
+            "income" => "received_by",
+            "transfer" => "whose_op",
+            _ => "spent_by",
+        };
         let name = user_name(state, d.spender.as_deref());
         let name = if name.is_empty() { "—".into() } else { name };
-        lines.push(format!("{}: {}", tr(lang, "spent_by"), escape(&name)));
+        lines.push(format!("{}: {}", tr(lang, whose_key), escape(&name)));
     }
     if d.dated {
         lines.push(format!(
@@ -590,8 +593,18 @@ fn tx_details(state: &AppState, id: &str, lang: &str) -> Result<Option<String>, 
         s.push_str(&format!("\n{}: {}", tr(lang, "author"), escape(&author)));
     }
     let spender = user_name(state, row["spentByUserId"].as_str());
-    if !spender.is_empty() && spender != author {
-        s.push_str(&format!("\n{}: {}", tr(lang, "spent_by"), escape(&spender)));
+    let spender = if spender.is_empty() {
+        &author
+    } else {
+        &spender
+    };
+    if !spender.is_empty() {
+        let whose_key = match row["kind"].as_str().unwrap_or("") {
+            "income" => "received_by",
+            "transfer" => "whose_op",
+            _ => "spent_by",
+        };
+        s.push_str(&format!("\n{}: {}", tr(lang, whose_key), escape(spender)));
     }
     let source = match row["source"].as_str().unwrap_or("") {
         "bot" => "src_bot",
@@ -843,6 +856,8 @@ fn view(state: &AppState, d: &Draft, ctx: &Ctx) -> Result<(String, Value), Strin
                 ConvAmount if d.kind == "income" => "conv_in",
                 ConvAmount => "conv_out",
                 Category => "category_pick",
+                Spender if d.kind == "income" => "receiver_pick",
+                Spender if d.kind == "transfer" => "whose_pick",
                 Spender => "spender_pick",
                 ToAccount => "destination_pick",
                 ToAmount => "credited_hint",
@@ -975,17 +990,17 @@ fn view(state: &AppState, d: &Draft, ctx: &Ctx) -> Result<(String, Value), Strin
                     ]);
                     keys.push(vec![b(choice, "edit:choice"), b("date", "edit:date")]);
                     keys.push(vec![b("time", "edit:time"), b("comment", "edit:comment")]);
+                    let whose_key = match d.kind.as_str() {
+                        "income" => "received_by",
+                        "transfer" => "whose_op",
+                        _ => "spent_by",
+                    };
                     if d.kind == "transfer" {
-                        keys.push(vec![b("photo", "edit:photo")]);
-                    } else if d.kind == "expense" {
-                        keys.push(vec![
-                            b("currency", "edit:currency"),
-                            b("spent_by", "edit:spender"),
-                            b("photo", "edit:photo"),
-                        ]);
+                        keys.push(vec![b(whose_key, "edit:spender"), b("photo", "edit:photo")]);
                     } else {
                         keys.push(vec![
                             b("currency", "edit:currency"),
+                            b(whose_key, "edit:spender"),
                             b("photo", "edit:photo"),
                         ]);
                     }
@@ -1156,7 +1171,7 @@ fn apply_text(d: &mut Draft, text: &str) -> bool {
                 advance(d, Step::Category);
             } else {
                 d.credited = Some(n);
-                advance(d, Step::Date);
+                advance(d, Step::Spender);
             }
         }
         Step::CustomDate => {
@@ -1250,7 +1265,7 @@ fn accepts(d: &Draft, action: &str) -> bool {
                             | "edit:photo"
                     )
                     || (action == "edit:currency" && d.kind != "transfer")
-                    || (action == "edit:spender" && d.kind == "expense")
+                    || action == "edit:spender"
             }
             Summary => {
                 matches!(
@@ -1406,7 +1421,7 @@ fn open_screen(state: &AppState, ctx: &Ctx, d: &mut Draft, action: &str) -> Resu
         }
         _ if action.starts_with("kind:") => {
             d.kind = action[5..].into();
-            d.spender = (d.kind == "expense").then(|| ctx.db_user.clone()).flatten();
+            d.spender = ctx.db_user.clone();
             d.step = Step::Amount;
         }
         _ if action.starts_with("sum:") => {
@@ -1632,7 +1647,7 @@ async fn action_apply(
                 }
                 Step::Category => {
                     d.category = Some(id.into());
-                    if d.kind == "expense" && !d.editing {
+                    if !d.editing {
                         d.step = Step::Spender;
                     } else {
                         advance(d, Step::Date);
@@ -1650,7 +1665,7 @@ async fn action_apply(
                     if different {
                         d.step = Step::ToAmount;
                     } else {
-                        advance(d, Step::Date);
+                        advance(d, Step::Spender);
                     }
                 }
                 _ => {}
@@ -2035,6 +2050,8 @@ mod tests {
             step: Step::Date,
             ..Draft::default()
         };
+        assert_eq!(back_step(&d), Step::Spender);
+        d.step = Step::Spender;
         assert_eq!(back_step(&d), Step::ToAccount);
         d.credited = Some(200);
         assert_eq!(back_step(&d), Step::ToAmount);

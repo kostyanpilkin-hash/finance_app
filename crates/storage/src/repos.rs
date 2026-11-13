@@ -430,17 +430,13 @@ pub fn transaction_upsert(
         "createdByUserId",
         actor.user_id.clone().map_or(Value::Null, |u| json!(u)),
     );
-    // "Whose expense" — expense rows only; defaults to the author.
+    // "Whose entry" — every kind; defaults to the author.
     let author = map.get("createdByUserId").cloned().unwrap_or(Value::Null);
-    if t.kind == "expense" {
-        match t.spent_by_user_id.as_deref().filter(|s| !s.is_empty()) {
-            Some(uid) => ensure_exists(conn, Entity::Users, uid, "user")?,
-            None => {
-                map.insert("spentByUserId".into(), author);
-            }
+    match t.spent_by_user_id.as_deref().filter(|s| !s.is_empty()) {
+        Some(uid) => ensure_exists(conn, Entity::Users, uid, "user")?,
+        None => {
+            map.insert("spentByUserId".into(), author);
         }
-    } else {
-        map.insert("spentByUserId".into(), Value::Null);
     }
     if let Some(m) = map
         .get("source")

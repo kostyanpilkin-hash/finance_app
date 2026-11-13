@@ -30,7 +30,7 @@ pub fn export_xlsx(conn: &Connection, dir: &Path, from: &str, to: &str) -> Resul
         "Зачислено",
         "Валюта",
         "Автор",
-        "Кто потратил",
+        "Чья операция",
         "Комментарий",
     ];
     for (i, h) in headers.iter().enumerate() {
@@ -74,12 +74,7 @@ pub fn export_xlsx(conn: &Connection, dir: &Path, from: &str, to: &str) -> Resul
             ws.write_string(r, 8, s("a2Currency")).map_err(xerr)?;
         }
         ws.write_string(r, 9, s("uName")).map_err(xerr)?;
-        let spent = if s("kind") == "expense" {
-            s("suName")
-        } else {
-            String::new()
-        };
-        ws.write_string(r, 10, spent).map_err(xerr)?;
+        ws.write_string(r, 10, s("suName")).map_err(xerr)?;
         ws.write_string(r, 11, s("comment")).map_err(xerr)?;
     }
     ws.set_column_width(0, 12).map_err(xerr)?;
