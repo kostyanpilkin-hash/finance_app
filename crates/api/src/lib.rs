@@ -10,8 +10,9 @@ pub const PAIR_MAX_FAILURES: u32 = 5;
 const PAIR_REQUEST_TTL: std::time::Duration = std::time::Duration::from_secs(180);
 
 use axum::{
-    extract::{connect_info::ConnectInfo, Query, Request, State},
-    http::StatusCode,
+    body::Bytes,
+    extract::{connect_info::ConnectInfo, DefaultBodyLimit, Path, Query, Request, State},
+    http::{header, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Json, Response},
     routing::{get, post},
@@ -84,7 +85,13 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/v1/push", post(push))
         .route("/api/v1/pull", get(pull))
         .route("/api/v1/resolve", post(resolve))
+        .route("/api/v1/attachments", get(attachment_index))
+        .route(
+            "/api/v1/attachments/{sha}",
+            get(attachment_get).put(attachment_put),
+        )
         .layer(middleware::from_fn(lan_only))
+        .layer(DefaultBodyLimit::max(MAX_ATTACHMENT_BYTES))
         .with_state(state)
 }
 
@@ -665,4 +672,128 @@ async fn pull(
     })
     .await?
     .map_err(|e| if e.to_string() == "unauthorized" { StatusCode::UNAUTHORIZED } else { StatusCode::INTERNAL_SERVER_ERROR })
+}
+
+// ---------- attachment files ----------
+
+/// Receipt photos travel separately from their table rows: the `attachments`
+/// row syncs like any other entity, the bytes ride these routes on demand.
+const MAX_ATTACHMENT_BYTES: usize = 15 * 1024 * 1024;
+
+/// Attachment file names are sha256 hex digests — anything else is rejected
+/// so a crafted name can't wander the filesystem.
+fn is_sha(s: &str) -> bool {
+    s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// Bearer-token check shared by the attachment routes (same rule as /pull).
+/// Runs on the blocking pool; the db lock is released before any file work.
+async fn require_device(
+    s: &ApiState,
+    headers: &axum::http::HeaderMap,
+) -> Result<(), (StatusCode, Json<Value>)> {
+    let token = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .unwrap_or("")
+        .to_string();
+    let db = s.db.clone();
+    blocking(move || db.with_read_conn(|c| auth(c, &token).map(|_| ())))
+        .await
+        .map_err(bad)?
+        .map_err(|e| {
+            if e.to_string() == "unauthorized" {
+                bad(StatusCode::UNAUTHORIZED)
+            } else {
+                bad(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        })
+}
+
+/// sha256 names of every file the host has — clients diff this against the
+/// attachment rows they pulled to decide what to upload or download.
+async fn attachment_index(State(s): State<ApiState>, headers: axum::http::HeaderMap) -> ApiResult {
+    require_device(&s, &headers).await?;
+    let dir = s.db.attachments_dir.clone();
+    let shas = blocking(move || {
+        let mut v: Vec<String> = Vec::new();
+        if let Ok(rd) = std::fs::read_dir(&dir) {
+            for entry in rd.flatten() {
+                if let Some(name) = entry.file_name().to_str() {
+                    if is_sha(name) {
+                        v.push(name.to_string());
+                    }
+                }
+            }
+        }
+        v.sort();
+        v
+    })
+    .await
+    .map_err(bad)?;
+    Ok(Json(json!({"shas": shas})))
+}
+
+async fn attachment_get(
+    State(s): State<ApiState>,
+    Path(sha): Path<String>,
+    headers: axum::http::HeaderMap,
+) -> Result<Response, (StatusCode, Json<Value>)> {
+    if !is_sha(&sha) {
+        return Err(err(StatusCode::BAD_REQUEST, json!({"error": "bad_sha"})));
+    }
+    require_device(&s, &headers).await?;
+    let path = s.db.attachments_dir.join(&sha);
+    let bytes = blocking(move || std::fs::read(path).ok())
+        .await
+        .map_err(bad)?;
+    let Some(bytes) = bytes else {
+        return Err(err(StatusCode::NOT_FOUND, json!({"error": "missing"})));
+    };
+    Ok(([(header::CONTENT_TYPE, "application/octet-stream")], bytes).into_response())
+}
+
+async fn attachment_put(
+    State(s): State<ApiState>,
+    Path(sha): Path<String>,
+    headers: axum::http::HeaderMap,
+    body: Bytes,
+) -> ApiResult {
+    if !is_sha(&sha) {
+        return Err(err(StatusCode::BAD_REQUEST, json!({"error": "bad_sha"})));
+    }
+    if body.is_empty() || body.len() > MAX_ATTACHMENT_BYTES {
+        return Err(err(StatusCode::PAYLOAD_TOO_LARGE, json!({"error": "size"})));
+    }
+    require_device(&s, &headers).await?;
+    if hex(&sha2::Sha256::digest(&body)) != sha {
+        return Err(err(
+            StatusCode::BAD_REQUEST,
+            json!({"error": "hash_mismatch"}),
+        ));
+    }
+    let dir = s.db.attachments_dir.clone();
+    blocking(move || -> Result<(), String> {
+        let target = dir.join(&sha);
+        if target.exists() {
+            return Ok(()); // content-addressed dedup
+        }
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let tmp = dir.join(format!("{sha}.tmp"));
+        std::fs::write(&tmp, &body).map_err(|e| e.to_string())?;
+        if let Err(e) = std::fs::rename(&tmp, &target) {
+            // A concurrent PUT of the same sha already landed — identical
+            // bytes, so the lost race is harmless.
+            let _ = std::fs::remove_file(&tmp);
+            if !target.exists() {
+                return Err(e.to_string());
+            }
+        }
+        Ok(())
+    })
+    .await
+    .map_err(bad)?
+    .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, json!({"error": e})))?;
+    Ok(Json(json!({"ok": true})))
 }

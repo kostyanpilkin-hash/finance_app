@@ -444,7 +444,96 @@ async fn sync_once_inner(state: &AppState) -> Result<bool, String> {
     })
     .await?;
 
+    sync_attachments(state, http, &host, &token).await;
+
     Ok(!ops.is_empty() || !body["changes"].as_array().unwrap_or(&vec![]).is_empty())
+}
+
+/// Files for the `attachments` rows ride beside the journal sync: whatever
+/// the host has but we lack is downloaded, whatever we have but it lacks is
+/// uploaded. Failures are logged, never fatal — a missing photo retries on
+/// the next cycle.
+async fn sync_attachments(state: &AppState, http: &reqwest::Client, host: &str, token: &str) {
+    // 1. Which files the host currently stores.
+    let remote: std::collections::HashSet<String> = match http
+        .get(format!("{host}/api/v1/attachments"))
+        .bearer_auth(token)
+        .send()
+        .await
+    {
+        Ok(resp) if resp.status().is_success() => resp.json::<Value>().await.unwrap_or_default()
+            ["shas"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        _ => return,
+    };
+
+    // 2. Local live attachment rows + whether the file is on disk.
+    let db = state.db.share();
+    let rows: Vec<String> = match crate::blocking::run(move || {
+        db.with_read_conn(|c| {
+            let mut st = c.prepare("SELECT sha256 FROM attachments WHERE deleted_at IS NULL")?;
+            let v = st
+                .query_map([], |r| r.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(v)
+        })
+        .map_err(|e| e.to_string())
+    })
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            crate::applog::append("sync.log", &format!("attachments list failed: {e}"));
+            return;
+        }
+    };
+
+    let dir = state.db.attachments_dir.clone();
+    for sha in rows {
+        let local = dir.join(&sha);
+        match (remote.contains(&sha), local.exists()) {
+            // 3a. Host lacks the file — upload ours.
+            (false, true) => {
+                let Ok(bytes) = std::fs::read(&local) else {
+                    continue;
+                };
+                if let Err(e) = http
+                    .put(format!("{host}/api/v1/attachments/{sha}"))
+                    .bearer_auth(token)
+                    .body(bytes)
+                    .send()
+                    .await
+                {
+                    crate::applog::append("sync.log", &format!("attachment upload {sha}: {e}"));
+                }
+            }
+            // 3b. We lack the file — download it (tmp + rename keeps it atomic).
+            (true, false) => {
+                if let Ok(resp) = http
+                    .get(format!("{host}/api/v1/attachments/{sha}"))
+                    .bearer_auth(token)
+                    .send()
+                    .await
+                {
+                    if resp.status().is_success() {
+                        if let Ok(bytes) = resp.bytes().await {
+                            let tmp = dir.join(format!("{sha}.tmp"));
+                            if std::fs::write(&tmp, &bytes).is_ok() {
+                                let _ = std::fs::rename(&tmp, &local);
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Candidate URLs clients can reach this host at — the same private

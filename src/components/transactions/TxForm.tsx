@@ -11,6 +11,7 @@ import { ownerLabelKey } from "@/lib/owners";
 import { qk, invalidateMoney } from "@/lib/queryKeys";
 import { useAccounts, useCategories, useSettings, useUsers } from "@/lib/queries";
 import { useEnsureRates } from "@/lib/useDisplayMoney";
+import { TxAttachments } from "@/components/attachments/TxAttachments";
 import type { CategoryRow, TransactionRow } from "@/lib/types";
 
 const ENTRY_CURRENCIES = ["BYN", "USD", "EUR", "RUB"];
@@ -230,6 +231,11 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
           📎 {photo ? photo.name : t("ui.photo")}
           {photoErr && <span className="text-destructive">{t("ui.err.photoSize", { mb: MAX_PHOTO_MB })}</span>}
         </label>
+        {editing.id && (
+          <div className="sm:col-span-2">
+            <TxAttachments txId={editing.id} editable />
+          </div>
+        )}
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" type="submit" loading={save.isPending}>{t("ui.save")}</Button>

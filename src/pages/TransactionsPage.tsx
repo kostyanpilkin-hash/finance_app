@@ -15,24 +15,10 @@ import { formatMinor, nowLocalIso, todayIso } from "@/lib/money";
 import { ownerLabelKey } from "@/lib/owners";
 import { qk, invalidateMoney } from "@/lib/queryKeys";
 import { useAccounts, useCategories } from "@/lib/queries";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { TxThumb } from "@/components/attachments/TxAttachments";
 import type { CategoryRow, TransactionRow } from "@/lib/types";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-
-interface AttachmentRow { id: string; transactionId: string; sha256: string; fileName: string }
-
-function Thumb({ txId }: { txId: string }) {
-  const atts = useQuery({ queryKey: qk.entity("attachments"), queryFn: () => api.entityList<AttachmentRow>("attachments") });
-  const att = atts.data?.find((a) => a.transactionId === txId);
-  const path = useQuery({
-    queryKey: qk.attachmentPath(att?.sha256),
-    queryFn: () => api.attachmentPath(att!.sha256),
-    enabled: !!att,
-  });
-  if (!path.data) return null;
-  return <img src={convertFileSrc(path.data)} alt="" className="h-7 w-7 rounded-md object-cover ring-1 ring-border" />;
-}
 
 function isoOf(d: Date) {
   const p = (n: number) => String(n).padStart(2, "0");
@@ -229,7 +215,7 @@ export function TransactionsPage() {
                           {[x.kind !== "transfer" ? x.aName : null, x.comment].filter(Boolean).join(" · ") || " "}
                         </div>
                       </div>
-                      {(x.attCount ?? 0) > 0 && <Thumb txId={x.id} />}
+                      {(x.attCount ?? 0) > 0 && <TxThumb txId={x.id} />}
                       <div className="shrink-0 text-right">
                         <div className={cn(
                           "text-sm font-semibold",
