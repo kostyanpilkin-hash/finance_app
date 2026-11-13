@@ -98,14 +98,12 @@ pub async fn complete_onboarding(
 ) -> Result<(), String> {
     let db = state.db.share();
     run(move || {
-        db.with_conn(|c| {
-            let tx = c.unchecked_transaction()?;
+        db.write(|c| {
             let actor = actor_on(c, &db)?;
-            seed_categories(&tx, &db, &actor)?;
+            seed_categories(c, &db, &actor)?;
             let mut ids = Vec::new();
             for (i, name) in input.user_names.iter().enumerate() {
-                let u =
-                    repos::user_upsert(&tx, &db, &actor, json!({"name": name, "sort": i as i64}))?;
+                let u = repos::user_upsert(c, &db, &actor, json!({"name": name, "sort": i as i64}))?;
                 ids.push(u["id"].as_str().unwrap().to_string());
             }
             let owner = ids
@@ -119,7 +117,7 @@ pub async fn complete_onboarding(
                     "Сбережения"
                 };
                 repos::account_upsert(
-                    &tx,
+                    c,
                     &db,
                     &actor,
                     json!({
@@ -127,13 +125,12 @@ pub async fn complete_onboarding(
                     }),
                 )?;
             }
-            repos::setting_set(&tx, "onboarding_done", "1")?;
-            repos::setting_set(&tx, "current_user_id", owner.as_deref().unwrap_or(""))?;
-            tx.execute(
+            repos::setting_set(c, "onboarding_done", "1")?;
+            repos::setting_set(c, "current_user_id", owner.as_deref().unwrap_or(""))?;
+            c.execute(
                 "INSERT OR REPLACE INTO meta (key, value) VALUES ('mode', 'host')",
                 [],
             )?;
-            tx.commit()?;
             Ok(())
         })
         .map_err(|e| e.to_string())
@@ -145,7 +142,7 @@ pub async fn complete_onboarding(
 pub async fn set_current_user(state: State<'_, AppState>, user_id: String) -> Result<(), String> {
     let db = state.db.share();
     run(move || {
-        db.with_conn(|c| repos::setting_set(c, "current_user_id", &user_id))
+        db.write(|c| repos::setting_set(c, "current_user_id", &user_id))
             .map_err(|e| e.to_string())
     })
     .await
@@ -171,7 +168,7 @@ pub async fn set_setting(
 ) -> Result<(), String> {
     let db = state.db.share();
     run(move || {
-        db.with_conn(|c| repos::setting_set(c, &key, &value))
+        db.write(|c| repos::setting_set(c, &key, &value))
             .map_err(|e| e.to_string())
     })
     .await
@@ -203,7 +200,7 @@ pub async fn entity_delete(
     let e = Entity::parse(&entity).ok_or("unknown entity")?;
     let db = state.db.share();
     run(move || {
-        db.with_conn(|c| {
+        db.write(|c| {
             let a = actor_on(c, &db)?;
             repos::apply(&db, c, &a, e, models::Op::Delete, &id, None)?;
             Ok(())
@@ -221,7 +218,7 @@ pub async fn entity_restore(
 ) -> Result<(), String> {
     let db = state.db.share();
     run(move || {
-        db.with_conn(|c| {
+        db.write(|c| {
             let a = actor_on(c, &db)?;
             repos::restore(c, &db, &a, &entity, &id)
         })
@@ -234,7 +231,7 @@ pub async fn entity_restore(
 pub async fn user_upsert(state: State<'_, AppState>, input: Value) -> Result<Value, String> {
     let db = state.db.share();
     run(move || {
-        db.with_conn(|c| {
+        db.write(|c| {
             let a = actor_on(c, &db)?;
             repos::user_upsert(c, &db, &a, input)
         })
@@ -247,7 +244,7 @@ pub async fn user_upsert(state: State<'_, AppState>, input: Value) -> Result<Val
 pub async fn account_upsert(state: State<'_, AppState>, input: Value) -> Result<Value, String> {
     let db = state.db.share();
     run(move || {
-        db.with_conn(|c| {
+        db.write(|c| {
             let a = actor_on(c, &db)?;
             repos::account_upsert(c, &db, &a, input)
         })
@@ -260,7 +257,7 @@ pub async fn account_upsert(state: State<'_, AppState>, input: Value) -> Result<
 pub async fn category_upsert(state: State<'_, AppState>, input: Value) -> Result<Value, String> {
     let db = state.db.share();
     run(move || {
-        db.with_conn(|c| {
+        db.write(|c| {
             let a = actor_on(c, &db)?;
             repos::category_upsert(c, &db, &a, input)
         })
@@ -277,7 +274,7 @@ pub async fn category_delete(
 ) -> Result<(), String> {
     let db = state.db.share();
     run(move || {
-        db.with_conn(|c| {
+        db.write(|c| {
             let a = actor_on(c, &db)?;
             repos::category_delete(c, &db, &a, &id, move_to.as_deref())
         })
@@ -290,7 +287,7 @@ pub async fn category_delete(
 pub async fn transaction_upsert(state: State<'_, AppState>, input: Value) -> Result<Value, String> {
     let db = state.db.share();
     run(move || {
-        db.with_conn(|c| {
+        db.write(|c| {
             let a = actor_on(c, &db)?;
             repos::transaction_upsert(c, &db, &a, input)
         })
@@ -356,7 +353,7 @@ pub async fn journal(state: State<'_, AppState>, filter: Value) -> Result<Vec<Va
 pub async fn goal_upsert(state: State<'_, AppState>, input: Value) -> Result<Value, String> {
     let db = state.db.share();
     run(move || {
-        db.with_conn(|c| {
+        db.write(|c| {
             let a = actor_on(c, &db)?;
             repos::goal_upsert(c, &db, &a, input)
         })
@@ -369,7 +366,7 @@ pub async fn goal_upsert(state: State<'_, AppState>, input: Value) -> Result<Val
 pub async fn reminder_upsert(state: State<'_, AppState>, input: Value) -> Result<Value, String> {
     let db = state.db.share();
     run(move || {
-        db.with_conn(|c| {
+        db.write(|c| {
             let a = actor_on(c, &db)?;
             repos::reminder_upsert(c, &db, &a, input)
         })
@@ -387,16 +384,14 @@ pub async fn reminder_resolve(
 ) -> Result<(), String> {
     let db = state.db.share();
     run(move || {
-        db.with_conn(|c| {
+        db.write(|c| {
             let a = actor_on(c, &db)?;
-            let tx = c.unchecked_transaction()?;
             let mut tx_id = None;
             if let Some(v) = create_tx {
-                let row = repos::transaction_upsert(&tx, &db, &a, v)?;
+                let row = repos::transaction_upsert(c, &db, &a, v)?;
                 tx_id = row["id"].as_str().map(|s| s.to_string());
             }
-            repos::reminder_resolve(&tx, &db, &a, &id, &status, tx_id.as_deref())?;
-            tx.commit()?;
+            repos::reminder_resolve(c, &db, &a, &id, &status, tx_id.as_deref())?;
             Ok(())
         })
         .map_err(|e| e.to_string())
@@ -414,7 +409,7 @@ pub async fn pin_set(state: State<'_, AppState>, pin: String) -> Result<(), Stri
     let hex: String = hash.iter().map(|b| format!("{b:02x}")).collect();
     let db = state.db.share();
     run(move || {
-        db.with_conn(|c| {
+        db.write(|c| {
             repos::setting_set(c, "pin_salt", &salt)?;
             repos::setting_set(c, "pin_hash", &hex)
         })
@@ -448,7 +443,7 @@ pub async fn pin_verify(state: State<'_, AppState>, pin: String) -> Result<bool,
 pub async fn pin_clear(state: State<'_, AppState>) -> Result<(), String> {
     let db = state.db.share();
     run(move || {
-        db.with_conn(|c| {
+        db.write(|c| {
             repos::setting_set(c, "pin_salt", "")?;
             repos::setting_set(c, "pin_hash", "")
         })
@@ -580,7 +575,7 @@ pub async fn attachment_add(
     let bytes = bytes.clone();
     let db = state.db.share();
     run(move || {
-        db.with_conn(|c| {
+        db.write(|c| {
             let actor = actor_on(c, &db)?;
             repos::attachment_add(c, &db, &actor, &transaction_id, &file_name, &mime, &bytes)
         })
@@ -872,7 +867,7 @@ pub async fn refresh_rates(state: &AppState) -> Result<Value, String> {
     let db = state.db.share();
     let fetched2 = fetched.clone();
     run(move || {
-        db.with_conn(|c| {
+        db.write(|c| {
             for (cur, scaled, date) in &fetched2 {
                 repos::rate_upsert(c, &db, date, cur, *scaled, 1)?;
             }
@@ -933,7 +928,7 @@ pub async fn ensure_rate(state: &AppState, currency: &str, date: &str) -> Result
     let stored_date = finance_storage::nbrb::date_of(&rate).to_string();
     let db = state.db.share();
     run(move || {
-        db.with_conn(|c| repos::rate_upsert(c, &db, &stored_date, &cur, scaled, 1))
+        db.write(|c| repos::rate_upsert(c, &db, &stored_date, &cur, scaled, 1))
             .map_err(|e| e.to_string())
     })
     .await
