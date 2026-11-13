@@ -13,29 +13,11 @@ use crate::state::AppState;
 
 pub const API_PORT: u16 = 45322;
 
-const KEY_SERVICE: &str = "by.kostyan.finance";
-const DEVICE_TOKEN_ACCOUNT: &str = "device-token";
-
 /// The last sync_once outcome, for the settings UI (esp. schema mismatches).
 static LAST_ERROR: Mutex<Option<Value>> = Mutex::new(None);
 
 fn last_error_set(v: Option<Value>) {
     *LAST_ERROR.lock().unwrap_or_else(|e| e.into_inner()) = v;
-}
-
-fn save_device_token(token: &str) -> Result<(), String> {
-    keyring::Entry::new(KEY_SERVICE, DEVICE_TOKEN_ACCOUNT)
-        .map_err(|e| e.to_string())?
-        .set_secret(token.as_bytes())
-        .map_err(|e| e.to_string())
-}
-
-fn read_device_token() -> Option<String> {
-    keyring::Entry::new(KEY_SERVICE, DEVICE_TOKEN_ACCOUNT)
-        .ok()?
-        .get_secret()
-        .ok()
-        .map(|b| String::from_utf8_lossy(&b).into_owned())
 }
 
 /// Moves a pre-keyring `settings.device_token` into the OS keyring. The row is
@@ -62,7 +44,11 @@ fn migrate_legacy_token(
 pub fn migrate_device_token(state: &AppState) {
     let r = state
         .db
-        .with_conn(|c| migrate_legacy_token(c, save_device_token));
+        .with_conn(|c| {
+            migrate_legacy_token(c, |t| {
+                crate::keystore::write(crate::keystore::DEVICE_TOKEN, t.as_bytes())
+            })
+        });
     match r {
         Ok(true) => eprintln!("device token migrated to the OS keyring"),
         Ok(false) => {}
@@ -243,11 +229,12 @@ pub fn start_client(app: AppHandle) {
 }
 
 fn client_cfg(state: &AppState) -> Result<(String, String), Error> {
+    // Keyring first; a pre-keyring settings row is the fallback until the
+    // startup migration moves it over. Keyring read stays outside the db lock.
+    let kr = crate::keystore::read_string(crate::keystore::DEVICE_TOKEN);
     state.db.with_read_conn(|c| {
         let get = |k: &str| repos::setting_get(c, k);
-        // Keyring first; a pre-keyring settings row is the fallback until the
-        // startup migration moves it over.
-        let token = read_device_token()
+        let token = kr
             .or(get("device_token").ok().flatten())
             .ok_or_else(|| Error::Other("no device_token".into()))?;
         Ok((
@@ -605,7 +592,7 @@ pub async fn pair_client(
     )
     .await?;
     // The device token is a secret — keyring only, never a settings row.
-    save_device_token(&grant.token)?;
+    crate::keystore::write(crate::keystore::DEVICE_TOKEN, grant.token.as_bytes())?;
     let user_id = grant.user_id;
     let db = state.db.share();
     let host_s = host.to_string();
