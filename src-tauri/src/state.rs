@@ -27,6 +27,44 @@ pub struct AppState {
     pub new_recovery_key: Option<String>,
 }
 
+impl AppState {
+    /// Read-only query on the blocking pool.
+    #[allow(dead_code)]
+    pub async fn read<T: Send + 'static>(
+        &self,
+        f: impl FnOnce(&finance_storage::rusqlite::Connection) -> Result<T, finance_storage::Error>
+            + Send
+            + 'static,
+    ) -> Result<T, String> {
+        let db = self.db.share();
+        crate::blocking::run(move || db.with_read_conn(f).map_err(|e| e.to_string())).await
+    }
+
+    /// One transaction on the blocking pool, with the desktop actor resolved inside it.
+    #[allow(dead_code)]
+    pub async fn write<T: Send + 'static>(
+        &self,
+        f: impl FnOnce(
+                &finance_storage::rusqlite::Connection,
+                &Db,
+                &Actor,
+            ) -> Result<T, finance_storage::Error>
+            + Send
+            + 'static,
+    ) -> Result<T, String> {
+        let db = self.db.share();
+        crate::blocking::run(move || {
+            db.write(|tx| {
+                let c: &finance_storage::rusqlite::Connection = tx;
+                let a = actor_on(c, &db)?;
+                f(c, &db, &a)
+            })
+            .map_err(|e| e.to_string())
+        })
+        .await
+    }
+}
+
 /// Current user id read on the write conn — used inside `with_conn`/`write`
 /// closures where the write lock is already held.
 pub(crate) fn actor_on(
