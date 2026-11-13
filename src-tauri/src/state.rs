@@ -2,24 +2,6 @@ use finance_storage::{db::Db, secrets, Actor, Source};
 use std::sync::OnceLock;
 use tauri::Manager;
 
-const KEY_SERVICE: &str = "by.kostyan.finance";
-
-fn keyring_read(instance: &str) -> Result<Option<Vec<u8>>, String> {
-    let entry =
-        keyring::Entry::new(KEY_SERVICE, &format!("db-{instance}")).map_err(|e| e.to_string())?;
-    match entry.get_secret() {
-        Ok(b) => Ok(Some(b)),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(e.to_string()),
-    }
-}
-
-fn keyring_write(instance: &str, key: &[u8]) -> Result<(), String> {
-    let entry =
-        keyring::Entry::new(KEY_SERVICE, &format!("db-{instance}")).map_err(|e| e.to_string())?;
-    entry.set_secret(key).map_err(|e| e.to_string())
-}
-
 /// Where to read the db key until we know instance_id (stored inside the db).
 /// Chicken-and-egg: the instance id lives in `meta`, which is encrypted. So the
 /// key is stored under a fixed account name per data dir instead.
@@ -27,8 +9,8 @@ fn install_key_store() {
     static ONCE: OnceLock<()> = OnceLock::new();
     ONCE.get_or_init(|| {
         secrets::install_key_store(
-            |_instance| keyring_read("primary"),
-            |_instance, k| keyring_write("primary", k),
+            |_instance| crate::keystore::read(crate::keystore::DB_KEY),
+            |_instance, k| crate::keystore::write(crate::keystore::DB_KEY, k),
         );
     });
 }
@@ -93,5 +75,5 @@ pub fn unlock_with_recovery(dir: &std::path::Path, recovery: &str) -> Result<(),
         return Err("recovery key must decode to 32 bytes".into());
     }
     Db::open(&dir.join("finance.db"), Some(&key)).map_err(|_| "wrong recovery key".to_string())?;
-    keyring_write("primary", &key)
+    crate::keystore::write(crate::keystore::DB_KEY, &key)
 }

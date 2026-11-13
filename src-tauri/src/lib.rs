@@ -1,6 +1,7 @@
 mod blocking;
 mod bot;
 mod commands;
+mod keystore;
 mod net;
 mod rates;
 mod scheduler;
