@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager, State};
 
 use crate::blocking::run;
-use crate::state::{actor_on, AppState};
+use crate::state::AppState;
 
 #[tauri::command]
 pub fn app_info(app: AppHandle) -> serde_json::Value {
@@ -255,18 +255,15 @@ pub async fn analytics_summary(
     to: String,
     currency: Option<String>,
 ) -> Result<finance_storage::analytics::Summary, String> {
-    let db = state.db.share();
-    run(move || {
-        db.with_read_conn(|c| {
+    state
+        .read(move |c| {
             let cur = match currency {
                 Some(c) => c,
                 None => display_currency_on(c)?,
             };
             finance_storage::analytics::summary(c, &from, &to, &cur)
         })
-        .map_err(|e| e.to_string())
-    })
-    .await
+        .await
 }
 
 #[tauri::command]
@@ -276,18 +273,15 @@ pub async fn analytics_monthly(
     to: String,
     currency: Option<String>,
 ) -> Result<Vec<finance_storage::analytics::Bucket>, String> {
-    let db = state.db.share();
-    run(move || {
-        db.with_read_conn(|c| {
+    state
+        .read(move |c| {
             let cur = match currency {
                 Some(c) => c,
                 None => display_currency_on(c)?,
             };
             finance_storage::analytics::monthly(c, &from, &to, &cur)
         })
-        .map_err(|e| e.to_string())
-    })
-    .await
+        .await
 }
 
 #[tauri::command]
@@ -298,28 +292,16 @@ pub async fn journal(state: State<'_, AppState>, filter: Value) -> Result<Vec<Va
 
 #[tauri::command]
 pub async fn goal_upsert(state: State<'_, AppState>, input: Value) -> Result<Value, String> {
-    let db = state.db.share();
-    run(move || {
-        db.write(|c| {
-            let a = actor_on(c, &db)?;
-            repos::goal_upsert(c, &db, &a, input)
-        })
-        .map_err(|e| e.to_string())
-    })
-    .await
+    state
+        .write(move |c, db, a| repos::goal_upsert(c, db, a, input))
+        .await
 }
 
 #[tauri::command]
 pub async fn reminder_upsert(state: State<'_, AppState>, input: Value) -> Result<Value, String> {
-    let db = state.db.share();
-    run(move || {
-        db.write(|c| {
-            let a = actor_on(c, &db)?;
-            repos::reminder_upsert(c, &db, &a, input)
-        })
-        .map_err(|e| e.to_string())
-    })
-    .await
+    state
+        .write(move |c, db, a| repos::reminder_upsert(c, db, a, input))
+        .await
 }
 
 #[tauri::command]
@@ -329,21 +311,17 @@ pub async fn reminder_resolve(
     status: String,
     create_tx: Option<Value>,
 ) -> Result<(), String> {
-    let db = state.db.share();
-    run(move || {
-        db.write(|c| {
-            let a = actor_on(c, &db)?;
+    state
+        .write(move |c, db, a| {
             let mut tx_id = None;
             if let Some(v) = create_tx {
-                let row = repos::transaction_upsert(c, &db, &a, v)?;
+                let row = repos::transaction_upsert(c, db, a, v)?;
                 tx_id = row["id"].as_str().map(|s| s.to_string());
             }
-            repos::reminder_resolve(c, &db, &a, &id, &status, tx_id.as_deref())?;
+            repos::reminder_resolve(c, db, a, &id, &status, tx_id.as_deref())?;
             Ok(())
         })
-        .map_err(|e| e.to_string())
-    })
-    .await
+        .await
 }
 
 // ---------- security & backups ----------
@@ -354,23 +332,19 @@ pub async fn pin_set(state: State<'_, AppState>, pin: String) -> Result<(), Stri
     let salt = uuid::Uuid::new_v4().to_string();
     let hash = sha2::Sha256::digest(format!("{salt}{pin}").as_bytes());
     let hex: String = hash.iter().map(|b| format!("{b:02x}")).collect();
-    let db = state.db.share();
-    run(move || {
-        db.write(|c| {
+    state
+        .write(move |c, _db, _a| {
             repos::setting_set(c, "pin_salt", &salt)?;
             repos::setting_set(c, "pin_hash", &hex)
         })
-        .map_err(|e| e.to_string())
-    })
-    .await
+        .await
 }
 
 #[tauri::command]
 pub async fn pin_verify(state: State<'_, AppState>, pin: String) -> Result<bool, String> {
     use sha2::Digest;
-    let db = state.db.share();
-    run(move || {
-        db.with_read_conn(|c| {
+    state
+        .read(move |c| {
             let salt = repos::setting_get(c, "pin_salt")?.unwrap_or_default();
             let expect = repos::setting_get(c, "pin_hash")?;
             match expect {
@@ -381,36 +355,28 @@ pub async fn pin_verify(state: State<'_, AppState>, pin: String) -> Result<bool,
                 }
             }
         })
-        .map_err(|e| e.to_string())
-    })
-    .await
+        .await
 }
 
 #[tauri::command]
 pub async fn pin_clear(state: State<'_, AppState>) -> Result<(), String> {
-    let db = state.db.share();
-    run(move || {
-        db.write(|c| {
+    state
+        .write(move |c, _db, _a| {
             repos::setting_set(c, "pin_salt", "")?;
             repos::setting_set(c, "pin_hash", "")
         })
-        .map_err(|e| e.to_string())
-    })
-    .await
+        .await
 }
 
 #[tauri::command]
 pub async fn pin_enabled(state: State<'_, AppState>) -> Result<bool, String> {
-    let db = state.db.share();
-    run(move || {
-        Ok(db
-            .with_read_conn(|c| repos::setting_get(c, "pin_hash"))
-            .ok()
-            .flatten()
-            .map(|h| !h.is_empty())
-            .unwrap_or(false))
-    })
-    .await
+    Ok(state
+        .read(|c| repos::setting_get(c, "pin_hash"))
+        .await
+        .ok()
+        .flatten()
+        .map(|h| !h.is_empty())
+        .unwrap_or(false))
 }
 
 #[tauri::command]
@@ -452,12 +418,7 @@ pub async fn backup_restore(app: AppHandle, name: String) -> Result<(), String> 
 #[tauri::command]
 pub async fn reminders_due(state: State<'_, AppState>) -> Result<Vec<Value>, String> {
     let today = chrono::Local::now().date_naive().to_string();
-    let db = state.db.share();
-    run(move || {
-        db.with_read_conn(|c| repos::reminders_due(c, &today))
-            .map_err(|e| e.to_string())
-    })
-    .await
+    state.read(move |c| repos::reminders_due(c, &today)).await
 }
 
 // ---------- attachments ----------
@@ -511,15 +472,11 @@ pub async fn attachment_add(
         return Err("attachment size out of range".into());
     }
     let bytes = bytes.clone();
-    let db = state.db.share();
-    run(move || {
-        db.write(|c| {
-            let actor = actor_on(c, &db)?;
-            repos::attachment_add(c, &db, &actor, &transaction_id, &file_name, &mime, &bytes)
+    state
+        .write(move |c, db, a| {
+            repos::attachment_add(c, db, a, &transaction_id, &file_name, &mime, &bytes)
         })
-        .map_err(|e| e.to_string())
-    })
-    .await
+        .await
 }
 
 /// Attachment file names are sha256 hex digests — reject anything else so a
@@ -555,22 +512,14 @@ pub async fn export_xlsx(
         .document_dir()
         .unwrap_or_else(|_| std::env::temp_dir())
         .join("Финансы");
-    let db = state.db.share();
-    run(move || {
-        db.with_read_conn(|c| finance_storage::export::export_xlsx(c, &dir, &from, &to))
-            .map_err(|e| e.to_string())
-    })
-    .await
+    state
+        .read(move |c| finance_storage::export::export_xlsx(c, &dir, &from, &to))
+        .await
 }
 
 #[tauri::command]
 pub async fn rates_latest(state: State<'_, AppState>) -> Result<Vec<Value>, String> {
-    let db = state.db.share();
-    run(move || {
-        db.with_read_conn(repos::rates_latest)
-            .map_err(|e| e.to_string())
-    })
-    .await
+    state.read(repos::rates_latest).await
 }
 
 // ---------- telegram bot ----------
