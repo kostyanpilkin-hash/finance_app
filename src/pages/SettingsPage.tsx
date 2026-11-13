@@ -264,10 +264,12 @@ function SyncSection() {
   const addresses = useQuery({ queryKey: ["host-addresses"], queryFn: api.hostAddresses });
   const pairing = useQuery({ queryKey: ["pairing-requests"], queryFn: api.pairingRequests, refetchInterval: 3000 });
   const pairingLocked = pairing.data?.locked === true;
-  const queryClient = useQueryClient();
   const pair = useMutation({
     mutationFn: () => api.pairToHost(hostUrl, code, name),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["sync-status"] }),
+    onSuccess: async () => {
+      await new Promise((r) => setTimeout(r, 1200));
+      await relaunch();
+    },
   });
   const makeCode = useMutation({
     mutationFn: (uid: string) => api.devicePairCode(uid),
