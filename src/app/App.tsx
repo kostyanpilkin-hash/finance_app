@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
+import { useDataChanged } from "@/lib/useDataChanged";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
 import { Onboarding } from "./Onboarding";
@@ -32,6 +33,7 @@ const GoalsPage = lazy(() => import("@/pages/GoalsPage").then((m) => ({ default:
 export default function App() {
   const { t } = useTranslation();
   const init = useSettingsStore((s) => s.init);
+  useDataChanged();
   const [page, setPage] = useState<PageId>("dashboard");
 
   const dbStatus = useQuery({ queryKey: ["db-status"], queryFn: api.dbStatus });
