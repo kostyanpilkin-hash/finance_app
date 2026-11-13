@@ -468,9 +468,7 @@ pub fn pair_code<R: tauri::Runtime>(
     if let Some(hub) = hub(app) {
         hub.reset_failures();
     }
-    let code: String = (0..6)
-        .map(|_| (uuid::Uuid::new_v4().as_bytes()[0] % 10).to_string())
-        .collect();
+    let code = finance_storage::secrets::numeric_code(6);
     let exp = (chrono::Utc::now() + chrono::Duration::minutes(10)).to_rfc3339();
     db.with_conn(|c| {
         c.execute(

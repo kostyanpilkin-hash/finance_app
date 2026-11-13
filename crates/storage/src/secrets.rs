@@ -36,6 +36,20 @@ pub fn write_key(instance_id: &str, key: &[u8]) -> Result<(), Error> {
     }
 }
 
+/// Uniform decimal code from the OS CSPRNG (rejection sampling: bytes
+/// >= 250 are dropped so every digit has the same probability).
+pub fn numeric_code(len: usize) -> String {
+    let mut out = String::with_capacity(len);
+    while out.len() < len {
+        for b in uuid::Uuid::new_v4().into_bytes() {
+            if b < 250 && out.len() < len {
+                out.push(char::from(b'0' + b % 10));
+            }
+        }
+    }
+    out
+}
+
 /// 32-byte random key (uuid v4 draws from the OS CSPRNG).
 pub fn generate_key() -> Vec<u8> {
     let mut k = Vec::with_capacity(32);
@@ -63,4 +77,18 @@ pub fn decode_recovery(s: &str) -> Result<Vec<u8>, Error> {
     data_encoding::BASE32_NOPAD
         .decode(cleaned.to_uppercase().as_bytes())
         .map_err(|e| Error::Invalid(format!("bad recovery key: {e}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn numeric_code_len_and_digits() {
+        for _ in 0..50 {
+            let c = numeric_code(6);
+            assert_eq!(c.len(), 6);
+            assert!(c.chars().all(|ch| ch.is_ascii_digit()));
+        }
+    }
 }

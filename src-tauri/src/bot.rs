@@ -470,9 +470,7 @@ pub async fn tg_connect(state: &AppState, token: String) -> Result<(String, Stri
 }
 
 pub fn tg_pair_code(db: &finance_storage::db::Db, user_id: &str) -> Result<String, String> {
-    let code: String = (0..6)
-        .map(|_| (uuid::Uuid::new_v4().as_bytes()[0] % 10).to_string())
-        .collect();
+    let code = finance_storage::secrets::numeric_code(6);
     let exp = (chrono::Utc::now() + chrono::Duration::minutes(10)).to_rfc3339();
     db.write(|c| {
         c.execute(
