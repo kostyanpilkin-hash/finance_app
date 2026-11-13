@@ -1088,22 +1088,53 @@ mod tests {
         d.with_conn(|c| {
             let a = actor(&d);
             seed_categories(c, &d, &a)?;
-            let byn = repos::account_upsert(c, &d, &a, json!({"name":"Карта","kind":"card","currency":"BYN"}))?;
-            let usd = repos::account_upsert(c, &d, &a, json!({"name":"Вклад","kind":"savings","currency":"USD"}))?;
+            let byn = repos::account_upsert(
+                c,
+                &d,
+                &a,
+                json!({"name":"Карта","kind":"card","currency":"BYN"}),
+            )?;
+            let usd = repos::account_upsert(
+                c,
+                &d,
+                &a,
+                json!({"name":"Вклад","kind":"savings","currency":"USD"}),
+            )?;
             repos::rate_upsert(c, &d, "2026-11-01", "USD", 3_000_000, 1)?;
             let exp_cat: String = c.query_row(
-                "SELECT id FROM categories WHERE kind='expense' AND key='groceries'", [], |r| r.get(0))?;
+                "SELECT id FROM categories WHERE kind='expense' AND key='groceries'",
+                [],
+                |r| r.get(0),
+            )?;
             let inc_cat: String = c.query_row(
-                "SELECT id FROM categories WHERE kind='income' AND key='salary'", [], |r| r.get(0))?;
-            repos::transaction_upsert(c, &d, &a, json!({
+                "SELECT id FROM categories WHERE kind='income' AND key='salary'",
+                [],
+                |r| r.get(0),
+            )?;
+            repos::transaction_upsert(
+                c,
+                &d,
+                &a,
+                json!({
                 "kind":"expense","occurredAt":"2026-11-05T10:00:00","accountId":byn["id"],
-                "amountMinor":1000,"categoryId":exp_cat}))?;
-            repos::transaction_upsert(c, &d, &a, json!({
+                "amountMinor":1000,"categoryId":exp_cat}),
+            )?;
+            repos::transaction_upsert(
+                c,
+                &d,
+                &a,
+                json!({
                 "kind":"expense","occurredAt":"2026-11-06T10:00:00","accountId":usd["id"],
-                "amountMinor":100,"categoryId":exp_cat}))?;
-            repos::transaction_upsert(c, &d, &a, json!({
+                "amountMinor":100,"categoryId":exp_cat}),
+            )?;
+            repos::transaction_upsert(
+                c,
+                &d,
+                &a,
+                json!({
                 "kind":"income","occurredAt":"2026-11-07T10:00:00","accountId":byn["id"],
-                "amountMinor":500,"categoryId":inc_cat}))?;
+                "amountMinor":500,"categoryId":inc_cat}),
+            )?;
 
             let s = analytics::summary(c, "2026-11-01", "2026-11-30", "BYN")?;
             assert_eq!(s.expense, 1300); // 10.00 BYN + 1.00 USD at 3.00

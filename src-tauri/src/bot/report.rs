@@ -1,10 +1,10 @@
 //! Read-only reports shared by the wizard screens and scheduled notifications.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use chrono::{Datelike, NaiveDate};
-use finance_storage::rusqlite::Connection;
-use finance_storage::{repos, rusqlite};
+use finance_storage::repos;
+use finance_storage::rusqlite::{Connection, OptionalExtension};
 
 use super::text::*;
 use crate::state::AppState;
@@ -57,16 +57,6 @@ pub(super) struct Totals {
     pub missing: BTreeSet<String>,
 }
 
-/// (kind, currency, category id, category name, icon, sum)
-type SumRow = (
-    String,
-    String,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    i64,
-);
-
 /// Income/expense for a period converted to `cur`, plus expense by category.
 pub(super) fn totals(
     state: &AppState,
@@ -77,43 +67,32 @@ pub(super) fn totals(
     state
         .db
         .with_read_conn(|c| {
-            let rows: Vec<SumRow> = {
-                let mut st = c.prepare(
-                    "SELECT t.kind, a.currency, t.category_id, c.name, c.icon, SUM(t.amount_minor)
-                     FROM transactions t JOIN accounts a ON a.id = t.account_id
-                     LEFT JOIN categories c ON c.id = t.category_id
-                     WHERE t.deleted_at IS NULL AND t.kind != 'transfer'
-                       AND t.occurred_at >= ?1 || 'T00:00:00' AND t.occurred_at <= ?2 || 'T23:59:59.999'
-                     GROUP BY t.kind, a.currency, t.category_id",
-                )?;
-                let v = st
-                    .query_map(rusqlite::params![from.to_string(), to.to_string()], |r| {
-                        Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))
-                    })?
-                    .collect::<Result<_, _>>()?;
-                v
+            let s =
+                finance_storage::analytics::summary(c, &from.to_string(), &to.to_string(), cur)?;
+            let mut t = Totals {
+                income: s.income,
+                expense: s.expense,
+                missing: s.missing.into_iter().collect(),
+                ..Default::default()
             };
-            let mut t = Totals::default();
-            let mut by_cat: BTreeMap<String, Slice> = BTreeMap::new();
-            for (kind, currency, cat, name, icon, sum) in rows {
-                let Some(v) = convert(c, sum, &currency, cur) else {
-                    t.missing.insert(currency);
+            for b in s.by_category {
+                if b.expense <= 0 {
                     continue;
-                };
-                if kind == "income" {
-                    t.income = t.income.saturating_add(v);
-                } else {
-                    t.expense = t.expense.saturating_add(v);
-                    let s = by_cat.entry(cat.unwrap_or_default()).or_insert(Slice {
-                        name: name.unwrap_or_else(|| "—".into()),
-                        icon: icon.unwrap_or_default(),
-                        amount: 0,
-                    });
-                    s.amount = s.amount.saturating_add(v);
                 }
+                let meta: Option<(Option<String>, Option<String>)> = match &b.key {
+                    Some(id) => c
+                        .prepare_cached("SELECT name, icon FROM categories WHERE id = ?1")?
+                        .query_row([id], |r| Ok((r.get(0)?, r.get(1)?)))
+                        .optional()?,
+                    None => None,
+                };
+                let (name, icon) = meta.unwrap_or_default();
+                t.slices.push(Slice {
+                    name: name.unwrap_or_else(|| "—".into()),
+                    icon: icon.unwrap_or_default(),
+                    amount: b.expense,
+                });
             }
-            t.slices = by_cat.into_values().collect();
-            t.slices.sort_by_key(|s| std::cmp::Reverse(s.amount));
             Ok(t)
         })
         .map_err(|_| "totals failed".into())

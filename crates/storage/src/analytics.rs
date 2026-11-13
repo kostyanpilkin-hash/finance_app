@@ -82,12 +82,10 @@ fn grouped(
             missing.insert(currency);
             continue;
         };
-        let b = acc
-            .entry(key.clone())
-            .or_insert_with(|| Bucket {
-                key,
-                ..Default::default()
-            });
+        let b = acc.entry(key.clone()).or_insert_with(|| Bucket {
+            key,
+            ..Default::default()
+        });
         if kind == "income" {
             b.income = b.income.saturating_add(v);
         } else {
@@ -111,14 +109,33 @@ pub fn summary(conn: &Connection, from: &str, to: &str, currency: &str) -> Resul
         income: t.income,
         expense: t.expense,
         by_day: grouped(conn, from, to, currency, Dim::Day, &mut missing)?,
-        by_category: by_size(grouped(conn, from, to, currency, Dim::Category, &mut missing)?),
+        by_category: by_size(grouped(
+            conn,
+            from,
+            to,
+            currency,
+            Dim::Category,
+            &mut missing,
+        )?),
         by_owner: by_size(grouped(conn, from, to, currency, Dim::Owner, &mut missing)?),
-        by_account: by_size(grouped(conn, from, to, currency, Dim::Account, &mut missing)?),
+        by_account: by_size(grouped(
+            conn,
+            from,
+            to,
+            currency,
+            Dim::Account,
+            &mut missing,
+        )?),
         missing: missing.into_iter().collect(),
     })
 }
 
-pub fn monthly(conn: &Connection, from: &str, to: &str, currency: &str) -> Result<Vec<Bucket>, Error> {
+pub fn monthly(
+    conn: &Connection,
+    from: &str,
+    to: &str,
+    currency: &str,
+) -> Result<Vec<Bucket>, Error> {
     let mut missing = BTreeSet::new();
     grouped(conn, from, to, currency, Dim::Month, &mut missing)
 }
