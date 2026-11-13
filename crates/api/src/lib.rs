@@ -336,6 +336,14 @@ struct PairReq {
     schema_version: Option<i64>,
 }
 
+async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, StatusCode> {
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
 type ApiResult = Result<Json<Value>, (StatusCode, Json<Value>)>;
 
 fn err(code: StatusCode, body: Value) -> (StatusCode, Json<Value>) {
@@ -351,60 +359,75 @@ async fn pair(
     // One DB critical section per attempt: the locked check, the lookup, the
     // failure counter and the burn-at-5 all happen while the DB mutex is
     // held, so concurrent guesses can't slip past the attempt limit.
-    // Lock order: DB → hub (same as decide()).
-    let uid: Option<String> =
-        s.db.write(|c| {
-            if s.hub.locked() {
-                return Ok(None);
+    // Lock order: DB → hub (same as decide()). The verdict is computed
+    // inside the section too — after spawn_blocking the world may have moved
+    // on, so a re-check outside would mislabel a counted failure as a lock.
+    enum Verdict {
+        Locked,
+        BadCode { left: u32 },
+        Accepted(String),
+    }
+    let db = s.db.clone();
+    let hub = s.hub.clone();
+    let code = req.code.clone();
+    let verdict = blocking(move || {
+        db.write(|c| {
+            if hub.locked() {
+                return Ok(Verdict::Locked);
             }
             let uid: Option<String> = match c.query_row(
                 "SELECT user_id FROM device_pair_codes WHERE code=?1 AND expires_at > ?2",
-                finance_storage::rusqlite::params![req.code, dbm::now_iso()],
+                finance_storage::rusqlite::params![&code, dbm::now_iso()],
                 |r| r.get(0),
             ) {
                 Ok(u) => Some(u),
                 Err(finance_storage::rusqlite::Error::QueryReturnedNoRows) => None,
                 Err(e) => return Err(e.into()),
             };
-            if uid.is_some() {
+            if let Some(u) = uid {
                 // A valid code is consumed (single use) and unlocks pairing.
-                c.execute(
-                    "DELETE FROM device_pair_codes WHERE code=?1",
-                    [req.code.clone()],
-                )?;
-                s.hub.reset_failures();
-            } else if s.hub.note_failure() {
+                c.execute("DELETE FROM device_pair_codes WHERE code=?1", [&code])?;
+                hub.reset_failures();
+                return Ok(Verdict::Accepted(u));
+            }
+            if hub.note_failure() {
                 // Locked: burn every active code — they may be compromised.
                 c.execute("DELETE FROM device_pair_codes", [])?;
+                return Ok(Verdict::Locked);
             }
-            Ok(uid)
+            Ok(Verdict::BadCode {
+                left: PAIR_MAX_FAILURES - hub.failures(),
+            })
         })
-        .map_err(|e| {
-            err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                json!({"error": e.to_string()}),
-            )
-        })?;
-    if s.hub.locked() {
-        return Err(err(
+    })
+    .await
+    .map_err(bad)?
+    .map_err(|e| {
+        err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            json!({"error": e.to_string()}),
+        )
+    })?;
+    match verdict {
+        Verdict::Locked => Err(err(
             StatusCode::TOO_MANY_REQUESTS,
             json!({"error": "pairing_locked"}),
-        ));
+        )),
+        Verdict::BadCode { left } => Err(err(
+            StatusCode::FORBIDDEN,
+            json!({"error": "bad_code", "attemptsLeft": left}),
+        )),
+        Verdict::Accepted(user_id) => {
+            let id = s
+                .hub
+                .new_request(&user_id, &req.name, &req.platform, peer.ip().to_string());
+            Ok((
+                StatusCode::ACCEPTED,
+                Json(json!({"status": "pending", "requestId": id})),
+            )
+                .into_response())
+        }
     }
-    if let Some(user_id) = uid {
-        let id = s
-            .hub
-            .new_request(&user_id, &req.name, &req.platform, peer.ip().to_string());
-        return Ok((
-            StatusCode::ACCEPTED,
-            Json(json!({"status": "pending", "requestId": id})),
-        )
-            .into_response());
-    }
-    Err(err(
-        StatusCode::FORBIDDEN,
-        json!({"error": "bad_code", "attemptsLeft": PAIR_MAX_FAILURES - s.hub.failures()}),
-    ))
 }
 
 #[derive(Deserialize)]
@@ -468,10 +491,12 @@ async fn push(
         .unwrap_or("")
         .to_string();
 
-    let mut results = Vec::new();
-    s.db.write(|c| {
+    let db = s.db.clone();
+    let results: Vec<Value> = blocking(move || {
+        db.write(|c| {
         let (device_id, user_id) = auth(c, &token)?;
         let actor = models::Actor { user_id, device_id: Some(device_id.clone()), source: Source::Sync };
+        let mut results = Vec::new();
         for op in ops {
             let entity = match models::Entity::parse(&op.entity) {
                 Some(e) => e,
@@ -508,12 +533,16 @@ async fn push(
                 "restore" => Op::Restore,
                 _ => Op::Upsert,
             };
-            repos::apply(&s.db, c, &actor, entity, mop, &op.id, op.payload)?;
+            repos::apply(&db, c, &actor, entity, mop, &op.id, op.payload)?;
             results.push(json!({"id": op.id, "status": "ok"}));
         }
         c.execute("UPDATE devices SET last_seen_at=?1 WHERE id=?2", finance_storage::rusqlite::params![dbm::now_iso(), device_id])?;
-        Ok(())
-    }).map_err(|e| if e.to_string() == "unauthorized" { bad(StatusCode::UNAUTHORIZED) } else { bad(StatusCode::INTERNAL_SERVER_ERROR) })?;
+        Ok(results)
+        })
+    })
+    .await
+    .map_err(bad)?
+    .map_err(|e| if e.to_string() == "unauthorized" { bad(StatusCode::UNAUTHORIZED) } else { bad(StatusCode::INTERNAL_SERVER_ERROR) })?;
     Ok(Json(json!({"results": results})))
 }
 
@@ -540,7 +569,9 @@ async fn resolve(
         .and_then(|v| v.strip_prefix("Bearer "))
         .unwrap_or("")
         .to_string();
-    s.db.write(|c| {
+    let db = s.db.clone();
+    blocking(move || {
+        db.write(|c| {
         let (device_id, user_id) = auth(c, &token)?;
         let (entity_s, entity_id, local, server): (String, String, String, String) = c.query_row(
             "SELECT entity, entity_id, local_payload, server_payload FROM conflicts WHERE id=?1 AND resolved_at IS NULL",
@@ -555,7 +586,7 @@ async fn resolve(
             let payload: Value = serde_json::from_str(&local)?;
             let op = if payload["op"].as_str() == Some("delete") { Op::Delete } else { Op::Upsert };
             let p = payload["payload"].clone();
-            repos::apply(&s.db, c, &actor, entity, op, &entity_id, if p.is_null() { None } else { Some(p) })?;
+            repos::apply(&db, c, &actor, entity, op, &entity_id, if p.is_null() { None } else { Some(p) })?;
         }
         c.execute(
             "UPDATE conflicts SET resolved_at=?1 WHERE id=?2",
@@ -563,7 +594,10 @@ async fn resolve(
         )?;
         let _ = server;
         Ok(Json(json!({"ok": true})))
-    }).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+        })
+    })
+    .await?
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 #[derive(Deserialize)]
@@ -585,7 +619,9 @@ async fn pull(
         .to_string();
     let since = q.since.unwrap_or(0);
     let limit = q.limit.unwrap_or(2000);
-    s.db.with_read_conn(|c| {
+    let db = s.db.clone();
+    blocking(move || {
+        db.with_read_conn(|c| {
         // Read snapshot: the whole page reflects one db state.
         let snap = c.unchecked_transaction()?;
         let (device_id, _) = auth(&snap, &token)?;
@@ -625,5 +661,8 @@ async fn pull(
             .unwrap_or(since);
         let has_more = changes.len() as i64 >= limit;
         Ok(Json(json!({"changes": changes, "conflicts": conflicts, "maxSeq": max_seq, "hasMore": has_more})))
-    }).map_err(|e| if e.to_string() == "unauthorized" { StatusCode::UNAUTHORIZED } else { StatusCode::INTERNAL_SERVER_ERROR })
+        })
+    })
+    .await?
+    .map_err(|e| if e.to_string() == "unauthorized" { StatusCode::UNAUTHORIZED } else { StatusCode::INTERNAL_SERVER_ERROR })
 }
