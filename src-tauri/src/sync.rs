@@ -329,11 +329,29 @@ async fn sync_once_inner(state: &AppState) -> Result<bool, String> {
                     .collect()
             })
             .unwrap_or_default();
+        let conflict_ids: Vec<String> = body["results"]
+            .as_array()
+            .map(|r| {
+                r.iter()
+                    .filter(|x| x["status"] == "conflict")
+                    .map(|x| x["id"].as_str().unwrap_or("").to_string())
+                    .collect()
+            })
+            .unwrap_or_default();
         state
             .db
             .write(|c| {
                 for op in &ops {
                     let id = op["id"].as_str().unwrap_or("");
+                    // A conflicted op leaves the queue but the row stays dirty
+                    // until the user picks a winner — pull must not overwrite it.
+                    if conflict_ids.iter().any(|x| x == id) {
+                        c.execute(
+                            "DELETE FROM outbox WHERE op_id = ?1",
+                            [op["opId"].as_str().unwrap_or("")],
+                        )?;
+                        continue;
+                    }
                     if !ok_ids.iter().any(|x| x == id) {
                         continue;
                     }
@@ -642,7 +660,24 @@ pub async fn conflict_resolve(
     }
     state
         .db
-        .with_conn(|c| {
+        .write(|c| {
+            let (entity, entity_id, server): (String, String, String) = c.query_row(
+                "SELECT entity, entity_id, server_payload FROM conflicts WHERE id=?1",
+                [conflict_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )?;
+            if let Some(e) = finance_storage::Entity::parse(&entity) {
+                if winner == "server" {
+                    let row: Value = serde_json::from_str(&server)?;
+                    if row.is_object() && row.get("id").is_some() {
+                        dbm::write_row(c, e.table(), &row)?;
+                    }
+                }
+                c.execute(
+                    &format!("UPDATE {} SET local_dirty=0 WHERE id=?1", e.table()),
+                    [&entity_id],
+                )?;
+            }
             c.execute(
                 "UPDATE conflicts SET resolved_at=?1 WHERE id=?2",
                 finance_storage::rusqlite::params![dbm::now_iso(), conflict_id],
