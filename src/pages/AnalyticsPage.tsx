@@ -9,11 +9,13 @@ import { api } from "@/lib/api";
 import { formatMinor, todayIso } from "@/lib/money";
 import { ownerOf } from "@/lib/owners";
 import { useDisplayMoney, useEnsureRates } from "@/lib/useDisplayMoney";
+import { qk } from "@/lib/queryKeys";
+import { useAccounts, useCategories, useUsers } from "@/lib/queries";
 import { DonutChart, type DonutItem } from "@/components/ui/donut-chart";
 import { CategoryTxDialog, type CategoryPeek } from "@/components/transactions/CategoryTxDialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import type { AccountRow, CategoryRow, TransactionRow, UserRow } from "@/lib/types";
+import type { TransactionRow } from "@/lib/types";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
 
@@ -71,20 +73,20 @@ export function AnalyticsPage() {
   const m6from = monthsBack(6);
 
   const cur = useQuery({
-    queryKey: ["tx", "analytics", r.from, r.to],
+    queryKey: qk.txList("analytics", r.from, r.to),
     queryFn: () => api.transactionList<TransactionRow>({ from: r.from, to: r.to, limit: 5000 }),
   });
   const prev = useQuery({
-    queryKey: ["tx", "analytics", pr.from, pr.to],
+    queryKey: qk.txList("analytics", pr.from, pr.to),
     queryFn: () => api.transactionList<TransactionRow>({ from: pr.from, to: pr.to, limit: 5000 }),
   });
   const m6 = useQuery({
-    queryKey: ["tx", "analytics-m6", m6from],
+    queryKey: qk.txList("analytics-m6", m6from),
     queryFn: () => api.transactionList<TransactionRow>({ from: m6from, to: todayIso(), limit: 20000 }),
   });
-  const users = useQuery({ queryKey: ["users"], queryFn: () => api.entityList<UserRow>("users") });
-  const categories = useQuery({ queryKey: ["categories"], queryFn: () => api.entityList<CategoryRow>("categories") });
-  const accounts = useQuery({ queryKey: ["accounts"], queryFn: () => api.entityList<AccountRow>("accounts") });
+  const users = useUsers();
+  const categories = useCategories();
+  const accounts = useAccounts();
   const { displayCurrency, toDisplay } = useDisplayMoney();
   useEnsureRates([displayCurrency, ...(accounts.data ?? []).map((a) => a.currency)]);
 

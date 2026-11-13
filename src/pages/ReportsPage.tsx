@@ -5,7 +5,9 @@ import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { formatMinor, todayIso } from "@/lib/money";
-import type { CategoryRow, TransactionRow } from "@/lib/types";
+import { qk } from "@/lib/queryKeys";
+import { useCategories } from "@/lib/queries";
+import type { TransactionRow } from "@/lib/types";
 import { Input } from "@/components/ui/input";
 
 function firstOfMonth() {
@@ -21,9 +23,9 @@ export function ReportsPage() {
   const [from, setFrom] = useState(firstOfMonth());
   const [to, setTo] = useState(todayIso());
 
-  const categories = useQuery({ queryKey: ["categories"], queryFn: () => api.entityList<CategoryRow>("categories") });
+  const categories = useCategories();
   const tx = useQuery({
-    queryKey: ["tx", "report", from, to],
+    queryKey: qk.txList("report", from, to),
     queryFn: () => api.transactionList<TransactionRow>({ from, to, limit: 10000 }),
   });
 
@@ -45,10 +47,21 @@ export function ReportsPage() {
       </head><body><h1>${t("app.title")} — ${t("nav.reports")} ${esc(from)} — ${esc(to)}</h1>
       <table><tr><th>${t("ui.period.day")}</th><th>${t("ui.amount")}</th><th>${t("ui.category")}</th><th>${t("ui.comment")}</th><th>${t("ui.field.createdByUserId")}</th><th>${t("ui.whoseOp")}</th></tr>${rows}</table>
       </body></html>`;
+    const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
     const iframe = document.createElement("iframe");
     iframe.style.display = "none";
-    iframe.src = URL.createObjectURL(new Blob([html], { type: "text/html" }));
-    iframe.onload = () => iframe.contentWindow?.print();
+    const cleanup = () => {
+      URL.revokeObjectURL(url);
+      iframe.remove();
+    };
+    iframe.onload = () => {
+      const w = iframe.contentWindow;
+      if (!w) return cleanup();
+      w.onafterprint = cleanup;
+      w.print();
+      window.setTimeout(cleanup, 60_000);
+    };
+    iframe.src = url;
     document.body.appendChild(iframe);
   };
 
