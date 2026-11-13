@@ -124,6 +124,16 @@ pub async fn set_current_user(state: State<'_, AppState>, user_id: String) -> Re
 
 // ---------- settings ----------
 
+/// Settings only the backend may write (sync state, onboarding, PIN, bot link).
+const PROTECTED_SETTINGS: &[&str] = &[
+    "pin_hash", "pin_salt", "current_user_id", "onboarding_done", "last_seq",
+    "host_url", "device_token", "auto_backup_month", "tg_bot_username", "tg_enabled",
+];
+
+pub(crate) fn setting_writable(key: &str) -> bool {
+    !key.is_empty() && key.len() <= 64 && !PROTECTED_SETTINGS.contains(&key)
+}
+
 #[tauri::command]
 pub async fn get_settings(state: State<'_, AppState>) -> Result<Value, String> {
     state.read(repos::settings_all).await
@@ -135,6 +145,9 @@ pub async fn set_setting(
     key: String,
     value: String,
 ) -> Result<(), String> {
+    if !setting_writable(&key) {
+        return Err("setting is read-only".into());
+    }
     state
         .write(move |c, _db, _a| repos::setting_set(c, &key, &value))
         .await
@@ -747,6 +760,17 @@ mod tests {
         ] {
             assert!(!valid_attachment_hash(bad), "{bad}");
         }
+    }
+
+    #[test]
+    fn protected_settings_rejected() {
+        for key in ["theme", "language", "display_currency", "bot_daily_enabled"] {
+            assert!(setting_writable(key), "{key}");
+        }
+        for key in PROTECTED_SETTINGS {
+            assert!(!setting_writable(key), "{key}");
+        }
+        assert!(!setting_writable(""));
     }
 
     #[test]
