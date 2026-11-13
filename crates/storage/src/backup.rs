@@ -12,6 +12,23 @@ pub const DB_FILE: &str = "finance.db";
 pub const RESTORE_FILE: &str = "finance.db.restore";
 pub const BACKUP_DIR: &str = "backups";
 
+/// Encrypted copy of the live db in `<data_dir>/backups` before a schema
+/// upgrade: `pre-migrate-v{from}-{timestamp}.db`.
+pub fn pre_migration_snapshot(
+    conn: &Connection,
+    data_dir: &Path,
+    from: i64,
+) -> Result<PathBuf, Error> {
+    let dir = data_dir.join(BACKUP_DIR);
+    std::fs::create_dir_all(&dir)?;
+    let dest = dir.join(format!(
+        "pre-migrate-v{from}-{}.db",
+        chrono::Utc::now().format("%Y%m%d-%H%M%S")
+    ));
+    conn.execute("VACUUM INTO ?1", [dest.to_string_lossy().as_ref()])?;
+    Ok(dest)
+}
+
 /// Backup file names in `<data_dir>/backups`, newest first by modified time.
 /// Only "*.db" files — the -wal/-shm sidecars of a copied db are not backups.
 pub fn list(data_dir: &Path) -> Vec<String> {

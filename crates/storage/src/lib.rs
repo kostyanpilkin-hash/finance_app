@@ -40,6 +40,14 @@ impl db::Db {
         }
         let conn = Connection::open(path)?;
         apply_key(&conn, key)?;
+        let stored = migrations::stored_version(&conn);
+        if stored > 0 && stored < migrations::SCHEMA_VERSION {
+            backup::pre_migration_snapshot(
+                &conn,
+                path.parent().unwrap_or(Path::new(".")),
+                stored,
+            )?;
+        }
         let read_conn = Connection::open(path)?;
         apply_key(&read_conn, key)?;
         Self::init_conn(
@@ -747,6 +755,24 @@ mod tests {
             .unwrap();
         assert!(has_a);
         drop(d2);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn pre_migration_snapshot_is_encrypted() {
+        let dir = std::env::temp_dir().join(format!("fin-{}", new_id()));
+        let key = [6u8; 32];
+        let d = db::Db::open(&dir.join("finance.db"), Some(&key)).unwrap();
+        let snap = d
+            .with_conn(|c| backup::pre_migration_snapshot(c, &dir, 5))
+            .unwrap();
+        drop(d);
+        let head = std::fs::read(&snap).unwrap();
+        assert_ne!(&head[..16], b"SQLite format 3\0");
+        assert!(db::Db::open(&snap, Some(&key)).is_ok());
+        assert!(backup::list(&dir)
+            .iter()
+            .any(|n| n.starts_with("pre-migrate-v5-")));
         std::fs::remove_dir_all(&dir).ok();
     }
 
