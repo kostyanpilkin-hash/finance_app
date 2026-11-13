@@ -139,6 +139,19 @@ impl db::Db {
         f(&conn)
     }
 
+    /// Serialized write inside one IMMEDIATE transaction: commits on Ok,
+    /// rolls back on Err. Never open another transaction inside `f`.
+    pub fn write<T>(
+        &self,
+        f: impl FnOnce(&rusqlite::Transaction<'_>) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        let mut conn = self.conn.lock().map_err(|e| Error::Other(e.to_string()))?;
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let out = f(&tx)?;
+        tx.commit()?;
+        Ok(out)
+    }
+
     pub fn set_mode(&self, mode: &str) -> Result<(), Error> {
         self.with_conn(|c| {
             c.execute(
@@ -735,6 +748,21 @@ mod tests {
         assert!(has_a);
         drop(d2);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn write_rolls_back_on_error() {
+        let d = db();
+        let r: Result<(), Error> = d.write(|c| {
+            repos::setting_set(c, "probe", "1")?;
+            Err(Error::Invalid("boom".into()))
+        });
+        assert!(r.is_err());
+        let v = d.with_read_conn(|c| repos::setting_get(c, "probe")).unwrap();
+        assert_eq!(v, None);
+        d.write(|c| repos::setting_set(c, "probe", "2")).unwrap();
+        let v = d.with_read_conn(|c| repos::setting_get(c, "probe")).unwrap();
+        assert_eq!(v.as_deref(), Some("2"));
     }
 
     #[test]
