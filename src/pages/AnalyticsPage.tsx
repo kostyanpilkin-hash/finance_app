@@ -7,6 +7,7 @@ import {
 } from "recharts";
 import { api } from "@/lib/api";
 import { formatMinor, todayIso } from "@/lib/money";
+import { ownerOf } from "@/lib/owners";
 import { useDisplayMoney, useEnsureRates } from "@/lib/useDisplayMoney";
 import { DonutChart, type DonutItem } from "@/components/ui/donut-chart";
 import { CategoryTxDialog, type CategoryPeek } from "@/components/transactions/CategoryTxDialog";
@@ -183,8 +184,7 @@ export function AnalyticsPage() {
       for (const { x, v } of conv.cur) {
         if (x.kind !== k) continue;
         // Entries are attributed to their owner (spent_by), author as fallback.
-        const id = x.spentByUserId ?? x.createdByUserId ?? "";
-        const who = x.suName ?? x.uName ?? nameOf.get(id) ?? "";
+        const { id, name: who } = ownerOf(x, (i) => nameOf.get(i));
         const g = byUser.get(id) ?? { v: 0, name: who };
         g.v += v;
         byUser.set(id, g);

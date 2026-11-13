@@ -48,7 +48,7 @@ export interface TransactionRow {
   origAmountMinor?: number | null;
   origCurrency?: string | null;
   createdByUserId?: string | null;
-  /** User who made the expense (expenses only; falls back to the author). */
+  /** User the entry belongs to (every kind; falls back to the author). */
   spentByUserId?: string | null;
   source: string;
   aName?: string;

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { formatMinor, isoOf, todayIso } from "@/lib/money";
+import { ownerOf } from "@/lib/owners";
 import { useDisplayMoney, useEnsureRates } from "@/lib/useDisplayMoney";
 import { DonutChart, type DonutItem } from "@/components/ui/donut-chart";
 import { CategoryTxDialog, type CategoryPeek } from "@/components/transactions/CategoryTxDialog";
@@ -106,8 +107,7 @@ export function DashboardPage() {
     for (const { x, v } of converted) {
       if (x.kind !== kind) continue;
       // Entries are attributed to their owner (spent_by), author as fallback.
-      const id = x.spentByUserId ?? x.createdByUserId ?? "";
-      const who = x.suName ?? x.uName ?? userName.get(id) ?? "";
+      const { id, name: who } = ownerOf(x, (i) => userName.get(i));
       const g = byUser.get(id) ?? { value: 0, name: who };
       g.value += v;
       byUser.set(id, g);

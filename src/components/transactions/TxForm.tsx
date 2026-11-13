@@ -7,6 +7,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { convertMinorLocal, formatMinor, nowLocalIso, parseMinor, todayIso, type StoredRate } from "@/lib/money";
+import { ownerLabelKey } from "@/lib/owners";
 import { useEnsureRates } from "@/lib/useDisplayMoney";
 import type { AccountRow, CategoryRow, TransactionRow, UserRow } from "@/lib/types";
 
@@ -56,9 +57,7 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
   // Every entry carries an owner: on edit it is the saved (or author) user, on
   // create it defaults to this device's current user.
   const spenderId = editing?.spentByUserId ?? editing?.createdByUserId ?? settings.data?.["current_user_id"] ?? "";
-  const spenderLabel = editing?.kind === "income" ? t("ui.receivedBy")
-    : editing?.kind === "transfer" ? t("ui.whoseOp")
-    : t("ui.spentBy");
+  const spenderLabel = t(ownerLabelKey(editing?.kind ?? "expense"));
   const accCurrency = (accounts.data ?? []).find((a) => a.id === editing?.accountId)?.currency;
   const foreign = editing?.kind !== "transfer" && !!editing?.origCurrency && editing.origCurrency !== accCurrency;
   const entryCurrencies = [...new Set([accCurrency, ...ENTRY_CURRENCIES].filter(Boolean) as string[])];

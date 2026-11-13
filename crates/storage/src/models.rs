@@ -177,7 +177,7 @@ pub struct Transaction {
     pub to_amount_minor: Option<i64>,
     pub comment: String,
     pub created_by_user_id: Option<String>,
-    /// Whose expense this is (kind=expense); NULL elsewhere. Analytics groups by it.
+    /// Whose entry this is (every kind); NULL pre-v6. Analytics groups by it.
     pub spent_by_user_id: Option<String>,
     pub source: String,
     pub device_id: Option<String>,

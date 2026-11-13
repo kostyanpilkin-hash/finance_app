@@ -341,7 +341,7 @@ pub struct TransactionInput {
     pub comment: String,
     #[serde(default)]
     pub created_by_user_id: Option<String>,
-    /// Whose expense (expense only; falls back to the author).
+    /// Whose entry (every kind; falls back to the author).
     #[serde(default)]
     pub spent_by_user_id: Option<String>,
     #[serde(default)]

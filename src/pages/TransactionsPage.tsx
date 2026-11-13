@@ -12,6 +12,7 @@ import { toast } from "@/stores/toast";
 import { useDebounced } from "@/lib/useDebounced";
 import { cn } from "@/lib/utils";
 import { formatMinor, nowLocalIso, todayIso } from "@/lib/money";
+import { ownerLabelKey } from "@/lib/owners";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { AccountRow, CategoryRow, TransactionRow } from "@/lib/types";
 import { Input } from "@/components/ui/input";
@@ -248,7 +249,7 @@ export function TransactionsPage() {
                         </div>
                         <div className="text-xs text-muted-foreground">{t("ui.entered")}: {x.uName || "—"}</div>
                         <div className="text-xs text-muted-foreground">
-                          {x.kind === "income" ? t("ui.receivedBy") : x.kind === "transfer" ? t("ui.whoseOp") : t("ui.spentBy")}: {x.suName || x.uName || "—"}
+                          {t(ownerLabelKey(x.kind))}: {x.suName || x.uName || "—"}
                         </div>
                       </div>
                       <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">

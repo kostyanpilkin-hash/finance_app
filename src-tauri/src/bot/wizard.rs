@@ -9,7 +9,7 @@ use serde::Serialize;
 /// Bump to resend the persistent reply keyboard to every chat.
 const KEYBOARD_VERSION: u32 = 1;
 const PAGE: usize = 10;
-const STEPS: i64 = 9;
+const STEPS: i64 = 10;
 /// Currencies offered at the currency step (the account currency always comes first).
 const ENTRY_CURRENCIES: [&str; 4] = ["BYN", "USD", "EUR", "RUB"];
 
@@ -246,6 +246,15 @@ fn user_name(state: &AppState, id: Option<&str>) -> String {
         .unwrap_or_default()
 }
 
+/// Text key for the owner label by entry kind: spent / received / whose.
+fn whose_key(kind: &str) -> &'static str {
+    match kind {
+        "income" => "received_by",
+        "transfer" => "whose_op",
+        _ => "spent_by",
+    }
+}
+
 /// Category ids used most often for this kind during the last 90 days.
 fn favourites(state: &AppState, kind: &str) -> Result<Vec<String>, String> {
     let since = (report::today() - chrono::Duration::days(90)).to_string();
@@ -479,14 +488,13 @@ fn entry_lines(state: &AppState, d: &Draft, lang: &str) -> Result<String, String
         lines.push(format!("{}: {}", tr(lang, "category"), escape(&name)));
     }
     {
-        let whose_key = match d.kind.as_str() {
-            "income" => "received_by",
-            "transfer" => "whose_op",
-            _ => "spent_by",
-        };
         let name = user_name(state, d.spender.as_deref());
         let name = if name.is_empty() { "—".into() } else { name };
-        lines.push(format!("{}: {}", tr(lang, whose_key), escape(&name)));
+        lines.push(format!(
+            "{}: {}",
+            tr(lang, whose_key(&d.kind)),
+            escape(&name)
+        ));
     }
     if d.dated {
         lines.push(format!(
@@ -599,11 +607,7 @@ fn tx_details(state: &AppState, id: &str, lang: &str) -> Result<Option<String>, 
         &spender
     };
     if !spender.is_empty() {
-        let whose_key = match row["kind"].as_str().unwrap_or("") {
-            "income" => "received_by",
-            "transfer" => "whose_op",
-            _ => "spent_by",
-        };
+        let whose_key = whose_key(row["kind"].as_str().unwrap_or(""));
         s.push_str(&format!("\n{}: {}", tr(lang, whose_key), escape(spender)));
     }
     let source = match row["source"].as_str().unwrap_or("") {
@@ -837,7 +841,7 @@ fn view(state: &AppState, d: &Draft, ctx: &Ctx) -> Result<(String, Value), Strin
         }
         _ => {
             let n = step_number(d);
-            let steps = STEPS + i64::from(d.kind == "expense");
+            let steps = STEPS;
             let lines = entry_lines(state, d, l)?;
             text.push_str(&format!(
                 "<b>{}{}</b>\n{} {n}/{steps}\n{}{}\n\n",
@@ -990,11 +994,7 @@ fn view(state: &AppState, d: &Draft, ctx: &Ctx) -> Result<(String, Value), Strin
                     ]);
                     keys.push(vec![b(choice, "edit:choice"), b("date", "edit:date")]);
                     keys.push(vec![b("time", "edit:time"), b("comment", "edit:comment")]);
-                    let whose_key = match d.kind.as_str() {
-                        "income" => "received_by",
-                        "transfer" => "whose_op",
-                        _ => "spent_by",
-                    };
+                    let whose_key = whose_key(&d.kind);
                     if d.kind == "transfer" {
                         keys.push(vec![b(whose_key, "edit:spender"), b("photo", "edit:photo")]);
                     } else {
