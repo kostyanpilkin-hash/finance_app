@@ -111,6 +111,24 @@ pub fn diff_json(before: &Value, after: &Value) -> Value {
     Value::Array(changes)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    Host,
+    Client,
+}
+
+impl Mode {
+    pub fn parse(s: &str) -> Self {
+        if s == "client" { Mode::Client } else { Mode::Host }
+    }
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Mode::Host => "host",
+            Mode::Client => "client",
+        }
+    }
+}
+
 pub struct Db {
     /// Write connection: every mutation (and its journal/outbox side effects)
     /// serializes on this mutex.
@@ -139,6 +157,16 @@ impl Db {
             instance_id: self.instance_id.clone(),
             attachments_dir: self.attachments_dir.clone(),
         }
+    }
+
+    pub fn mode(&self) -> Mode {
+        Mode::parse(&self.mode)
+    }
+    pub fn is_host(&self) -> bool {
+        self.mode() == Mode::Host
+    }
+    pub fn is_client(&self) -> bool {
+        self.mode() == Mode::Client
     }
 }
 
@@ -237,7 +265,7 @@ pub fn apply_change(
 ) -> Result<ApplyResult, Error> {
     let table = entity.table();
     let before = row_json(ctx.conn, table, id)?;
-    let dirty = ctx.db.mode == "client";
+    let dirty = ctx.db.is_client();
     let prep = |mut row: Value, id: &str, extra: &[(&str, Value)]| -> Value {
         let map = row.as_object_mut().unwrap();
         map.insert("id".into(), json!(id));
@@ -372,7 +400,7 @@ pub fn record_audit(
     let entry_id = new_id();
     // Audit rows are replicated too, so on the host they get their own seq
     // (separate from the entity change seq recorded in record_sync_side).
-    let seq = if ctx.db.mode == "host" {
+    let seq = if ctx.db.is_host() {
         ctx.conn
             .prepare_cached(
                 "INSERT INTO sync_log (entity, entity_id, version, op, ts) VALUES (?1,?2,1,'audit',?3) RETURNING seq",
@@ -405,7 +433,7 @@ pub fn record_audit(
             now,
             ctx.db.device_id,
             seq,
-            if ctx.db.mode == "client" { 1i64 } else { 0i64 },
+            if ctx.db.is_client() { 1i64 } else { 0i64 },
         ],
     )?;
     Ok(())
@@ -418,7 +446,7 @@ fn record_sync_side(
     version: i64,
     op: Op,
 ) -> Result<(), Error> {
-    if ctx.db.mode == "host" {
+    if ctx.db.is_host() {
         let op_s = match op {
             Op::Upsert => "upsert",
             Op::Delete => "delete",
