@@ -27,6 +27,14 @@
 - Экраны «Аналитика» и «Главная» больше не тянут до 20 000 операций в браузер — диаграммы и итоги берут готовые суммы из команд `analytics_summary`/`analytics_monthly`.
 - Бот для `/summary` и донат-диаграммы использует тот же `analytics::summary` — цифры приложения и бота теперь совпадают по построению.
 
+### Внутренняя реструктуризация
+- Единый модуль секретов `keystore.rs` — единственный код, обращающийся к системному хранилищу ОС (ключ БД, токен бота, токены устройств); совместимость с уже записанными ключами сохранена.
+- Шестизначные коды привязки генерируются `secrets::numeric_code` — равномерные цифры из OS CSPRNG (UUID v4 + rejection sampling) вместо усечения случайного числа.
+- Единый журнал `applog`: `startup.log`, `bot.log`, `sync.log` в `<appdata>/logs` с ротацией 1 МБ; `eprintln!` из кода синка убраны.
+- Режим БД типизирован: `Mode::{Host, Client}` вместо строковых сравнений; `actor_on` живёт в `state.rs`, команды используют `state.read`/`state.write` вместо повторяющегося boilerplate.
+- Служебные ключи `settings` защищены: `set_setting` отклоняет запись `pin_hash`, `pin_salt`, `current_user_id`, `onboarding_done`, `last_seq`, `host_url`, `device_token`, `auto_backup_month`, `tg_bot_username`, `tg_enabled` — ими управляет только бэкенд.
+- Настройки разбиты на секции: `SettingsPage.tsx` (~640 строк) превратился в композицию из `src/pages/settings/` — `Section`, `useLocalSettings`, `RatesSection`, `BotSection`, `SyncSection`, `SecuritySection`.
+
 ## 0.1.10 — 2026-11-13
 
 ### «Кто потратил» (схема v5)
