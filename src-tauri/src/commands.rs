@@ -65,7 +65,7 @@ pub async fn onboarding_status(state: State<'_, AppState>) -> Result<Value, Stri
                 "done": done,
                 "users": users,
                 "dbExisted": db_existed,
-                "mode": db.mode,
+                "mode": db.mode().as_str(),
             }))
         })
         .map_err(|e| e.to_string())

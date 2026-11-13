@@ -102,7 +102,7 @@ pub(crate) fn hub<R: tauri::Runtime>(app: &AppHandle<R>) -> Option<Arc<finance_a
 /// interface list every 30 s so network changes pick up/drop listeners.
 pub fn start_host(app: &AppHandle) {
     let state = app.state::<AppState>();
-    if state.db.mode != "host" {
+    if !state.db.is_host() {
         return;
     }
     announce_mdns(&state.db.instance_id);
@@ -212,7 +212,7 @@ pub fn start_client(app: AppHandle) {
         let mut backoff = Duration::from_secs(5);
         loop {
             let state = app.state::<AppState>();
-            if state.db.mode != "client" {
+            if !state.db.is_client() {
                 return;
             }
             match sync_once(&state).await {
@@ -707,7 +707,7 @@ pub fn sync_status(db: &dbm::Db) -> Value {
         let pending: i64 = c.query_row("SELECT COUNT(*) FROM outbox", [], |r| r.get(0))?;
         let devices: i64 = c.query_row("SELECT COUNT(*) FROM devices WHERE revoked_at IS NULL", [], |r| r.get(0)).unwrap_or(0);
         let last_error = LAST_ERROR.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        Ok(json!({"mode": db.mode, "hostUrl": host, "lastSeq": seq, "pendingOps": pending, "pairedDevices": devices, "conflicts": unresolved, "lastError": last_error}))
+        Ok(json!({"mode": db.mode().as_str(), "hostUrl": host, "lastSeq": seq, "pendingOps": pending, "pairedDevices": devices, "conflicts": unresolved, "lastError": last_error}))
     }).unwrap_or(json!({}))
 }
 
