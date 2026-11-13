@@ -2,10 +2,11 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { qk } from "@/lib/queryKeys";
+import { useAccounts } from "@/lib/queries";
 import { Button } from "@/components/ui/button";
 import { TxForm } from "@/components/transactions/TxForm";
 import { formatMinor, parseMinor } from "@/lib/money";
-import type { AccountRow } from "@/lib/types";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Field } from "@/components/ui/field";
@@ -20,16 +21,16 @@ interface GoalRow {
 export function GoalsPage() {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const list = useQuery({ queryKey: ["goals"], queryFn: () => api.entityList<GoalRow>("goals", true) });
-  const accounts = useQuery({ queryKey: ["accounts"], queryFn: () => api.entityList<AccountRow>("accounts") });
+  const list = useQuery({ queryKey: qk.entity("goals", true), queryFn: () => api.entityList<GoalRow>("goals", true) });
+  const accounts = useAccounts();
   const [editing, setEditing] = useState<Partial<GoalRow> | null>(null);
   const [depositing, setDepositing] = useState<GoalRow | null>(null);
   const [targetStr, setTargetStr] = useState("");
   const [currentStr, setCurrentStr] = useState("");
 
   const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ["goals"] });
-    qc.invalidateQueries({ queryKey: ["accounts"] });
+    qc.invalidateQueries({ queryKey: qk.entityAll("goals") });
+    qc.invalidateQueries({ queryKey: qk.entityAll("accounts") });
   };
   const save = useMutation({
     mutationFn: (g: Record<string, unknown>) => api.goalUpsert(g),

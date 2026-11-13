@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { qk } from "@/lib/queryKeys";
+import { useCategories } from "@/lib/queries";
 import { Button } from "@/components/ui/button";
 import { CategoryIcon } from "@/components/ui/category-icon";
 import { CATEGORY_ICONS, NO_ICON } from "@/lib/categoryIcons";
@@ -16,11 +18,11 @@ export function CategoriesPage() {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const [tab, setTab] = useState<"expense" | "income">("expense");
-  const cats = useQuery({ queryKey: ["categories"], queryFn: () => api.entityList<CategoryRow>("categories", true) });
+  const cats = useCategories(true);
   const [editing, setEditing] = useState<Partial<CategoryRow> | null>(null);
   const [moveTo, setMoveTo] = useState<Record<string, string>>({});
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["categories"] });
+  const invalidate = () => qc.invalidateQueries({ queryKey: qk.entityAll("categories") });
   const save = useMutation({
     mutationFn: (c: Record<string, unknown>) => api.categoryUpsert(c),
     onSuccess: () => { invalidate(); setEditing(null); },

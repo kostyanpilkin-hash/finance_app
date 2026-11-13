@@ -2,10 +2,11 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { qk, invalidateMoney } from "@/lib/queryKeys";
+import { useAccounts, useCategories } from "@/lib/queries";
 import { Button } from "@/components/ui/button";
 import { TxForm } from "@/components/transactions/TxForm";
 import { formatMinor, parseMinor, nowLocalIso } from "@/lib/money";
-import type { AccountRow, CategoryRow } from "@/lib/types";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Field } from "@/components/ui/field";
@@ -19,15 +20,15 @@ interface ReminderRow {
 export function RemindersPage() {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const list = useQuery({ queryKey: ["reminders"], queryFn: () => api.entityList<ReminderRow>("reminders", true) });
-  const due = useQuery({ queryKey: ["reminders-due"], queryFn: () => api.remindersDue<ReminderRow>(), refetchInterval: 60000 });
-  const accounts = useQuery({ queryKey: ["accounts"], queryFn: () => api.entityList<AccountRow>("accounts") });
-  const categories = useQuery({ queryKey: ["categories"], queryFn: () => api.entityList<CategoryRow>("categories") });
+  const list = useQuery({ queryKey: qk.entity("reminders", true), queryFn: () => api.entityList<ReminderRow>("reminders", true) });
+  const due = useQuery({ queryKey: qk.remindersDue, queryFn: () => api.remindersDue<ReminderRow>(), refetchInterval: 60000 });
+  const accounts = useAccounts();
+  const categories = useCategories();
   const [editing, setEditing] = useState<Partial<ReminderRow> | null>(null);
   const [paying, setPaying] = useState<ReminderRow | null>(null);
   const [amountStr, setAmountStr] = useState("");
 
-  const invalidate = () => { qc.invalidateQueries({ queryKey: ["reminders"] }); qc.invalidateQueries({ queryKey: ["reminders-due"] }); };
+  const invalidate = () => { qc.invalidateQueries({ queryKey: qk.entityAll("reminders") }); qc.invalidateQueries({ queryKey: qk.remindersDue }); };
   const save = useMutation({
     mutationFn: (r: Record<string, unknown>) => api.reminderUpsert(r),
     onSuccess: () => { invalidate(); setEditing(null); setAmountStr(""); },
@@ -35,7 +36,7 @@ export function RemindersPage() {
   const resolve = useMutation({
     mutationFn: ({ id, status, tx }: { id: string; status: string; tx?: Record<string, unknown> }) =>
       api.reminderResolve(id, status, tx),
-    onSuccess: invalidate,
+    onSuccess: () => { invalidate(); invalidateMoney(qc); },
   });
   const del = useMutation({ mutationFn: (id: string) => api.entityDelete("reminders", id), onSuccess: invalidate });
 
