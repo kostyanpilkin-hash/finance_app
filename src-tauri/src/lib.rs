@@ -1,3 +1,4 @@
+mod applog;
 mod blocking;
 mod bot;
 mod commands;
@@ -92,6 +93,7 @@ pub fn run() {
             commands::unlock_db,
         ])
         .setup(|app| {
+            applog::init(app.handle());
             let state = match state::init_db(app) {
                 Ok(s) => s,
                 Err(e) if e == "db_locked" => {
@@ -106,22 +108,7 @@ pub fn run() {
                     // Corrupt db / failed migration: keep the app alive so the
                     // UI can show the error screen (backup restore etc.) and
                     // log the cause for support. Never log secrets.
-                    if let Ok(dir) = app.path().app_data_dir() {
-                        let logs = dir.join("logs");
-                        let _ = std::fs::create_dir_all(&logs);
-                        if let Ok(mut f) = std::fs::OpenOptions::new()
-                            .create(true)
-                            .append(true)
-                            .open(logs.join("startup.log"))
-                        {
-                            use std::io::Write;
-                            let _ = writeln!(
-                                f,
-                                "{} {e}",
-                                chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
-                            );
-                        }
-                    }
+                    applog::append("startup.log", &e);
                     app.manage(state::StartupError(e));
                     tray::create(app.handle())?;
                     show_main_window(app.handle());

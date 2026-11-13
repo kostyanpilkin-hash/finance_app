@@ -1,15 +1,12 @@
 //! Telegram bot (host-side): pairing by code, card-based wizard, summaries,
 //! scheduled notifications, status reporting and an error log.
 
-use std::io::Write as _;
-use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tauri::AppHandle;
-use tauri::Manager;
+use tauri::{AppHandle, Manager};
 
 use finance_storage::db::now_iso;
 use finance_storage::{models::Source, repos, Actor, Entity};
@@ -38,34 +35,9 @@ pub fn delete_token() {
 
 // ---------- error log & status ----------
 
-static LOG_DIR: OnceLock<PathBuf> = OnceLock::new();
-
-fn log_path() -> Option<PathBuf> {
-    LOG_DIR.get().map(|d| d.join("bot.log"))
-}
-
 /// Appends a line to `<appdata>/logs/bot.log` (rotated at 1 MB). Never pass secrets.
 fn log(message: &str) {
-    let Some(path) = log_path() else {
-        return;
-    };
-    if std::fs::metadata(&path)
-        .map(|m| m.len() > 1_000_000)
-        .unwrap_or(false)
-    {
-        let _ = std::fs::rename(&path, path.with_extension("log.1"));
-    }
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-    {
-        let _ = writeln!(
-            f,
-            "{} {message}",
-            chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
-        );
-    }
+    crate::applog::append("bot.log", message);
     let mut s = STATUS.lock().unwrap_or_else(|e| e.into_inner());
     s.last_error = Some(message.chars().take(300).collect());
     s.last_error_at = Some(now_iso());
@@ -398,11 +370,6 @@ async fn handle_update(app_state: &AppState, tg: &Tg, u: &TgUpdate) -> Result<()
 }
 
 pub fn start_polling(app: AppHandle) {
-    if let Ok(dir) = app.path().app_data_dir() {
-        let dir = dir.join("logs");
-        let _ = std::fs::create_dir_all(&dir);
-        let _ = LOG_DIR.set(dir);
-    }
     if RUNNING.swap(true, std::sync::atomic::Ordering::SeqCst) {
         return;
     }
@@ -514,7 +481,9 @@ pub fn tg_status(db: &finance_storage::db::Db) -> Value {
         .unwrap_or(json!({"enabled": false}));
     v["health"] = health.into();
     v["status"] = serde_json::to_value(status).unwrap_or_default();
-    v["logPath"] = log_path().map(|p| p.to_string_lossy().into_owned()).into();
+    v["logPath"] = crate::applog::path("bot.log")
+        .map(|p| p.to_string_lossy().into_owned())
+        .into();
     v
 }
 
