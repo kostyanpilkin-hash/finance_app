@@ -1,6 +1,7 @@
 //! Storage layer for Finance: encrypted SQLite, migrations, repositories,
 //! the audit log and (later) the host/client sync engine.
 
+pub mod analytics;
 pub mod backup;
 pub mod db;
 mod error;
@@ -1076,6 +1077,49 @@ mod tests {
             let mut all = vec![i1, i2, i3];
             all.sort();
             assert_eq!(multi, all);
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn analytics_summary_converts_groups() {
+        let d = db();
+        d.with_conn(|c| {
+            let a = actor(&d);
+            seed_categories(c, &d, &a)?;
+            let byn = repos::account_upsert(c, &d, &a, json!({"name":"Карта","kind":"card","currency":"BYN"}))?;
+            let usd = repos::account_upsert(c, &d, &a, json!({"name":"Вклад","kind":"savings","currency":"USD"}))?;
+            repos::rate_upsert(c, &d, "2026-11-01", "USD", 3_000_000, 1)?;
+            let exp_cat: String = c.query_row(
+                "SELECT id FROM categories WHERE kind='expense' AND key='groceries'", [], |r| r.get(0))?;
+            let inc_cat: String = c.query_row(
+                "SELECT id FROM categories WHERE kind='income' AND key='salary'", [], |r| r.get(0))?;
+            repos::transaction_upsert(c, &d, &a, json!({
+                "kind":"expense","occurredAt":"2026-11-05T10:00:00","accountId":byn["id"],
+                "amountMinor":1000,"categoryId":exp_cat}))?;
+            repos::transaction_upsert(c, &d, &a, json!({
+                "kind":"expense","occurredAt":"2026-11-06T10:00:00","accountId":usd["id"],
+                "amountMinor":100,"categoryId":exp_cat}))?;
+            repos::transaction_upsert(c, &d, &a, json!({
+                "kind":"income","occurredAt":"2026-11-07T10:00:00","accountId":byn["id"],
+                "amountMinor":500,"categoryId":inc_cat}))?;
+
+            let s = analytics::summary(c, "2026-11-01", "2026-11-30", "BYN")?;
+            assert_eq!(s.expense, 1300); // 10.00 BYN + 1.00 USD at 3.00
+            assert_eq!(s.income, 500);
+            assert_eq!(s.by_category[0].expense, 1300);
+            assert_eq!(s.by_day.len(), 3);
+            assert!(s.missing.is_empty());
+
+            // No PLN rate anywhere — nothing can be converted into it.
+            let s = analytics::summary(c, "2026-11-01", "2026-11-30", "PLN")?;
+            assert_eq!((s.income, s.expense), (0, 0));
+            assert!(s.missing.contains(&"BYN".to_string()));
+
+            let m = analytics::monthly(c, "2026-01-01", "2026-12-31", "BYN")?;
+            assert_eq!(m.len(), 1);
+            assert_eq!(m[0].key.as_deref(), Some("2026-11"));
             Ok(())
         })
         .unwrap();
