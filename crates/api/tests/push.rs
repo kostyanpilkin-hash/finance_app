@@ -184,6 +184,32 @@ async fn pull_pages_do_not_skip_changes() {
 }
 
 #[tokio::test]
+async fn repeated_conflicting_push_keeps_one_conflict() {
+    let (app, db) = app();
+    seed_device(&db);
+    let acc = seed_account(&db);
+    let body = json!({"ops": [{
+        "entity": "accounts", "id": acc["id"], "op": "upsert",
+        "baseVersion": 0, "payload": {"id": acc["id"], "name": "Local"},
+    }]});
+    for _ in 0..2 {
+        let (status, resp) = post_push(app.clone(), body.clone()).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(resp["results"][0]["status"], "conflict");
+    }
+    let n: i64 = db
+        .with_conn(|c| {
+            Ok(c.query_row(
+                "SELECT COUNT(*) FROM conflicts WHERE resolved_at IS NULL",
+                [],
+                |r| r.get(0),
+            )?)
+        })
+        .unwrap();
+    assert_eq!(n, 1);
+}
+
+#[tokio::test]
 async fn hello_reports_schema_version() {
     let (app, _db) = app();
     let resp = app

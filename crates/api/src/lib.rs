@@ -484,9 +484,15 @@ async fn push(
             let deleted_remotely = before.as_ref().and_then(|r| r["deletedAt"].as_str()).is_some();
             let is_delete = op.op == "delete";
             if !is_delete && base < cur_version && !deleted_remotely {
-                // Conflict: stash for client-side resolution.
-                let local = json!({"entity": op.entity, "id": op.id, "op": op.op, "payload": op.payload});
+                // Conflict: stash for client-side resolution, at most one
+                // unresolved row per (entity_id, device).
+                let local = json!({"entity": op.entity, "id": op.id, "op": op.op, "payload": op.payload, "deviceId": device_id});
                 let server = before.clone().unwrap_or(json!({}));
+                c.execute(
+                    "DELETE FROM conflicts WHERE entity_id = ?1 AND resolved_at IS NULL
+                     AND json_extract(local_payload, '$.deviceId') = ?2",
+                    finance_storage::rusqlite::params![op.id, device_id],
+                )?;
                 c.execute(
                     "INSERT INTO conflicts (id, entity, entity_id, local_payload, server_payload, created_at)
                      VALUES (?1,?2,?3,?4,?5,?6)",
@@ -580,9 +586,9 @@ async fn pull(
     let since = q.since.unwrap_or(0);
     let limit = q.limit.unwrap_or(2000);
     s.db.with_read_conn(|c| {
-        auth(c, &token)?;
         // Read snapshot: the whole page reflects one db state.
         let snap = c.unchecked_transaction()?;
+        let (device_id, _) = auth(&snap, &token)?;
         let mut st = snap.prepare(
             "SELECT s.seq, s.entity, s.entity_id, s.op FROM sync_log s WHERE s.seq > ?1 ORDER BY s.seq LIMIT ?2",
         )?;
@@ -595,9 +601,16 @@ async fn pull(
             let payload = dbm::row_json(&snap, &entity, &id)?;
             changes.push(json!({"seq": seq, "entity": entity, "id": id, "op": op, "row": payload}));
         }
-        let mut st2 = snap.prepare("SELECT id, entity, entity_id, local_payload, server_payload FROM conflicts WHERE resolved_at IS NULL")?;
+        // Conflicts are scoped to the requesting device; rows without a
+        // deviceId (pre-filter hosts) stay visible to everyone.
+        let mut st2 = snap.prepare(
+            "SELECT id, entity, entity_id, local_payload, server_payload FROM conflicts
+             WHERE resolved_at IS NULL
+               AND (json_extract(local_payload, '$.deviceId') IS NULL
+                    OR json_extract(local_payload, '$.deviceId') = ?1)",
+        )?;
         let conflicts: Vec<Value> = st2
-            .query_map([], |r| {
+            .query_map([&device_id], |r| {
                 Ok(json!({
                     "id": r.get::<_, String>(0)?, "entity": r.get::<_, String>(1)?, "entityId": r.get::<_, String>(2)?,
                     "local": r.get::<_, String>(3)?, "server": r.get::<_, String>(4)?
