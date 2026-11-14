@@ -10,6 +10,32 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: "0.2.0",
+    items: {
+      ru: [
+        "Фото чеков теперь видно в карточке операции и они синхронизируются между устройствами",
+        "Перевод между счетами в разных валютах спрашивает сумму зачисления и подсказывает курс",
+        "Новые выпадающие списки везде: цвета счетов, иконки категорий, поиск в один ряд",
+        "На Mac приложение больше не донимает паролем от связки ключей",
+        "Под капотом — большая работа над надёжностью синхронизации и бэкапов",
+      ],
+      be: [
+        "Фота чэкаў цяпер відаць у картцы аперацыі, і яны сінхранізуюцца паміж прыладамі",
+        "Пераклад паміж рахункамі ў розных валютах пытае суму залічэння і падказвае курс",
+        "Новыя выпадныя спісы ўсюды: колеры рахункаў, іконкі катэгорый, пошук у адзін рад",
+        "На Mac праграма больш не дакучае паролем ад звязкі ключоў",
+        "Пад капотам — вялікая праца над надзейнасцю сінхранізацыі і бэкапаў",
+      ],
+      en: [
+        "Receipt photos now show inside the transaction card and sync between devices",
+        "Cross-currency transfers ask for the credited amount and suggest the rate",
+        "New dropdowns everywhere: account colours, category icons, one-row filters",
+        "On macOS the app no longer nags for the keychain password",
+        "Under the hood — a big reliability overhaul of sync and backups",
+      ],
+    },
+  },
+  {
     version: "0.1.10",
     items: {
       ru: [
