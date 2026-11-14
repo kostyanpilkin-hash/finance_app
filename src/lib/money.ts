@@ -75,5 +75,7 @@ export function convertMinorLocal(minor: number, from: string, to: string, rates
   const f = rate(from);
   const t = rate(to);
   if (!f || !t) return null;
+  if (!Number.isFinite(f.rateBynScaled) || !Number.isFinite(f.scale) ||
+      !Number.isFinite(t.rateBynScaled) || !Number.isFinite(t.scale)) return null;
   return convertMinor(minor, { rate: f.rateBynScaled, scale: f.scale }, { rate: t.rateBynScaled, scale: t.scale });
 }

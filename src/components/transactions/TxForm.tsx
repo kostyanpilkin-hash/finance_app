@@ -20,7 +20,7 @@ const ENTRY_CURRENCIES = ["BYN", "USD", "EUR", "RUB"];
 const MAX_PHOTO_MB = 15;
 const MAX_PHOTO_BYTES = MAX_PHOTO_MB * 1024 * 1024;
 
-type Missing = "amount" | "account" | "toAccount" | "category";
+type Missing = "amount" | "account" | "toAccount" | "toAmount" | "category";
 
 /** Transaction create/edit form. `initial` seeds the state; `onDone(saved)` fires on save or cancel. */
 export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; onDone: (saved: boolean) => void }) {
@@ -30,6 +30,7 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoErr, setPhotoErr] = useState(false);
   const [accKey, setAccKey] = useState(0);
+  const [toKey, setToKey] = useState(0);
   const [tried, setTried] = useState(false);
 
   const accounts = useAccounts();
@@ -68,13 +69,20 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
       setEditing({ ...editing, origCurrency: cur, origAmountMinor: editing.origAmountMinor ?? editing.amountMinor, amountMinor: 0 });
     }
   };
+  const toAccCurrency = (accounts.data ?? []).find((a) => a.id === editing?.toAccountId)?.currency;
+  // A cross-currency transfer needs the credited amount in the destination currency.
+  const crossCurrency = editing?.kind === "transfer" && !!toAccCurrency && !!accCurrency && toAccCurrency !== accCurrency;
   const opDate = (editing?.occurredAt ?? "").slice(0, 10) || todayIso();
 
   // Lazily fetch NBRB rates the suggestion needs, then convert locally.
-  useEnsureRates([editing?.origCurrency, accCurrency]);
+  useEnsureRates([editing?.origCurrency, accCurrency, crossCurrency ? toAccCurrency : undefined]);
   const suggestion =
     foreign && editing?.origAmountMinor && editing?.origCurrency && accCurrency
       ? convertMinorLocal(editing.origAmountMinor, editing.origCurrency, accCurrency, rates.data ?? [])
+      : null;
+  const convSuggestion =
+    crossCurrency && editing?.amountMinor && accCurrency && toAccCurrency
+      ? convertMinorLocal(editing.amountMinor, accCurrency, toAccCurrency, rates.data ?? [])
       : null;
 
   // The amount the backend would persist (same rule as submit()).
@@ -89,12 +97,13 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
     if (!editing.accountId) missing.add("account");
     if (editing.kind === "transfer") {
       if (!editing.toAccountId || editing.toAccountId === editing.accountId) missing.add("toAccount");
+      if (crossCurrency && !(editing.toAmountMinor != null && editing.toAmountMinor > 0)) missing.add("toAmount");
     } else if (!editing.categoryId) {
       missing.add("category");
     }
   }
   const show = tried && missing.size > 0;
-  const firstMissing: Missing | undefined = show ? (["amount", "account", "category", "toAccount"] as const).find((k) => missing.has(k)) : undefined;
+  const firstMissing: Missing | undefined = show ? (["amount", "account", "category", "toAccount", "toAmount"] as const).find((k) => missing.has(k)) : undefined;
 
   const backendErr = (e: unknown): string => {
     const m = String(e instanceof Error ? e.message : e);
@@ -117,6 +126,7 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
       amountMinor: typeof amount === "number" ? amount : 0,
       origCurrency: foreign ? editing.origCurrency : null,
       origAmountMinor: foreign ? editing.origAmountMinor : null,
+      toAmountMinor: crossCurrency ? (editing.toAmountMinor ?? null) : null,
       spentByUserId: spenderId || null,
     });
   };
@@ -215,6 +225,23 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
               ]} />
           )}
         </Field>
+        {crossCurrency && (
+          <Field label={`${t("ui.field.toAmountMinor")} (${toAccCurrency})`} htmlFor="tx-to-amount">
+            <div className="flex flex-wrap items-center gap-2">
+              <Input key={`to-${accCurrency}-${toAccCurrency}-${toKey}`} id="tx-to-amount" className="w-36"
+                invalid={show && missing.has("toAmount")}
+                inputMode="decimal" placeholder="0,00"
+                defaultValue={editing?.toAmountMinor ? formatMinor(editing.toAmountMinor).replace(/[\u00A0\u202F]/g, "") : ""}
+                onChange={(e) => setEditing({ ...editing, toAmountMinor: parseMinor(e.target.value) ?? null })} />
+              {convSuggestion !== null && editing?.toAmountMinor !== convSuggestion && (
+                <Button type="button" size="sm" variant="outline"
+                  onClick={() => { setEditing({ ...editing, toAmountMinor: convSuggestion }); setToKey((k) => k + 1); }}>
+                  ≈ {formatMinor(convSuggestion, toAccCurrency)} · {t("ui.byRate")}
+                </Button>
+              )}
+            </div>
+          </Field>
+        )}
         <Field label={spenderLabel} htmlFor="tx-spent-by">
           <RichSelect id="tx-spent-by" value={spenderId}
             onChange={(v) => setEditing({ ...editing, spentByUserId: v })}

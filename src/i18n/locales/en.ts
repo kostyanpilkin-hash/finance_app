@@ -175,6 +175,7 @@ const en: Locale = {
     err: {
       amount: "Enter an amount greater than zero", account: "Choose an account",
       toAccount: "Choose the destination account", sameAccount: "A transfer needs a different destination account",
+      toAmount: "Enter the credited amount",
       category: "Choose a category", photoSize: "Photo is over {{mb}} MB — pick a smaller file",
       generic: "Couldn't save the transaction",
     },
