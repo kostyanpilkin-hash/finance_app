@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 import { Check, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -25,23 +26,34 @@ export interface RichSelectProps {
 
 /** Styled dropdown: a button that opens a card with rich items (icons, dots),
  *  Escape/backdrop close, arrow-key navigation. Same 40px field geometry as Input. */
+/** Long lists get a filter box: typing narrows options to matching labels. */
+const SEARCH_MIN_ITEMS = 8;
+
 export function RichSelect({
   value, onChange, items, placeholder, className, invalid, disabled, id, "aria-label": ariaLabel,
 }: RichSelectProps) {
   const [open, setOpen] = React.useState(false);
   const [active, setActive] = React.useState(-1);
+  const [query, setQuery] = React.useState("");
   const rootRef = React.useRef<HTMLDivElement>(null);
   const listRef = React.useRef<HTMLDivElement>(null);
+  const { t } = useTranslation();
 
   const selected = items.find((i) => i.value === value);
-  const enabledCount = React.useMemo(() => items.filter((i) => !i.disabled).length, [items]);
+  const canSearch = items.length > SEARCH_MIN_ITEMS;
+  const visible = React.useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q ? items.filter((i) => String(i.label).toLowerCase().includes(q)) : items;
+  }, [items, query]);
+  const enabledCount = React.useMemo(() => visible.filter((i) => !i.disabled).length, [visible]);
 
-  const close = () => { setOpen(false); setActive(-1); };
+  const close = () => { setOpen(false); setActive(-1); setQuery(""); };
   const toggle = () => {
     if (disabled) return;
     setOpen((v) => {
       const next = !v;
       if (next) {
+        setQuery("");
         const idx = items.findIndex((i) => i.value === value && !i.disabled);
         setActive(idx >= 0 ? idx : items.findIndex((i) => !i.disabled));
       }
@@ -52,9 +64,9 @@ export function RichSelect({
   const move = (dir: 1 | -1) => {
     if (enabledCount === 0) return;
     let i = active;
-    for (let n = 0; n < items.length; n++) {
-      i = (i + dir + items.length) % items.length;
-      if (!items[i].disabled) break;
+    for (let n = 0; n < visible.length; n++) {
+      i = (i + dir + visible.length) % visible.length;
+      if (!visible[i].disabled) break;
     }
     setActive(i);
     listRef.current?.children[i]?.scrollIntoView({ block: "nearest" });
@@ -70,8 +82,8 @@ export function RichSelect({
     if (!open) return;
     if (e.key === "ArrowDown") { e.preventDefault(); move(1); }
     else if (e.key === "ArrowUp") { e.preventDefault(); move(-1); }
-    else if ((e.key === "Enter" || e.key === " ") && active >= 0 && items[active]) {
-      e.preventDefault(); pick(items[active].value);
+    else if ((e.key === "Enter" || (e.key === " " && !query)) && active >= 0 && visible[active] && !visible[active].disabled) {
+      e.preventDefault(); pick(visible[active].value);
     } else if (e.key === "Tab") { close(); }
   };
 
@@ -113,15 +125,28 @@ export function RichSelect({
         <>
           <div className="fixed inset-0 z-30" onClick={close} />
           <div
-            ref={listRef}
-            role="listbox"
-            aria-activedescendant={active >= 0 ? `rs-${id ?? "x"}-${active}` : undefined}
-            className="animate-fade-up absolute left-0 right-0 top-full z-40 mt-1 max-h-64 overflow-auto rounded-xl border border-border bg-card p-1 shadow-[var(--card-shadow)]"
+            className="animate-fade-up absolute left-0 right-0 top-full z-40 mt-1 rounded-xl border border-border bg-card p-1 shadow-[var(--card-shadow)]"
           >
-            {items.length === 0 && (
+            {canSearch && (
+              <input
+                data-rs-search
+                autoFocus
+                value={query}
+                onChange={(e) => { setQuery(e.target.value); setActive(0); }}
+                placeholder={t("ui.search")}
+                className="mb-1 h-9 w-full rounded-lg border border-field-border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            )}
+            <div
+              ref={listRef}
+              role="listbox"
+              aria-activedescendant={active >= 0 ? `rs-${id ?? "x"}-${active}` : undefined}
+              className="max-h-64 overflow-auto"
+            >
+            {visible.length === 0 && (
               <div className="px-3 py-2 text-sm text-muted-foreground">—</div>
             )}
-            {items.map((i, idx) => (
+            {visible.map((i, idx) => (
               <button
                 key={i.value || `__empty_${idx}`}
                 id={`rs-${id ?? "x"}-${idx}`}
@@ -143,6 +168,7 @@ export function RichSelect({
                 {i.value === value && <Check className="h-4 w-4 shrink-0 text-primary" />}
               </button>
             ))}
+            </div>
           </div>
         </>
       )}

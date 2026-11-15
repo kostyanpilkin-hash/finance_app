@@ -122,7 +122,7 @@ const be: Locale = {
     currency: "Валюта", accountAmount: "Сума па рахунку", byRate: "па курсе НБРБ", color: "Колер", date: "Дата", amount: "Сума", comment: "Каментар",
     account: "Рахунак", toAccount: "На рахунак", category: "Катэгорыя", empty: "Пакуль пуста",
     bank: "Банк", paymentSystem: "Плацёжная сістэма", totalOnAccounts: "Усяго на рахунках", archivedAccounts: "Архіўныя рахункі",
-    searchComment: "Пошук па каментары…", noOwner: "Без уладальніка", last4: "Апошнія 4 лічбы",
+    searchComment: "Пошук па каментары…", search: "Пошук…", noOwner: "Без уладальніка", last4: "Апошнія 4 лічбы",
     today: "Сёння", yesterday: "Учора", deleteConfirm: "Выдаліць аперацыю?",
     noOpsThisDay: "У гэты дзень аперацый няма", searchResults: "Вынікі пошуку",
     includeInTotal: "У агульны баланс", spentMonth: "Выдаткі за перыяд", incomeMonth: "Даходы за перыяд",

@@ -122,7 +122,7 @@ const en: Locale = {
     currency: "Currency", accountAmount: "Amount on account", byRate: "at NBRB rate", color: "Color", date: "Date", amount: "Amount", comment: "Comment",
     account: "Account", toAccount: "To account", category: "Category", empty: "Nothing here yet",
     bank: "Bank", paymentSystem: "Payment system", totalOnAccounts: "Total on accounts", archivedAccounts: "Archived accounts",
-    searchComment: "Search by comment…", noOwner: "No owner", last4: "Last 4 digits",
+    searchComment: "Search by comment…", search: "Search…", noOwner: "No owner", last4: "Last 4 digits",
     today: "Today", yesterday: "Yesterday", deleteConfirm: "Delete this transaction?",
     noOpsThisDay: "No transactions this day", searchResults: "Search results",
     includeInTotal: "Include in total", spentMonth: "Spent", incomeMonth: "Earned",

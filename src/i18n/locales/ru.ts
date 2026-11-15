@@ -120,7 +120,7 @@ const ru = {
     currency: "Валюта", accountAmount: "Сумма по счёту", byRate: "по курсу НБРБ", color: "Цвет", date: "Дата", amount: "Сумма", comment: "Комментарий",
     account: "Счёт", toAccount: "На счёт", category: "Категория", empty: "Пока пусто",
     bank: "Банк", paymentSystem: "Платёжная система", totalOnAccounts: "Итого на счетах", archivedAccounts: "Архивные счета",
-    searchComment: "Поиск по комментарию…", noOwner: "Без владельца", last4: "Последние 4 цифры",
+    searchComment: "Поиск по комментарию…", search: "Поиск…", noOwner: "Без владельца", last4: "Последние 4 цифры",
     today: "Сегодня", yesterday: "Вчера", deleteConfirm: "Удалить операцию?",
     noOpsThisDay: "В этот день операций нет", searchResults: "Результаты поиска",
     includeInTotal: "В общий баланс", spentMonth: "Расходы за период", incomeMonth: "Доходы за период",

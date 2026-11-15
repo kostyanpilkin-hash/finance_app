@@ -26,7 +26,7 @@ type Missing = "amount" | "account" | "toAccount" | "toAmount" | "category";
 export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; onDone: (saved: boolean) => void }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const [editing, setEditing] = useState<Partial<TransactionRow>>(initial);
+  const [editing, setEditing] = useState<Partial<TransactionRow>>(() => ({ occurredAt: nowLocalIso(), ...initial }));
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoErr, setPhotoErr] = useState(false);
   const [accKey, setAccKey] = useState(0);
@@ -170,6 +170,10 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
         <Field label={t("ui.date")} htmlFor="tx-date">
           <Input id="tx-date" type="date" defaultValue={opDate}
             onChange={(e) => setEditing({ ...editing, occurredAt: `${e.target.value}T${editing.occurredAt?.slice(11, 19) || nowLocalIso().slice(11)}` })} />
+        </Field>
+        <Field label={t("ui.time")} htmlFor="tx-time">
+          <Input id="tx-time" type="time" value={editing?.occurredAt?.slice(11, 16) ?? ""}
+            onChange={(e) => setEditing({ ...editing, occurredAt: `${opDate}T${e.target.value || "00:00"}:00` })} />
         </Field>
         <Field label={t("ui.account")} htmlFor="tx-account">
           <RichSelect id="tx-account" invalid={show && missing.has("account")}
