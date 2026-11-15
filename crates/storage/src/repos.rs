@@ -34,10 +34,11 @@ pub fn list_rows(
     include_deleted: bool,
 ) -> Result<Vec<Value>, Error> {
     let table = entity.table();
+    let order = entity.order_by();
     let sql = if include_deleted || !entity.has_deleted_at() {
-        format!("SELECT * FROM {table} ORDER BY seq, id")
+        format!("SELECT * FROM {table} ORDER BY {order}")
     } else {
-        format!("SELECT * FROM {table} WHERE deleted_at IS NULL ORDER BY sort, name")
+        format!("SELECT * FROM {table} WHERE deleted_at IS NULL ORDER BY {order}")
     };
     let mut stmt = conn.prepare_cached(&sql)?;
     let cols: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();

@@ -1155,4 +1155,22 @@ mod tests {
         })
         .unwrap();
     }
+
+    #[test]
+    fn list_rows_orders_every_entity() {
+        // Regression: `ORDER BY sort, name` used to break attachments/reminders —
+        // those tables have no such columns, so the query returned an error and
+        // receipt photos never reached the UI.
+        let d = db();
+        d.with_conn(|c| {
+            for e in Entity::all() {
+                for &flag in &[false, true] {
+                    repos::list_rows(c, *e, flag)
+                        .unwrap_or_else(|err| panic!("list_rows({}, {flag}): {err}", e.table()));
+                }
+            }
+            Ok(())
+        })
+        .unwrap();
+    }
 }

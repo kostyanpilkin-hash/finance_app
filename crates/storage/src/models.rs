@@ -68,6 +68,18 @@ impl Entity {
     pub fn parse(s: &str) -> Option<Entity> {
         Entity::all().iter().copied().find(|e| e.table() == s)
     }
+
+    /// ORDER BY columns for generic `list_rows`. Only users/accounts/categories
+    /// have `sort`; the rest fall back to `seq` (every synced table has it).
+    pub fn order_by(self) -> &'static str {
+        match self {
+            Entity::Users | Entity::Accounts | Entity::Categories => "sort, name",
+            Entity::Goals | Entity::Reminders => "name, id",
+            Entity::Transactions => "occurred_at DESC, id",
+            Entity::SharedSettings => "key",
+            _ => "seq, id",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
