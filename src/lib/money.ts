@@ -3,7 +3,7 @@ import i18n from "@/i18n";
 /** ru/be use thin spaces for thousands and a decimal comma; en keeps 1,234.56.
  * The minus is typographic (−), and every sum is locale-aware. */
 export function formatMinor(minor: number | null | undefined, currency = ""): string {
-  const v = minor ?? 0;
+  const v = minor != null && Number.isFinite(minor) ? minor : 0;
   const sign = v < 0 ? "\u2212" : "";
   const abs = Math.abs(v);
   const locale = (i18n.language ?? "ru").startsWith("en") ? "en-US" : "ru-RU";
@@ -37,6 +37,41 @@ export function nowLocalIso(): string {
   const d = new Date();
   const p = (n: number) => String(n).padStart(2, "0");
   return `${todayIso()}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+/** "2026-11-15" → "15 ноября" / "Nov 15"; year added only when it differs from the current one. */
+export function formatDateHuman(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(`${iso.slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString(i18n.language ?? "ru", {
+    day: "numeric", month: "long", ...(sameYear ? {} : { year: "numeric" }),
+  });
+}
+
+/** "2026-11-01"…"2026-11-30" → "1 – 30 ноября" / "November 1–30" via Intl.formatRange. */
+export function formatPeriodHuman(from: string, to: string): string {
+  const a = new Date(`${from}T00:00:00`), b = new Date(`${to}T00:00:00`);
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return `${from} — ${to}`;
+  const sameYear = a.getFullYear() === new Date().getFullYear();
+  const opts: Intl.DateTimeFormatOptions = {
+    day: "numeric", month: "long", ...(sameYear ? {} : { year: "numeric" }),
+  };
+  const f = new Intl.DateTimeFormat(i18n.language ?? "ru", opts) as Intl.DateTimeFormat & {
+    formatRange?: (x: Date, y: Date) => string;
+  };
+  return f.formatRange ? f.formatRange(a, b) : `${formatDateHuman(from)} — ${formatDateHuman(to)}`;
+}
+
+/** Day-group header like "Сегодня, 15 ноября" / "Вчера, …" / "15 ноября". */
+export function dayLabel(isoDay: string, t: (k: string) => string): string {
+  const dm = formatDateHuman(isoDay);
+  const y = new Date();
+  y.setDate(y.getDate() - 1);
+  if (isoDay === todayIso()) return `${t("ui.today")}, ${dm}`;
+  if (isoDay === isoOf(y)) return `${t("ui.yesterday")}, ${dm}`;
+  return dm;
 }
 
 /** A row from the `rates_latest` command (rate per BYN scaled by 1e6). */

@@ -5,12 +5,14 @@ import {
   AreaChart, Area, Bar, ComposedChart, Line, XAxis, YAxis,
   Tooltip, Legend, ResponsiveContainer, CartesianGrid,
 } from "recharts";
+import { ChartColumn, TrendingUp, Wallet } from "lucide-react";
 import { api } from "@/lib/api";
-import { formatMinor, todayIso } from "@/lib/money";
+import { formatMinor, formatPeriodHuman, todayIso } from "@/lib/money";
 import { useDisplayMoney, useEnsureRates } from "@/lib/useDisplayMoney";
 import { qk } from "@/lib/queryKeys";
 import { useAccounts, useCategories, useUsers } from "@/lib/queries";
 import { DonutChart, type DonutItem } from "@/components/ui/donut-chart";
+import { Empty } from "@/components/ui/empty";
 import { CategoryTxDialog, type CategoryPeek } from "@/components/transactions/CategoryTxDialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -172,12 +174,12 @@ export function AnalyticsPage() {
   }, [cur.data, accounts.data]);
 
   const card = "rounded-2xl border border-border bg-card p-4";
-  const stat = (label: string, v: number, pv: number, cls: string, suffix = "") => {
+  const stat = (label: string, v: number, pv: number, cls: string, suffix = "", signed = false) => {
     const d = delta(v, pv);
     return (
       <div className={card}>
         <div className="text-xs text-muted-foreground">{label}</div>
-        <div className={cn("text-xl font-semibold", cls)}>{formatMinor(v)}{suffix ? ` ${suffix}` : ""}</div>
+        <div className={cn("text-xl font-semibold", cls)}>{signed && v > 0 ? "+" : ""}{formatMinor(v)}{suffix ? ` ${suffix}` : ""}</div>
         <div className="text-xs text-muted-foreground">
           {t("ui.vsPrev")}: {pv ? formatMinor(pv) : "—"} {pv || v ? `(${d > 0 ? "+" : ""}${d}%)` : ""}
         </div>
@@ -202,7 +204,7 @@ export function AnalyticsPage() {
               value={custom.to} onChange={(e) => setCustom({ ...custom, to: e.target.value })} />
           </>
         )}
-        <span className="text-sm text-muted-foreground">{r.from} — {r.to}</span>
+        <span className="text-sm text-muted-foreground">{formatPeriodHuman(r.from, r.to)}</span>
       </div>
 
       {cur.isLoading && (
@@ -213,7 +215,7 @@ export function AnalyticsPage() {
       <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {stat(t("ui.expenses"), e, pe, "text-expense")}
         {stat(t("ui.incomes"), i, pi, "text-income")}
-        {stat(t("ui.net"), i - e, pi - pe, "")}
+        {stat(t("ui.net"), i - e, pi - pe, i - e > 0 ? "text-income" : i - e < 0 ? "text-expense" : "", displayCurrency, true)}
         <div className={card}>
           <div className="text-xs text-muted-foreground">{t("ui.avgDaily")}</div>
           <div className="text-xl font-semibold">{formatMinor(avgDaily, displayCurrency)}</div>
@@ -226,6 +228,9 @@ export function AnalyticsPage() {
 
       <div className={card}>
         <div className="mb-2 text-sm font-medium">{t("ui.byDay")} · {displayCurrency}</div>
+        {byDay.length === 0 ? (
+          <Empty icon={ChartColumn} label={t("ui.emptyPeriod")} hint={t("ui.emptyDashHint")} className="h-72" />
+        ) : (
         <div className="h-72">
           <ResponsiveContainer>
             <ComposedChart data={byDay.map((b) => ({ ...b, expense: b.expense / 100, income: b.income / 100 }))}>
@@ -239,11 +244,15 @@ export function AnalyticsPage() {
             </ComposedChart>
           </ResponsiveContainer>
         </div>
+        )}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <div className={card}>
           <div className="mb-2 text-sm font-medium">{t("ui.balanceTrend")} · {displayCurrency}</div>
+          {balanceTrend.length === 0 ? (
+            <Empty icon={TrendingUp} label={t("ui.emptyPeriod")} hint={t("ui.emptyDashHint")} className="h-56" />
+          ) : (
           <div className="h-56">
             <ResponsiveContainer>
               <AreaChart data={balanceTrend}>
@@ -260,6 +269,7 @@ export function AnalyticsPage() {
               </AreaChart>
             </ResponsiveContainer>
           </div>
+          )}
         </div>
         <div className={card}>
           <div className="mb-2 text-sm font-medium">{t("ui.byCategory")}</div>
@@ -310,7 +320,7 @@ export function AnalyticsPage() {
               <span className="w-28 shrink-0 text-right font-medium">{formatMinor(a.value, displayCurrency)}</span>
             </div>
           ))}
-          {byAccount.length === 0 && <p className="text-sm text-muted-foreground">{t("ui.empty")}</p>}
+          {byAccount.length === 0 && <Empty icon={Wallet} label={t("ui.emptyPeriod")} />}
         </div>
       </div>
     </div>

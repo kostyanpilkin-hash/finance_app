@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/stores/toast";
 import { useDebounced } from "@/lib/useDebounced";
 import { cn } from "@/lib/utils";
-import { formatMinor, nowLocalIso, todayIso } from "@/lib/money";
+import { dayLabel, formatMinor, isoOf, nowLocalIso, todayIso } from "@/lib/money";
 import { ownerLabelKey } from "@/lib/owners";
 import { qk, invalidateMoney } from "@/lib/queryKeys";
 import { useAccounts, useCategories } from "@/lib/queries";
@@ -20,13 +20,8 @@ import type { CategoryRow, TransactionRow } from "@/lib/types";
 import { Input } from "@/components/ui/input";
 import { RichSelect } from "@/components/ui/rich-select";
 
-function isoOf(d: Date) {
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
-
 export function TransactionsPage() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [accountId, setAccountId] = useState("");
@@ -85,15 +80,6 @@ export function TransactionsPage() {
     return groups;
   }, [tx.data]);
 
-  const dayLabel = (d: string) => {
-    const dm = new Date(`${d}T00:00:00`).toLocaleDateString(i18n.language, { day: "numeric", month: "long" });
-    const y = new Date();
-    y.setDate(y.getDate() - 1);
-    if (d === todayIso()) return `${t("ui.today")}, ${dm}`;
-    if (d === isoOf(y)) return `${t("ui.yesterday")}, ${dm}`;
-    return dm;
-  };
-
   const shiftDay = (n: number) => {
     const d = new Date(`${day}T00:00:00`);
     d.setDate(d.getDate() + n);
@@ -143,7 +129,7 @@ export function TransactionsPage() {
             onClick={() => setCalOpen((v) => !v)}
           >
             <CalendarDays className="h-4 w-4 text-muted-foreground" />
-            {dayLabel(day)}
+            {dayLabel(day, t)}
           </button>
           <button type="button" className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-muted" onClick={() => shiftDay(1)}>
             <ChevronRight className="h-4 w-4" />
@@ -180,7 +166,7 @@ export function TransactionsPage() {
         {dayGroups.map((g) => (
           <section key={g.day}>
             <div className="mb-1.5 flex items-baseline justify-between gap-3 px-1">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{dayLabel(g.day)}</h3>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{dayLabel(g.day, t)}</h3>
               <div className="text-xs font-semibold">
                 {Object.entries(g.totals).map(([cur, v], i) => (
                   <span key={cur} className={cn(v < 0 ? "text-expense" : v > 0 ? "text-income" : "text-muted-foreground")}>

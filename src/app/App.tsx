@@ -106,18 +106,20 @@ export default function App() {
 
   return (
     <div className="flex h-screen text-foreground" data-page={page}>
-      <aside className="flex w-56 shrink-0 flex-col border-r border-border/80 bg-[var(--sidebar-bg)] p-4 backdrop-blur">
-        <h1 className="font-display mb-6 text-2xl font-semibold tracking-tight text-primary">{t("app.title")}</h1>
+      <aside className="flex w-14 shrink-0 flex-col border-r border-border/80 bg-[var(--sidebar-bg)] p-2 backdrop-blur lg:w-56 lg:p-4">
+        <h1 className="font-display mb-6 hidden text-2xl font-semibold tracking-tight text-primary lg:block">{t("app.title")}</h1>
+        <div className="font-display mb-6 grid h-10 place-items-center text-xl font-semibold text-primary lg:hidden">Ф</div>
         <nav className="flex flex-col gap-1">
           {PAGES.map(({ id, icon: Icon }) => (
             <Button
               key={id}
               variant={page === id ? "default" : "ghost"}
-              className="justify-start"
+              className="justify-center lg:justify-start"
+              title={t(`nav.${id}`)}
               onClick={() => setPage(id)}
             >
-              <Icon className="h-4 w-4" />
-              {t(`nav.${id}`)}
+              <Icon className="h-4 w-4 shrink-0" />
+              <span className="hidden lg:inline">{t(`nav.${id}`)}</span>
             </Button>
           ))}
         </nav>

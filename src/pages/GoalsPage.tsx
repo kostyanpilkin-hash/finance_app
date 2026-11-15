@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Archive, Pencil } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
 import { useAccounts } from "@/lib/queries";
 import { Button } from "@/components/ui/button";
 import { TxForm } from "@/components/transactions/TxForm";
-import { formatMinor, parseMinor } from "@/lib/money";
+import { formatDateHuman, formatMinor, parseMinor } from "@/lib/money";
 import { Input } from "@/components/ui/input";
 import { RichSelect } from "@/components/ui/rich-select";
 import { Field } from "@/components/ui/field";
@@ -41,7 +42,7 @@ export function GoalsPage() {
 
   const balanceOf = (id?: string | null) =>
     id ? accounts.data?.find((a) => a.id === id)?.balance ?? 0 : null;
-  const currentOf = (g: GoalRow) => balanceOf(g.accountId) ?? g.currentMinor;
+  const currentOf = (g: GoalRow) => balanceOf(g.accountId) ?? g.currentMinor ?? 0;
 
   const open = (g?: GoalRow) => {
     setEditing(g ?? { currency: "BYN", color: "#059669", currentMinor: 0 });
@@ -137,7 +138,8 @@ export function GoalsPage() {
       <div className="grid gap-3 sm:grid-cols-2">
         {(list.data ?? []).map((g) => {
           const current = currentOf(g);
-          const pct = g.targetMinor > 0 ? Math.min(100, Math.round((current / g.targetMinor) * 100)) : 0;
+          const pct = g.targetMinor > 0 && Number.isFinite(current)
+            ? Math.min(100, Math.round((current / g.targetMinor) * 100)) : 0;
           return (
             <div key={g.id} className="rounded-2xl border border-border bg-card p-4">
               <div className="mb-1 flex items-center gap-2">
@@ -148,24 +150,30 @@ export function GoalsPage() {
                     · {(accounts.data ?? []).find((a) => a.id === g.accountId)?.name}
                   </span>
                 )}
-                {g.deadline && <span className="ml-auto text-xs text-muted-foreground">{t("ui.till")} {g.deadline}</span>}
+                {g.deadline && <span className="ml-auto text-xs text-muted-foreground">{t("ui.till")} {formatDateHuman(g.deadline)}</span>}
               </div>
               <div className="mb-2 h-2 rounded-full bg-muted">
                 <div className="h-2 rounded-full bg-primary" style={{ width: `${pct}%` }} />
               </div>
-              <div className="flex items-center text-sm">
-                <span>{formatMinor(current, g.currency)} / {formatMinor(g.targetMinor, g.currency)} · {pct}%</span>
-                <div className="ml-auto flex gap-1">
+              <div className="flex items-center gap-2 text-sm">
+                <span className="min-w-0 truncate">{formatMinor(current, g.currency)} / {formatMinor(g.targetMinor, g.currency)} · {pct}%</span>
+                <div className="ml-auto flex shrink-0 items-center gap-0.5">
                   {g.archived === 0 ? (
                     <>
                       {g.accountId && (
-                        <Button size="sm" variant="ghost" onClick={() => setDepositing(g)}>{t("ui.deposit")}</Button>
+                        <Button size="sm" variant="ghost" className="whitespace-nowrap" onClick={() => setDepositing(g)}>{t("ui.deposit")}</Button>
                       )}
-                      <Button size="sm" variant="ghost" onClick={() => open(g)}>{t("ui.edit")}</Button>
-                      <Button size="sm" variant="ghost" onClick={() => del.mutate(g.id)}>{t("ui.archive")}</Button>
+                      <Button size="icon-sm" variant="ghost" title={t("ui.edit")} onClick={() => open(g)}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button size="icon-sm" variant="ghost" title={t("ui.archive")}
+                        className="text-muted-foreground hover:text-destructive"
+                        onClick={() => del.mutate(g.id)}>
+                        <Archive className="h-3.5 w-3.5" />
+                      </Button>
                     </>
                   ) : (
-                    <Button size="sm" variant="ghost" onClick={() => restore.mutate(g.id)}>{t("ui.restore")}</Button>
+                    <Button size="sm" variant="ghost" className="whitespace-nowrap" onClick={() => restore.mutate(g.id)}>{t("ui.restore")}</Button>
                   )}
                 </div>
               </div>

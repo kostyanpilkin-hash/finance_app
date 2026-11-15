@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Pencil, Trash2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { qk, invalidateMoney } from "@/lib/queryKeys";
 import { useAccounts, useCategories } from "@/lib/queries";
 import { Button } from "@/components/ui/button";
 import { TxForm } from "@/components/transactions/TxForm";
-import { formatMinor, parseMinor, nowLocalIso } from "@/lib/money";
+import { formatDateHuman, formatMinor, parseMinor, nowLocalIso } from "@/lib/money";
 import { Input } from "@/components/ui/input";
 import { RichSelect } from "@/components/ui/rich-select";
 import { CategoryIcon } from "@/components/ui/category-icon";
@@ -44,7 +45,7 @@ export function RemindersPage() {
   const ruleLabel = (r: ReminderRow) => {
     if (r.ruleType === "weekly") return `${t("ui.rule.weekly")} · ${t(`ui.wd.${r.ruleDay}`)}`;
     if (r.ruleType === "yearly") return `${t("ui.rule.yearly")} · ${r.ruleDay}.${String(r.ruleMonth ?? 1).padStart(2, "0")}`;
-    return `${t("ui.rule.monthly")} · ${r.ruleDay}`;
+    return `${t("ui.rule.monthly")} · ${r.ruleDay ?? "—"}`;
   };
 
   return (
@@ -164,9 +165,16 @@ export function RemindersPage() {
             <span className="font-medium">{r.name}</span>
             {r.amountMinor != null && <span className={r.kind === "expense" ? "text-expense" : "text-income"}>{formatMinor(r.amountMinor, r.currency)}</span>}
             <span className="text-xs text-muted-foreground">{ruleLabel(r)}</span>
-            <span className="ml-auto text-xs text-muted-foreground">{t("ui.nextDue")}: {r.nextDue ?? "—"}</span>
-            <Button size="sm" variant="ghost" onClick={() => { setEditing(r); setAmountStr(r.amountMinor ? (r.amountMinor / 100).toString() : ""); }}>{t("ui.edit")}</Button>
-            <Button size="sm" variant="ghost" onClick={() => del.mutate(r.id)}>{t("ui.delete")}</Button>
+            <span className="ml-auto text-xs text-muted-foreground">{t("ui.nextDue")}: {r.nextDue ? formatDateHuman(r.nextDue) : "—"}</span>
+            <Button size="icon-sm" variant="ghost" title={t("ui.edit")}
+              onClick={() => { setEditing(r); setAmountStr(r.amountMinor ? (r.amountMinor / 100).toString() : ""); }}>
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+            <Button size="icon-sm" variant="ghost" title={t("ui.delete")}
+              className="text-muted-foreground hover:text-destructive"
+              onClick={() => del.mutate(r.id)}>
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
           </div>
         ))}
         {list.data?.length === 0 && <p className="text-sm text-muted-foreground">{t("ui.empty")}</p>}

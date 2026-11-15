@@ -17,6 +17,8 @@
 - Фронт: `src/app` (layout, страницы), `src/pages`, `src/components/ui`, `src/lib`, `src/stores`, `src/i18n/locales/{ru,be,en}.ts` (тип `Locale` из `ru.ts` — be/en обязаны иметь те же ключи).
 - Темы: классы `.theme-*` в `src/index.css`, список в `src/lib/themes.ts` (по умолчанию `emerald`). Новая тема = CSS + запись в `THEMES` + перевод в трёх локалях (тест `themes.test.ts` это проверяет).
 - Иконка: `npm run icon` (`scripts/generate-icon.py` → `tauri icon`), затем удалить `src-tauri/icons/{android,ios}` до этапа мобильных.
+- Переиспользуемый оверлей — `Dialog` в `src/components/ui/dialog.tsx` (Esc, клик по фону, `aria-modal`); новые всплывающие окна строить на нём, а не на своих `fixed` обёртках.
+- Тексты окна «Что нового» при каждом релизе заполнять в `src/lib/whatsnew.ts` (массив `WHATS_NEW`, 3–7 буллетов на трёх языках) вместе с `CHANGELOG.md`.
 
 ## Сборка и проверки
 

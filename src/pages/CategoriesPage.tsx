@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Pencil, Trash2 } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
@@ -13,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
 import { RichSelect } from "@/components/ui/rich-select";
 import { ColorSwatches } from "@/components/ui/color-swatches";
+import { Dialog } from "@/components/ui/dialog";
 
 export function CategoriesPage() {
   const { t } = useTranslation();
@@ -20,7 +22,8 @@ export function CategoriesPage() {
   const [tab, setTab] = useState<"expense" | "income">("expense");
   const cats = useCategories(true);
   const [editing, setEditing] = useState<Partial<CategoryRow> | null>(null);
-  const [moveTo, setMoveTo] = useState<Record<string, string>>({});
+  const [deleting, setDeleting] = useState<CategoryRow | null>(null);
+  const [moveTo, setMoveTo] = useState("");
 
   const invalidate = () => qc.invalidateQueries({ queryKey: qk.entityAll("categories") });
   const save = useMutation({
@@ -29,7 +32,7 @@ export function CategoriesPage() {
   });
   const del = useMutation({
     mutationFn: ({ id, to }: { id: string; to?: string }) => api.categoryDelete(id, to),
-    onSuccess: invalidate,
+    onSuccess: () => { invalidate(); setDeleting(null); setMoveTo(""); },
   });
   const restore = useMutation({
     mutationFn: (id: string) => api.entityRestore("categories", id),
@@ -99,26 +102,18 @@ export function CategoriesPage() {
             <span className="font-medium">{name(c)}</span>
             {c.isSystem === 1 && <span className="text-xs text-muted-foreground">({t("ui.system")})</span>}
             {c.archived === 1 && <span className="text-xs text-destructive">({t("ui.archived")})</span>}
-            <div className="ml-auto flex items-center gap-1">
+            <div className="ml-auto flex items-center gap-0.5">
               {c.archived === 0 ? (
                 <>
-                  <Button size="sm" variant="ghost" onClick={() => setEditing(c)}>{t("ui.edit")}</Button>
+                  <Button size="icon-sm" variant="ghost" title={t("ui.edit")} onClick={() => setEditing(c)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
                   {c.isSystem === 0 && (
-                    <>
-                      <RichSelect className="w-48"
-                        placeholder={t("ui.moveToMisc")}
-                        value={moveTo[c.id] ?? ""} onChange={(v) => setMoveTo({ ...moveTo, [c.id]: v })}
-                        items={[
-                          { value: "", label: t("ui.moveToMisc") },
-                          ...list.filter((x) => x.id !== c.id && x.archived === 0).map((x) => ({
-                            value: x.id, label: name(x),
-                            icon: <CategoryIcon icon={x.icon} color={x.color} size={20} />,
-                          })),
-                        ]} />
-                      <Button size="sm" variant="ghost" onClick={() => del.mutate({ id: c.id, to: moveTo[c.id] || undefined })}>
-                        {t("ui.delete")}
-                      </Button>
-                    </>
+                    <Button size="icon-sm" variant="ghost" title={t("ui.delete")}
+                      className="text-muted-foreground hover:text-destructive"
+                      onClick={() => { setDeleting(c); setMoveTo(""); }}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
                   )}
                 </>
               ) : (
@@ -128,6 +123,40 @@ export function CategoriesPage() {
           </div>
         ))}
       </div>
+
+      <Dialog
+        open={deleting !== null}
+        onClose={() => setDeleting(null)}
+        title={t("ui.deleteCategoryTitle")}
+        closeLabel={t("ui.close")}
+      >
+        {deleting && (
+          <div className="space-y-4">
+            <p className="text-sm">
+              <span className="font-medium">{name(deleting)}</span>
+            </p>
+            <Field label={t("ui.deleteCategoryHint")}>
+              <RichSelect
+                value={moveTo}
+                onChange={setMoveTo}
+                items={[
+                  { value: "", label: t("ui.moveToMisc") },
+                  ...list.filter((x) => x.id !== deleting.id && x.archived === 0).map((x) => ({
+                    value: x.id, label: name(x),
+                    icon: <CategoryIcon icon={x.icon} color={x.color} size={20} />,
+                  })),
+                ]} />
+            </Field>
+            <div className="flex gap-2">
+              <Button size="sm" variant="destructive" disabled={del.isPending}
+                onClick={() => del.mutate({ id: deleting.id, to: moveTo || undefined })}>
+                {t("ui.delete")}
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setDeleting(null)}>{t("ui.cancel")}</Button>
+            </div>
+          </div>
+        )}
+      </Dialog>
     </div>
   );
 }

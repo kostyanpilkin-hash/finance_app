@@ -6,7 +6,9 @@ import { formatMinor, isoOf, todayIso } from "@/lib/money";
 import { useDisplayMoney, useEnsureRates } from "@/lib/useDisplayMoney";
 import { qk } from "@/lib/queryKeys";
 import { useCategories, useSettings, useUsers } from "@/lib/queries";
+import { PieChart } from "lucide-react";
 import { DonutChart, type DonutItem } from "@/components/ui/donut-chart";
+import { Empty } from "@/components/ui/empty";
 import { CategoryTxDialog, type CategoryPeek } from "@/components/transactions/CategoryTxDialog";
 import { AccountCard } from "@/components/accounts/AccountCard";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -157,28 +159,23 @@ export function DashboardPage() {
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
-            <div className={card}>
-              <div className="mb-2 text-sm font-medium">{t("ui.pieMonth")}</div>
-              <DonutChart data={catSlices("expense")} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.rest")} onSelect={openPeek("expense")} />
-            </div>
-            {chartOn("dash_chart_income_cat") && (
-              <div className={card}>
-                <div className="mb-2 text-sm font-medium">{t("ui.incomeByCat")}</div>
-                <DonutChart data={catSlices("income")} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.rest")} onSelect={openPeek("income")} />
+            {(
+              [
+                { key: "pieMonth", on: true, data: catSlices("expense"), sel: openPeek("expense") },
+                { key: "incomeByCat", on: chartOn("dash_chart_income_cat"), data: catSlices("income"), sel: openPeek("income") },
+                { key: "expenseByPeople", on: chartOn("dash_chart_expense_people"), data: peopleSlices("expense"), sel: undefined },
+                { key: "incomeByPeople", on: chartOn("dash_chart_income_people"), data: peopleSlices("income"), sel: undefined },
+              ] as const
+            ).filter((c) => c.on).map((c) => (
+              <div key={c.key} className={card}>
+                <div className="mb-2 text-sm font-medium">{t(`ui.${c.key}`)}</div>
+                {c.data.length > 0 ? (
+                  <DonutChart data={c.data} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.rest")} onSelect={c.sel} />
+                ) : (
+                  <Empty icon={PieChart} label={t("ui.emptyPeriod")} hint={t("ui.emptyDashHint")} />
+                )}
               </div>
-            )}
-            {chartOn("dash_chart_expense_people") && (
-              <div className={card}>
-                <div className="mb-2 text-sm font-medium">{t("ui.expenseByPeople")}</div>
-                <DonutChart data={peopleSlices("expense")} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.rest")} />
-              </div>
-            )}
-            {chartOn("dash_chart_income_people") && (
-              <div className={card}>
-                <div className="mb-2 text-sm font-medium">{t("ui.incomeByPeople")}</div>
-                <DonutChart data={peopleSlices("income")} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.rest")} />
-              </div>
-            )}
+            ))}
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
