@@ -21,7 +21,7 @@
 4. Не добавляйте и не удаляйте комментарии в коде, если шаг этого не требует.
 5. Shell — git-bash. Перед любой cargo-командой выполните:
    ```bash
-   export PATH="tools/strawberry-perl/perl/bin:$PATH"
+   export PATH="/c/tools/strawberry-perl/perl/bin:$PATH"
    ```
 6. **Минимальная проверка после каждого шага** (обязательна, даже если в шаге
    указана другая команда):

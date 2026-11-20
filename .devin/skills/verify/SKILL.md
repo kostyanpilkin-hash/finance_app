@@ -3,7 +3,7 @@ name: verify
 description: Quick verification suite for Finance — tsc, eslint, vitest, cargo fmt/clippy/test. Use after any code change before committing, or when the user says «проверь», «прогони тесты», «verify».
 ---
 
-Run from `finance_app` (git-bash), stop at the first failure and fix it:
+Run from the repo root (git-bash), stop at the first failure and fix it:
 
 ```bash
 npx tsc --noEmit

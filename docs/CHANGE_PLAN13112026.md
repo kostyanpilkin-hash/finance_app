@@ -1,6 +1,6 @@
 # План изменений: просмотр фото чеков, синхронизация файлов, кэш связки ключей macOS
 
-Дата: 2026-11-13. Проект: `finance_app` (git-bash, ветка `main`).
+Дата: 2026-11-13. Проект: корень этого репозитория (git-bash, ветка `main`).
 
 ## Контекст (прочитать перед началом)
 
@@ -30,7 +30,7 @@
 - Проверки: `npx tsc --noEmit`, `npm run lint`, `npm test`,
   `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
   `cargo test --workspace`.
-- Перед любой cargo-командой: `export PATH="tools/strawberry-perl/perl/bin:$PATH"`.
+- Перед любой cargo-командой: `export PATH="/c/tools/strawberry-perl/perl/bin:$PATH"`.
 - НЕ пушить в git — только коммит.
 - В конце работы: дописать `CHANGELOG.md` (по-русски, секция без версии под
   заголовком `# Журнал изменений`).
@@ -441,7 +441,7 @@ interface AttachmentRow { id: string; transactionId: string; sha256: string; fil
 **Финальная проверка (все должны быть зелёными):**
 ```
 npx tsc --noEmit && npm run lint && npm test
-export PATH="tools/strawberry-perl/perl/bin:$PATH"
+export PATH="/c/tools/strawberry-perl/perl/bin:$PATH"
 cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
 ```
 

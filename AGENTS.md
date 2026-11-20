@@ -2,10 +2,10 @@
 
 ## Рабочая директория и репозитории
 
-- Проект: `finance_app`. Код: `kostyanpilkin-hash/finance_app` (приватный), ветка `main`, пуш `git push origin main`.
+- Проект: корень этого репозитория. Код: `kostyanpilkin-hash/finance_app` (публичный), ветка `main`, пуш `git push origin main`.
 - Релизы: `kostyanpilkin-hash/finance_app_public` (публичный, только установщики и `latest.json`). Публикует `release.yml` по тегу `v*` через секрет `PUBLIC_RELEASES_TOKEN`.
-- План разработки (этапы 0–9, архитектура, схема БД, протокол синхронизации): `C:\Users\user\.devin\plans\plan-3209bf19d66ea57d.md`.
-- Соседний проект-донор наработок: `tutor-app` (темы, i18n, трей, Telegram-клиент, axum-сервер).
+- План разработки (этапы 0–9, архитектура, схема БД, протокол синхронизации): `%USERPROFILE%\.devin\plans\plan-3209bf19d66ea57d.md`.
+- Соседний проект-донор наработок: `..\tutor-app` (темы, i18n, трей, Telegram-клиент, axum-сервер).
 
 ## CHANGELOG
 
@@ -55,4 +55,4 @@
 - MSYS path conversion: аргументы вида `/S` превращаются в пути — запускать `MSYS_NO_PATHCONV=1 ...`.
 - Длинные логи (сборка, npm) — в файл или `| tail -N`.
 - Shell — git-bash: команды в bash-форме.
-- **SQLCipher/OpenSSL:** сборка `rusqlite` с `bundled-sqlcipher-vendored-openssl` требует полноценный Perl — git-bash perl не подходит. Установлен портативный Strawberry Perl: `tools\strawberry-perl`. Перед cargo-командами: `export PATH="tools/strawberry-perl/perl/bin:$PATH"`. На GitHub runners Perl уже есть.
+- **SQLCipher/OpenSSL:** сборка `rusqlite` с `bundled-sqlcipher-vendored-openssl` требует полноценный Perl — git-bash perl не подходит. Нужен портативный Strawberry Perl (без установки, достаточно распаковки). Перед cargo-командами: `export PATH="/c/tools/strawberry-perl/perl/bin:$PATH"`. На GitHub runners Perl уже есть.
