@@ -26,6 +26,13 @@
 - Установщик: `npm run build:installer` → MSI + NSIS в `installers/<дата>/`.
 - macOS собирается только в CI (`release.yml`, universal-apple-darwin).
 
+## Граф кода (graphify)
+
+- `graphify-out/graph.json` — knowledge graph кодовой базы (tree-sitter AST, детерминированно, без LLM). Автообновляется git-хуками на commit/checkout/merge/rewrite; ручное обновление `graphify update .`, полный пересчёт `graphify extract . --code-only --cargo`. Разово отключить хук: `GRAPHIFY_SKIP_HOOK=1`.
+- При разведке кодовой базы использовать ПЕРЕД глобальным grep: `graphify explain "X"` (соседи узла с file:line), `graphify path "A" "B"`, `graphify affected "X"` (что затронет изменение), `graphify god-nodes`, `graphify query "..."` (BFS-контекст), `graphify section "X"` (секции markdown).
+- Ограничение: мост `invoke() ↔ #[tauri::command]` в графе не моделируется — фронт и бэк не связаны; межъязыковые связи искать grep'ом по имени команды.
+- Сообщества без осмысленных имён («Community N») — нет LLM-бэкенда. `graphify-out/` gitignored; отчёт `graphify-out/GRAPH_REPORT.md`, визуализация `graphify-out/graph.html`.
+
 ## Правила кода
 
 - Деньги — `i64` в минимальных единицах + ISO-код валюты (`finance_core::Money`), никаких float.

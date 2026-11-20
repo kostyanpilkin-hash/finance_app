@@ -24,3 +24,6 @@ installers
 # Local secrets
 .env
 *.key
+
+# graphify knowledge-graph output
+graphify-out/
