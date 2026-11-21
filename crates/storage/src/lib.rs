@@ -3,6 +3,7 @@
 
 pub mod analytics;
 pub mod backup;
+pub mod bsb;
 pub mod db;
 mod error;
 pub mod export;
@@ -921,6 +922,89 @@ mod tests {
             )?;
             let row = db::row_json(c, "transactions", tx["id"].as_str().unwrap())?.unwrap();
             assert_eq!(row["spentByUserId"].as_str(), Some(uid));
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    fn snap(from: i64, next: Option<i64>, buy: i64) -> bsb::Snapshot {
+        bsb::Snapshot {
+            from_ms: from,
+            next_ms: next,
+            quotes: vec![(
+                "USD".into(),
+                finance_core::fx::Quote { buy, sell: buy + 20_000 },
+            )],
+        }
+    }
+
+    #[test]
+    fn cache_current_snapshot_ttl() {
+        use finance_core::fx::RateKind::BsbApp;
+        let d = db();
+        let now = 1_000_000_000;
+        d.write(|c| repos::bank_rates_store(c, BsbApp, &snap(now - 60_000, None, 2_982_000), now))
+            .unwrap();
+        d.with_read_conn(|c| {
+            let hit = repos::bank_rate_find(c, BsbApp, "usd", now + 1_000, now + 1_000)?;
+            assert_eq!(hit.map(|q| q.buy), Some(2_982_000));
+            let stale = repos::bank_rate_find(c, BsbApp, "USD", now + 360_000, now + 360_000)?;
+            assert_eq!(stale, None);
+            assert_eq!(
+                repos::bank_rate_find(c, finance_core::fx::RateKind::BsbCard, "USD", now, now)?,
+                None
+            );
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn cache_historic_snapshot() {
+        use finance_core::fx::RateKind::BsbCard;
+        let d = db();
+        d.write(|c| repos::bank_rates_store(c, BsbCard, &snap(1000, Some(5000), 2_970_000), 9_999_999))
+            .unwrap();
+        d.with_read_conn(|c| {
+            let now = 99_999_999;
+            assert!(repos::bank_rate_find(c, BsbCard, "USD", 4999, now)?.is_some());
+            assert!(repos::bank_rate_find(c, BsbCard, "USD", 5000, now)?.is_none());
+            assert!(repos::bank_rate_find(c, BsbCard, "USD", 999, now)?.is_none());
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn cache_upsert_closes_previous() {
+        use finance_core::fx::RateKind::BsbApp;
+        let d = db();
+        d.write(|c| {
+            repos::bank_rates_store(c, BsbApp, &snap(1000, None, 2_982_000), 2000)?;
+            repos::bank_rates_store(c, BsbApp, &snap(1000, Some(8000), 2_982_000), 9000)
+        })
+        .unwrap();
+        d.with_read_conn(|c| {
+            let (n, to): (i64, Option<i64>) = c.query_row(
+                "SELECT COUNT(*), MAX(valid_to) FROM bank_rates",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?;
+            assert_eq!((n, to), (1, Some(8000)));
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn nbrb_quote_per_unit() {
+        let d = db();
+        d.write(|c| repos::rate_upsert(c, &d, "2026-11-01", "RUB", 3_600_000, 100))
+            .unwrap();
+        d.with_read_conn(|c| {
+            let q = repos::nbrb_quote_at(c, "RUB", "2026-11-05")?.unwrap();
+            assert_eq!((q.buy, q.sell), (36_000, 36_000));
+            assert!(repos::nbrb_quote_at(c, "RUB", "2026-10-01")?.is_none());
             Ok(())
         })
         .unwrap();

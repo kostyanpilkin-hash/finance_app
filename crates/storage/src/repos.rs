@@ -878,6 +878,90 @@ pub fn has_rate_on(conn: &Connection, currency: &str, date: &str) -> Result<bool
     Ok(n > 0)
 }
 
+/// NBRB rate on `date` (latest stored on or before it) as a quote with buy == sell.
+pub fn nbrb_quote_at(
+    conn: &Connection,
+    currency: &str,
+    date: &str,
+) -> Result<Option<finance_core::fx::Quote>, Error> {
+    Ok(rate_row(conn, currency, Some(date))?
+        .filter(|(r, s)| *r > 0 && *s > 0)
+        .map(|(r, s)| {
+            let v = r / s;
+            finance_core::fx::Quote { buy: v, sell: v }
+        }))
+}
+
+// ---------- bank quote cache (local, not replicated) ----------
+
+/// How long a snapshot that is still current (`valid_to IS NULL`) is trusted.
+pub const BANK_RATE_TTL_MS: i64 = 5 * 60 * 1000;
+
+/// Cached quote for `at_ms`: a closed snapshot covering it, or the current
+/// one fetched less than [`BANK_RATE_TTL_MS`] ago.
+pub fn bank_rate_find(
+    conn: &Connection,
+    kind: finance_core::fx::RateKind,
+    currency: &str,
+    at_ms: i64,
+    now_ms: i64,
+) -> Result<Option<finance_core::fx::Quote>, Error> {
+    let row = conn
+        .prepare_cached(
+            "SELECT valid_to, buy_scaled, sell_scaled, fetched_at FROM bank_rates
+             WHERE kind = ?1 AND currency = ?2 AND valid_from <= ?3
+             ORDER BY valid_from DESC LIMIT 1",
+        )?
+        .query_row(
+            rusqlite::params![kind.as_str(), currency.to_uppercase(), at_ms],
+            |r| {
+                Ok((
+                    r.get::<_, Option<i64>>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, i64>(3)?,
+                ))
+            },
+        )
+        .ok();
+    Ok(row.and_then(|(to, buy, sell, fetched)| {
+        let fresh = match to {
+            Some(to) => at_ms < to,
+            None => now_ms - fetched < BANK_RATE_TTL_MS,
+        };
+        fresh.then_some(finance_core::fx::Quote { buy, sell })
+    }))
+}
+
+/// Stores a fetched snapshot. Re-fetching the same snapshot later (e.g. once
+/// it got a `next` time) updates it in place.
+pub fn bank_rates_store(
+    conn: &Connection,
+    kind: finance_core::fx::RateKind,
+    snap: &crate::bsb::Snapshot,
+    now_ms: i64,
+) -> Result<(), Error> {
+    let mut stmt = conn.prepare_cached(
+        "INSERT INTO bank_rates (kind, currency, valid_from, valid_to, buy_scaled, sell_scaled, fetched_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+         ON CONFLICT(kind, currency, valid_from) DO UPDATE SET
+           valid_to = excluded.valid_to, buy_scaled = excluded.buy_scaled,
+           sell_scaled = excluded.sell_scaled, fetched_at = excluded.fetched_at",
+    )?;
+    for (cur, q) in &snap.quotes {
+        stmt.execute(rusqlite::params![
+            kind.as_str(),
+            cur.to_uppercase(),
+            snap.from_ms,
+            snap.next_ms,
+            q.buy,
+            q.sell,
+            now_ms
+        ])?;
+    }
+    Ok(())
+}
+
 // ---------- goals / reminders (basic CRUD for now) ----------
 
 pub fn goal_upsert(
