@@ -109,6 +109,9 @@ pub async fn ensure(state: &AppState, currency: &str, date: &str) -> Result<(), 
     if have {
         return Ok(());
     }
+    if cfg!(test) {
+        return Ok(());
+    }
     let url = format!("https://api.nbrb.by/exrates/rates/{cur}?parammode=2&ondate={date}");
     let Ok(resp) = crate::net::client()
         .get(&url)

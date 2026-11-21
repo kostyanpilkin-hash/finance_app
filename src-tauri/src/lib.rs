@@ -2,6 +2,7 @@ mod applog;
 mod blocking;
 mod bot;
 mod commands;
+mod fx;
 mod keystore;
 mod net;
 mod rates;
@@ -73,6 +74,8 @@ pub fn run() {
             commands::export_xlsx,
             commands::rates_latest,
             commands::convert_at,
+            commands::fx_suggest,
+            commands::rates_overview,
             commands::rates_refresh,
             commands::tg_connect,
             commands::tg_disconnect,

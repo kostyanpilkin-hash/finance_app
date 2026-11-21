@@ -933,7 +933,10 @@ mod tests {
             next_ms: next,
             quotes: vec![(
                 "USD".into(),
-                finance_core::fx::Quote { buy, sell: buy + 20_000 },
+                finance_core::fx::Quote {
+                    buy,
+                    sell: buy + 20_000,
+                },
             )],
         }
     }
@@ -963,8 +966,10 @@ mod tests {
     fn cache_historic_snapshot() {
         use finance_core::fx::RateKind::BsbCard;
         let d = db();
-        d.write(|c| repos::bank_rates_store(c, BsbCard, &snap(1000, Some(5000), 2_970_000), 9_999_999))
-            .unwrap();
+        d.write(|c| {
+            repos::bank_rates_store(c, BsbCard, &snap(1000, Some(5000), 2_970_000), 9_999_999)
+        })
+        .unwrap();
         d.with_read_conn(|c| {
             let now = 99_999_999;
             assert!(repos::bank_rate_find(c, BsbCard, "USD", 4999, now)?.is_some());
@@ -985,11 +990,10 @@ mod tests {
         })
         .unwrap();
         d.with_read_conn(|c| {
-            let (n, to): (i64, Option<i64>) = c.query_row(
-                "SELECT COUNT(*), MAX(valid_to) FROM bank_rates",
-                [],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )?;
+            let (n, to): (i64, Option<i64>) =
+                c.query_row("SELECT COUNT(*), MAX(valid_to) FROM bank_rates", [], |r| {
+                    Ok((r.get(0)?, r.get(1)?))
+                })?;
             assert_eq!((n, to), (1, Some(8000)));
             Ok(())
         })
@@ -1018,7 +1022,12 @@ mod tests {
         let d = db();
         d.with_conn(|c| {
             let a = actor(&d);
-            let usd = repos::account_upsert(c, &d, &a, json!({"name":"U","kind":"card","currency":"USD"}))?;
+            let usd = repos::account_upsert(
+                c,
+                &d,
+                &a,
+                json!({"name":"U","kind":"card","currency":"USD"}),
+            )?;
             let cat = repos::category_upsert(c, &d, &a, json!({"name":"K","kind":"expense"}))?;
             let tx = repos::transaction_upsert(
                 c,

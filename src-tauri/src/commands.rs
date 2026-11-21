@@ -736,6 +736,24 @@ pub async fn convert_at(
     .await
 }
 
+/// Suggested converted amount for the operation form (BSB rate by rule,
+/// NBRB on fallback or by choice).
+#[tauri::command]
+pub async fn fx_suggest(
+    state: State<'_, AppState>,
+    req: crate::fx::SuggestReq,
+) -> Result<Option<crate::fx::Suggestion>, String> {
+    crate::fx::suggest(&state, req).await
+}
+
+/// Current BSB (app/card) and NBRB rates for the settings screen.
+#[tauri::command]
+pub async fn rates_overview(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::fx::RateOverview>, String> {
+    crate::fx::overview(&state).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

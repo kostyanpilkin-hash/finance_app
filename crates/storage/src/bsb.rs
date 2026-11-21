@@ -124,8 +124,20 @@ mod tests {
         assert_eq!(
             s.quotes,
             vec![
-                ("USD".to_string(), Quote { buy: 2_982_000, sell: 3_000_000 }),
-                ("RUB".to_string(), Quote { buy: 34_753, sell: 36_440 }),
+                (
+                    "USD".to_string(),
+                    Quote {
+                        buy: 2_982_000,
+                        sell: 3_000_000
+                    }
+                ),
+                (
+                    "RUB".to_string(),
+                    Quote {
+                        buy: 34_753,
+                        sell: 36_440
+                    }
+                ),
             ]
         );
     }
