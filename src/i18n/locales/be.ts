@@ -119,7 +119,7 @@ const be: Locale = {
     add: "Дадаць", save: "Захаваць", cancel: "Адмена", edit: "Змяніць", delete: "Выдаліць",
     archive: "У архіў", restore: "Аднавіць", archived: "архіў", system: "сістэмная", close: "Закрыць",
     name: "Назва", icon: "Іконка", noIcon: "Без іконкі",
-    currency: "Валюта", accountAmount: "Сума па рахунку", byRate: "па курсе НБРБ", color: "Колер", date: "Дата", amount: "Сума", comment: "Каментар",
+    currency: "Валюта", accountAmount: "Сума па рахунку", color: "Колер", date: "Дата", amount: "Сума", comment: "Каментар",
     account: "Рахунак", toAccount: "На рахунак", category: "Катэгорыя", empty: "Пакуль пуста",
     bank: "Банк", paymentSystem: "Плацёжная сістэма", totalOnAccounts: "Усяго на рахунках", archivedAccounts: "Архіўныя рахункі",
     searchComment: "Пошук па каментары…", search: "Пошук…", noOwner: "Без уладальніка", last4: "Апошнія 4 лічбы",
@@ -185,6 +185,13 @@ const be: Locale = {
     },
     goalAccountNone: "Без прывязкі да рахунку", goalAccountHint: "Назапашана лічыцца па балансе выбранага рахунку аўтаматычна.",
     all: "Усе", yes: "Так", no: "Не",
+    fx: {
+      bsbApp: "БСБ праграма", bsbCard: "БСБ карткі", nbrb: "Нацбанк", byRate: "па курсе", reference: "Для даведкі",
+      fallback: "Курс БСБ недаступны — па Нацбанку", actual: "Фактычны курс", vs: "да", source: "Курс",
+      rateFor: "Курс для пераліку", auto: "Аўта", bsb: "БСБ",
+      autoHint: "Аўта: карткі і зберажэнні — па курсе БСБ, наяўныя — па Нацбанку",
+      manual: "уручную", buy: "купля", sell: "продаж", per: "за",
+    },
     field: {
       amountMinor: "Сума", toAmountMinor: "Сума (атрымана)", origAmountMinor: "Сума (арыг.)",
       origCurrency: "Валюта (арыг.)", accountId: "Рахунак", toAccountId: "Рахунак атрымальніка",

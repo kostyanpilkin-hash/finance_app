@@ -119,7 +119,7 @@ const en: Locale = {
     add: "Add", save: "Save", cancel: "Cancel", edit: "Edit", delete: "Delete",
     archive: "Archive", restore: "Restore", archived: "archived", system: "system", close: "Close",
     name: "Name", icon: "Icon", noIcon: "No icon",
-    currency: "Currency", accountAmount: "Amount on account", byRate: "at NBRB rate", color: "Color", date: "Date", amount: "Amount", comment: "Comment",
+    currency: "Currency", accountAmount: "Amount on account", color: "Color", date: "Date", amount: "Amount", comment: "Comment",
     account: "Account", toAccount: "To account", category: "Category", empty: "Nothing here yet",
     bank: "Bank", paymentSystem: "Payment system", totalOnAccounts: "Total on accounts", archivedAccounts: "Archived accounts",
     searchComment: "Search by comment…", search: "Search…", noOwner: "No owner", last4: "Last 4 digits",
@@ -185,6 +185,13 @@ const en: Locale = {
     },
     goalAccountNone: "No linked account", goalAccountHint: "Progress is tracked automatically from the linked account balance.",
     all: "All", yes: "Yes", no: "No",
+    fx: {
+      bsbApp: "BSB app", bsbCard: "BSB cards", nbrb: "NBRB", byRate: "at", reference: "For reference",
+      fallback: "BSB rate unavailable — NBRB used", actual: "Actual rate", vs: "vs", source: "Rate",
+      rateFor: "Conversion rate", auto: "Auto", bsb: "BSB",
+      autoHint: "Auto: cards and savings use BSB rates, cash uses NBRB",
+      manual: "manual", buy: "buy", sell: "sell", per: "per",
+    },
     field: {
       amountMinor: "Amount", toAmountMinor: "Amount received", origAmountMinor: "Original amount",
       origCurrency: "Original currency", accountId: "Account", toAccountId: "Destination account",

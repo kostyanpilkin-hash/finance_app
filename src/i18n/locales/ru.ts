@@ -117,7 +117,7 @@ const ru = {
     add: "Добавить", save: "Сохранить", cancel: "Отмена", edit: "Изменить", delete: "Удалить",
     archive: "В архив", restore: "Восстановить", archived: "архив", system: "системная", close: "Закрыть",
     name: "Название", icon: "Иконка", noIcon: "Без иконки",
-    currency: "Валюта", accountAmount: "Сумма по счёту", byRate: "по курсу НБРБ", color: "Цвет", date: "Дата", amount: "Сумма", comment: "Комментарий",
+    currency: "Валюта", accountAmount: "Сумма по счёту", color: "Цвет", date: "Дата", amount: "Сумма", comment: "Комментарий",
     account: "Счёт", toAccount: "На счёт", category: "Категория", empty: "Пока пусто",
     bank: "Банк", paymentSystem: "Платёжная система", totalOnAccounts: "Итого на счетах", archivedAccounts: "Архивные счета",
     searchComment: "Поиск по комментарию…", search: "Поиск…", noOwner: "Без владельца", last4: "Последние 4 цифры",
@@ -183,6 +183,13 @@ const ru = {
     },
     goalAccountNone: "Без привязки к счёту", goalAccountHint: "Накоплено считается по балансу выбранного счёта автоматически.",
     all: "Все", yes: "Да", no: "Нет",
+    fx: {
+      bsbApp: "БСБ приложение", bsbCard: "БСБ карточки", nbrb: "Нацбанк", byRate: "по курсу", reference: "Для справки",
+      fallback: "Курс БСБ недоступен — по Нацбанку", actual: "Фактический курс", vs: "к", source: "Курс",
+      rateFor: "Курс для пересчёта", auto: "Авто", bsb: "БСБ",
+      autoHint: "Авто: карты и сбережения — по курсу БСБ, наличные — по Нацбанку",
+      manual: "вручную", buy: "покупка", sell: "продажа", per: "за",
+    },
     field: {
       amountMinor: "Сумма", toAmountMinor: "Сумма (получено)", origAmountMinor: "Сумма (ориг.)",
       origCurrency: "Валюта (ориг.)", accountId: "Счёт", toAccountId: "Счёт получателя",

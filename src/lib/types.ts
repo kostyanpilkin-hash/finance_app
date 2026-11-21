@@ -4,6 +4,13 @@ export interface UserRow {
   color: string;
 }
 
+/** Rate kinds a conversion can use (`finance_core::fx::RateKind`). */
+export type RateKind = "bsb_app" | "bsb_card" | "nbrb";
+/** What filled a converted amount; `manual` = typed by the user. */
+export type RateSource = RateKind | "manual";
+/** Account conversion bank; null = by account kind. */
+export type AccountRateSource = "bsb" | "nbrb";
+
 export type PaymentSystem = "visa" | "mastercard" | "belkart" | "mir" | "unionpay";
 
 export interface AccountRow {
@@ -13,6 +20,7 @@ export interface AccountRow {
   last4?: string | null;
   bank?: string | null;
   paymentSystem?: PaymentSystem | null;
+  rateSource?: AccountRateSource | null;
   currency: string;
   color: string;
   ownerUserId?: string | null;
@@ -47,6 +55,7 @@ export interface TransactionRow {
   /** Amount as entered when its currency differs from the account currency. */
   origAmountMinor?: number | null;
   origCurrency?: string | null;
+  rateSource?: RateSource | null;
   createdByUserId?: string | null;
   /** User the entry belongs to (every kind; falls back to the author). */
   spentByUserId?: string | null;
@@ -100,4 +109,33 @@ export interface AnalyticsSummary {
   byCategory: Bucket[];
   byOwner: Bucket[];
   byAccount: Bucket[];
+}
+
+export interface FxSuggestReq {
+  kind: TransactionRow["kind"];
+  accountId: string;
+  toAccountId?: string | null;
+  enteredCurrency?: string | null;
+  amountMinor: number;
+  occurredAt: string;
+  rateKind?: RateKind | null;
+}
+
+export interface FxSuggestion {
+  amountMinor: number;
+  currency: string;
+  rateKind: RateKind;
+  defaultKind: RateKind;
+  mode: "fill" | "reference";
+  fallback: boolean;
+  /** BYN per 1 unit of the foreign currency ×1e6. */
+  rateScaled: number | null;
+}
+
+export interface RateOverview {
+  currency: string;
+  bsbApp: { buy: number; sell: number } | null;
+  bsbCard: { buy: number; sell: number } | null;
+  /** NBRB per 1 unit ×1e6. */
+  nbrb: number | null;
 }

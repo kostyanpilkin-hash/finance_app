@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AnalyticsSummary, Bucket } from "./types";
+import type { AnalyticsSummary, Bucket, FxSuggestReq, FxSuggestion, RateOverview } from "./types";
 
 export interface AppInfo {
   version: string;
@@ -104,6 +104,8 @@ export const api = {
   ratesRefresh: () => invoke<{ updated: string[]; skipped: string[] }>("rates_refresh"),
   convertAt: (amountMinor: number, from: string, to: string, date: string) =>
     invoke<number | null>("convert_at", { amountMinor, from, to, date }),
+  fxSuggest: (req: FxSuggestReq) => invoke<FxSuggestion | null>("fx_suggest", { req }),
+  ratesOverview: () => invoke<RateOverview[]>("rates_overview"),
   exportXlsx: (from: string, to: string) => invoke<string>("export_xlsx", { from, to }),
   tgConnect: (token: string) => invoke<{ username: string; botId: string }>("tg_connect", { token }),
   tgDisconnect: () => invoke<void>("tg_disconnect"),

@@ -1,19 +1,20 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { RichSelect } from "@/components/ui/rich-select";
 import { CategoryIcon } from "@/components/ui/category-icon";
-import { convertMinorLocal, formatMinor, nowLocalIso, parseMinor, todayIso, type StoredRate } from "@/lib/money";
+import { formatMinor, nowLocalIso, parseMinor, todayIso } from "@/lib/money";
+import { nextRateSource } from "@/lib/fx";
 import { ownerLabelKey } from "@/lib/owners";
-import { qk, invalidateMoney } from "@/lib/queryKeys";
+import { invalidateMoney } from "@/lib/queryKeys";
 import { useAccounts, useCategories, useSettings, useUsers } from "@/lib/queries";
-import { useEnsureRates } from "@/lib/useDisplayMoney";
+import { FxHint } from "@/components/transactions/FxHint";
 import { TxAttachments } from "@/components/attachments/TxAttachments";
-import type { CategoryRow, TransactionRow } from "@/lib/types";
+import type { CategoryRow, FxSuggestReq, RateKind, TransactionRow } from "@/lib/types";
 
 const ENTRY_CURRENCIES = ["BYN", "USD", "EUR", "RUB"];
 /** Receipt photos are capped so a huge file can't stall the app. */
@@ -32,12 +33,13 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
   const [accKey, setAccKey] = useState(0);
   const [toKey, setToKey] = useState(0);
   const [tried, setTried] = useState(false);
+  // Last amount filled from the rate suggestion — typing over it marks the entry manual.
+  const [filled, setFilled] = useState<{ amount: number; kind: RateKind } | null>(null);
 
   const accounts = useAccounts();
   const categories = useCategories();
   const users = useUsers();
   const settings = useSettings();
-  const rates = useQuery({ queryKey: qk.rates, queryFn: () => api.ratesLatest<StoredRate>() });
 
   const invalidate = () => invalidateMoney(qc);
   const save = useMutation({
@@ -74,16 +76,22 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
   const crossCurrency = editing?.kind === "transfer" && !!toAccCurrency && !!accCurrency && toAccCurrency !== accCurrency;
   const opDate = (editing?.occurredAt ?? "").slice(0, 10) || todayIso();
 
-  // Lazily fetch NBRB rates the suggestion needs, then convert locally.
-  useEnsureRates([editing?.origCurrency, accCurrency, crossCurrency ? toAccCurrency : undefined]);
-  const suggestion =
-    foreign && editing?.origAmountMinor && editing?.origCurrency && accCurrency
-      ? convertMinorLocal(editing.origAmountMinor, editing.origCurrency, accCurrency, rates.data ?? [])
-      : null;
-  const convSuggestion =
-    crossCurrency && editing?.amountMinor && accCurrency && toAccCurrency
-      ? convertMinorLocal(editing.amountMinor, accCurrency, toAccCurrency, rates.data ?? [])
-      : null;
+  const occurredAt = editing?.occurredAt ?? "";
+  const fxReq: FxSuggestReq | null =
+    foreign && editing?.accountId && editing.origCurrency
+      ? { kind: editing.kind ?? "expense", accountId: editing.accountId, enteredCurrency: editing.origCurrency,
+          amountMinor: editing.origAmountMinor ?? 0, occurredAt }
+      : crossCurrency && editing?.accountId && editing.toAccountId
+        ? { kind: "transfer", accountId: editing.accountId, toAccountId: editing.toAccountId,
+            amountMinor: editing.amountMinor ?? 0, occurredAt }
+        : null;
+  const fill = (field: "amountMinor" | "toAmountMinor") => (amount: number, kind: RateKind) => {
+    if (!editing) return;
+    setFilled({ amount, kind });
+    setEditing({ ...editing, [field]: amount, rateSource: kind });
+    if (field === "amountMinor") setAccKey((k) => k + 1);
+    else setToKey((k) => k + 1);
+  };
 
   // The amount the backend would persist (same rule as submit()).
   const effectiveAmount = foreign
@@ -127,6 +135,7 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
       origCurrency: foreign ? editing.origCurrency : null,
       origAmountMinor: foreign ? editing.origAmountMinor : null,
       toAmountMinor: crossCurrency ? (editing.toAmountMinor ?? null) : null,
+      rateSource: foreign || crossCurrency ? (editing.rateSource ?? null) : null,
       spentByUserId: spenderId || null,
     });
   };
@@ -194,12 +203,12 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
                   invalid={show && missing.has("amount")}
                   inputMode="decimal" placeholder="0,00"
                   defaultValue={editing.amountMinor ? formatMinor(editing.amountMinor).replace(/[\u00A0\u202F]/g, "") : ""}
-                  onChange={(e) => setEditing({ ...editing, amountMinor: parseMinor(e.target.value) ?? 0 })} />
-                {suggestion !== null && (
-                  <Button type="button" size="sm" variant="outline" onClick={() => { setEditing({ ...editing, amountMinor: suggestion }); setAccKey((k) => k + 1); }}>
-                    ≈ {formatMinor(suggestion, accCurrency)} · {t("ui.byRate")}
-                  </Button>
-                )}
+                  onChange={(e) => {
+                    const v = parseMinor(e.target.value) ?? 0;
+                    setEditing({ ...editing, amountMinor: v, rateSource: nextRateSource(filled, v) });
+                  }} />
+                <FxHint req={fxReq} knownCurrency={editing.origCurrency ?? ""} current={editing.amountMinor || null}
+                  rateSource={editing.rateSource} onFill={fill("amountMinor")} />
               </div>
             </Field>
           </div>
@@ -236,13 +245,12 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
                 invalid={show && missing.has("toAmount")}
                 inputMode="decimal" placeholder="0,00"
                 defaultValue={editing?.toAmountMinor ? formatMinor(editing.toAmountMinor).replace(/[\u00A0\u202F]/g, "") : ""}
-                onChange={(e) => setEditing({ ...editing, toAmountMinor: parseMinor(e.target.value) ?? null })} />
-              {convSuggestion !== null && editing?.toAmountMinor !== convSuggestion && (
-                <Button type="button" size="sm" variant="outline"
-                  onClick={() => { setEditing({ ...editing, toAmountMinor: convSuggestion }); setToKey((k) => k + 1); }}>
-                  ≈ {formatMinor(convSuggestion, toAccCurrency)} · {t("ui.byRate")}
-                </Button>
-              )}
+                onChange={(e) => {
+                  const v = parseMinor(e.target.value) ?? null;
+                  setEditing({ ...editing, toAmountMinor: v, rateSource: nextRateSource(filled, v) });
+                }} />
+              <FxHint req={fxReq} knownCurrency={accCurrency ?? ""} current={editing.toAmountMinor ?? null}
+                rateSource={editing.rateSource} onFill={fill("toAmountMinor")} />
             </div>
           </Field>
         )}
