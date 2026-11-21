@@ -71,6 +71,22 @@ fn is_entry(step: Step) -> bool {
     )
 }
 
+/// A bank-rate suggestion for the current amount step.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(default)]
+struct FxCache {
+    amount: i64,
+    currency: String,
+    /// Rate kind applied (`bsb_app|bsb_card|nbrb`).
+    kind: String,
+    /// The same amount at the NBRB rate, when the main one is a BSB rate.
+    nbrb: Option<i64>,
+    /// Shown for reference only (RUB income) — no fill button.
+    reference: bool,
+    /// BSB was asked for but NBRB was used.
+    fallback: bool,
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(default)]
 struct Draft {
@@ -91,6 +107,10 @@ struct Draft {
     converted: Option<i64>,
     destination: Option<String>,
     credited: Option<i64>,
+    /// Rate suggestion for the ConvAmount / ToAmount step (computed before render).
+    fx: Option<FxCache>,
+    /// Which rate filled `converted` / `credited` (`bsb_app|bsb_card|nbrb|manual`).
+    rate_source: Option<String>,
     category: Option<String>,
     /// User the entry belongs to (defaults to the linked bot user).
     spender: Option<String>,
@@ -134,6 +154,8 @@ impl Default for Draft {
             converted: None,
             destination: None,
             credited: None,
+            fx: None,
+            rate_source: None,
             category: None,
             spender: None,
             date: report::today().to_string(),
@@ -407,31 +429,98 @@ fn account_currency(state: &AppState, d: &Draft) -> Result<String, String> {
         .unwrap_or_default())
 }
 
-/// The entered amount converted to the account currency at the NBRB rate
-/// in effect on the operation date.
-fn suggested(state: &AppState, d: &Draft) -> Result<Option<i64>, String> {
-    let (Some(cur), acc) = (&d.currency, account_currency(state, d)?) else {
-        return Ok(None);
+/// Before rendering: on the ConvAmount / ToAmount steps asks `fx::suggest`
+/// (rate by rule, plus the NBRB alternative) and caches it in the draft; on
+/// the rates screen warms the BSB quote cache `rates_text` reads.
+async fn prepare_fx(state: &AppState, d: &mut Draft) {
+    use finance_storage::core::fx::{Mode, RateKind};
+    if d.step == Step::Rates {
+        let _ = crate::fx::overview(state).await;
+    }
+    let (entered, to) = match d.step {
+        Step::ConvAmount => (d.currency.clone(), None),
+        Step::ToAmount => (None, d.destination.clone()),
+        _ => {
+            d.fx = None;
+            return;
+        }
     };
-    state
-        .db
-        .with_read_conn(|c| repos::convert_minor_at(c, d.amount, cur, &acc, &d.date))
-        .map(|v| v.filter(|n| *n > 0))
-        .map_err(|_| "conversion failed".into())
+    let req = crate::fx::SuggestReq {
+        kind: d.kind.clone(),
+        account_id: d.account.clone(),
+        to_account_id: to,
+        entered_currency: entered,
+        amount_minor: d.amount,
+        occurred_at: format!("{}T{}:00", d.date, d.time),
+        rate_kind: None,
+    };
+    let main = crate::fx::suggest(state, req.clone()).await.ok().flatten();
+    let nbrb = match &main {
+        Some(m) if m.rate_kind != RateKind::Nbrb && m.mode == Mode::Fill => {
+            let alt = crate::fx::SuggestReq {
+                rate_kind: Some(RateKind::Nbrb),
+                ..req
+            };
+            crate::fx::suggest(state, alt)
+                .await
+                .ok()
+                .flatten()
+                .map(|s| s.amount_minor)
+                .filter(|n| *n != m.amount_minor)
+        }
+        _ => None,
+    };
+    d.fx = main.map(|m| FxCache {
+        amount: m.amount_minor,
+        currency: m.currency,
+        kind: m.rate_kind.as_str().into(),
+        nbrb,
+        reference: m.mode == Mode::Reference,
+        fallback: m.fallback,
+    });
 }
 
-/// On the account-amount step, lazily downloads the NBRB rate in effect on the
-/// operation date so the suggestion is computed for that day, not for today.
-async fn ensure_conv_rates(state: &AppState, d: &Draft) {
-    if d.step != Step::ConvAmount {
-        return;
-    }
-    let Some(cur) = d.currency.clone() else {
+/// Suggestion text and buttons for the ConvAmount ("conv") / ToAmount ("credit") step.
+fn fx_view(d: &Draft, l: &str, text: &mut String, keys: &mut Vec<Vec<(String, String)>>) {
+    let Some(fx) = &d.fx else {
         return;
     };
-    let acc = account_currency(state, d).unwrap_or_default();
-    for c in [cur, acc] {
-        let _ = crate::rates::ensure(state, &c, &d.date).await;
+    let prefix = if d.step == Step::ToAmount {
+        "credit"
+    } else {
+        "conv"
+    };
+    let label = tr(l, &format!("rate_{}", fx.kind));
+    let amount = money(fx.amount, &fx.currency);
+    if fx.reference {
+        text.push_str(&format!(
+            "\n{}: ≈ {amount} · {label}",
+            tr(l, "for_reference")
+        ));
+        return;
+    }
+    keys.push(vec![(
+        format!("≈ {amount} · {label}"),
+        format!("{}:{prefix}:rate", d.revision),
+    )]);
+    if let Some(n) = fx.nbrb {
+        keys.push(vec![(
+            format!("{}: {}", tr(l, "by_nbrb"), money(n, &fx.currency)),
+            format!("{}:{prefix}:nbrb", d.revision),
+        )]);
+    }
+    if fx.fallback {
+        text.push_str(&format!("\n<i>{}</i>", tr(l, "bsb_unavailable")));
+    }
+}
+
+/// Amount and rate source for a pressed suggestion button.
+fn fx_pick(d: &Draft, which: &str) -> Option<(i64, String)> {
+    let fx = d.fx.as_ref().filter(|f| !f.reference)?;
+    match which {
+        "rate" => Some((fx.amount, fx.kind.clone())),
+        "nbrb" => fx.nbrb.map(|n| (n, "nbrb".to_string())),
+        _ => None,
     }
 }
 
@@ -656,6 +745,7 @@ fn draft_from_row(row: &Value, has_receipt: bool) -> Draft {
         account: row["accountId"].as_str().unwrap_or("").into(),
         destination: row["toAccountId"].as_str().map(str::to_string),
         credited: row["toAmountMinor"].as_i64(),
+        rate_source: row["rateSource"].as_str().map(str::to_string),
         category: row["categoryId"].as_str().map(str::to_string),
         spender: row["spentByUserId"].as_str().map(str::to_string),
         date: occurred.get(..10).unwrap_or("").into(),
@@ -900,14 +990,7 @@ fn view(state: &AppState, d: &Draft, ctx: &Ctx) -> Result<(String, Value), Strin
                         .collect();
                     keys.extend(others.chunks(3).map(|c| c.to_vec()));
                 }
-                ConvAmount => {
-                    if let Some(n) = suggested(state, d)? {
-                        keys.push(vec![(
-                            format!("≈ {} · {}", money(n, &acc_cur), tr(l, "by_rate")),
-                            format!("{}:conv:rate", d.revision),
-                        )]);
-                    }
-                }
+                ConvAmount | ToAmount => fx_view(d, l, &mut text, &mut keys),
                 Account | ToAccount | Category | Spender => {
                     let all = choices(state, d)?;
                     if all.is_empty() {
@@ -1168,9 +1251,11 @@ fn apply_text(d: &mut Draft, text: &str) -> bool {
                 }
             } else if d.step == Step::ConvAmount {
                 d.converted = Some(n);
+                d.rate_source = Some("manual".into());
                 advance(d, Step::Category);
             } else {
                 d.credited = Some(n);
+                d.rate_source = Some("manual".into());
                 advance(d, Step::Spender);
             }
         }
@@ -1244,7 +1329,8 @@ fn accepts(d: &Draft, action: &str) -> bool {
                 action.starts_with("pick:") || action.starts_with("page:")
             }
             Currency => action.starts_with("cur:"),
-            ConvAmount => action == "conv:rate",
+            ConvAmount => matches!(action, "conv:rate" | "conv:nbrb"),
+            ToAmount => matches!(action, "credit:rate" | "credit:nbrb"),
             Date => matches!(
                 action,
                 "date:today" | "date:yesterday" | "date:tomorrow" | "date:other"
@@ -1370,10 +1456,15 @@ fn persist_entry(
         (Some(_), Some(converted)) if d.kind != "transfer" => (converted, Some(d.amount)),
         (Some(_), _) => return Err("account amount required".into()),
     };
+    let rate_source = if orig_amount.is_some() || d.credited.is_some() {
+        d.rate_source.clone()
+    } else {
+        None
+    };
     state.db.write(|tx| {
         let alive: i64 = tx.query_row("SELECT COUNT(*) FROM transactions WHERE id=?1 AND deleted_at IS NULL", [&d.id], |r| r.get(0))?;
         let exists: i64 = tx.query_row("SELECT COUNT(*) FROM transactions WHERE id=?1", [&d.id], |r| r.get(0))?;
-        let mut payload = json!({"id":d.id,"kind":d.kind,"occurredAt":occurred,"accountId":d.account,"amountMinor":amount,"categoryId":d.category,"spentByUserId":d.spender,"toAccountId":d.destination,"toAmountMinor":d.credited,"comment":d.comment,"origAmountMinor":orig_amount,"origCurrency":orig_amount.and(d.currency.clone())});
+        let mut payload = json!({"id":d.id,"kind":d.kind,"occurredAt":occurred,"accountId":d.account,"amountMinor":amount,"categoryId":d.category,"spentByUserId":d.spender,"toAccountId":d.destination,"toAmountMinor":d.credited,"comment":d.comment,"origAmountMinor":orig_amount,"origCurrency":orig_amount.and(d.currency.clone()),"rateSource":rate_source});
         let write = if d.existing {
             if alive == 0 { return Err(finance_storage::Error::NotFound("transaction".into())); }
             true
@@ -1463,7 +1554,7 @@ pub(super) async fn callback(state: &AppState, ctx: &Ctx, cb: &TgCallback) -> Re
         super::log(&format!("callback {action}: {e}"));
         d.notice = tr(&ctx.lang, "failed");
     }
-    ensure_conv_rates(state, &d).await;
+    prepare_fx(state, &mut d).await;
     render(state, ctx, chat, &mut d, false).await?;
     if d.step == Step::Done {
         let mut menu = d.fresh();
@@ -1603,9 +1694,17 @@ async fn action_apply(
                 d.step = Step::ConvAmount;
             }
         }
-        "conv:rate" => {
-            d.converted = Some(suggested(state, d)?.ok_or("no rate")?);
-            advance(d, Step::Category);
+        "conv:rate" | "conv:nbrb" | "credit:rate" | "credit:nbrb" => {
+            let (prefix, which) = action.split_once(':').ok_or("bad action")?;
+            let (n, source) = fx_pick(d, which).ok_or("no rate")?;
+            d.rate_source = Some(source);
+            if prefix == "conv" {
+                d.converted = Some(n);
+                advance(d, Step::Category);
+            } else {
+                d.credited = Some(n);
+                advance(d, Step::Spender);
+            }
         }
         _ if action.starts_with("date:") => {
             if action == "date:other" {
@@ -1858,7 +1957,7 @@ pub(super) async fn message(state: &AppState, tg: &Tg, m: &TgMessage) -> Result<
             },
         );
     }
-    ensure_conv_rates(state, &d).await;
+    prepare_fx(state, &mut d).await;
     render(state, &ctx, chat, &mut d, true).await
 }
 
@@ -2227,6 +2326,129 @@ mod tests {
         assert!(tx_details(state, &d.id, "en").unwrap().is_none());
     }
 
+    fn add_account(state: &AppState, ctx: &Ctx, kind: &str, cur: &str) -> String {
+        state
+            .db
+            .with_conn(|c| {
+                let a = repos::account_upsert(
+                    c,
+                    &state.db,
+                    &bot_actor(state, ctx),
+                    json!({"name":"Card","kind":kind,"currency":cur}),
+                )?;
+                Ok(a["id"].as_str().unwrap().to_string())
+            })
+            .unwrap()
+    }
+
+    fn nbrb_today(state: &AppState, cur: &str, rate: i64) {
+        state
+            .db
+            .write(|c| repos::rate_upsert(c, &state.db, &report::today().to_string(), cur, rate, 1))
+            .unwrap();
+    }
+
+    #[test]
+    fn conv_step_offers_bsb_and_nbrb() {
+        use finance_storage::core::fx::RateKind;
+        let f = Fixture::new();
+        let state = f.state();
+        let (ctx, mut d) = setup(&f);
+        let usd = add_account(state, &ctx, "card", "USD");
+        crate::fx::tests::cache(state, RateKind::BsbApp, &[("USD", 2_988_000, 3_010_000)]);
+        nbrb_today(state, "USD", 3_000_000);
+        d.account = usd;
+        d.amount = 5000;
+        d.currency = Some("BYN".into());
+        d.step = Step::ConvAmount;
+        tauri::async_runtime::block_on(prepare_fx(state, &mut d));
+        let (_, keys) = view(state, &d, &ctx).unwrap();
+        let k = keys.to_string();
+        assert!(k.contains("BSB app") && k.contains("conv:rate"), "{k}");
+        assert!(k.contains("At NBRB") && k.contains("conv:nbrb"), "{k}");
+        assert!(accepts(&d, "conv:nbrb") && !accepts(&d, "credit:rate"));
+        let mut nb = d.clone();
+        tauri::async_runtime::block_on(action_apply(state, &ctx, 42, &mut d, "conv:rate")).unwrap();
+        assert_eq!(
+            (d.converted, d.rate_source.as_deref()),
+            (Some(1673), Some("bsb_app"))
+        );
+        tauri::async_runtime::block_on(action_apply(state, &ctx, 42, &mut nb, "conv:nbrb"))
+            .unwrap();
+        assert_eq!(
+            (nb.converted, nb.rate_source.as_deref()),
+            (Some(1667), Some("nbrb"))
+        );
+        let rates = report::rates_text(state, "en").unwrap();
+        assert!(
+            rates.contains("BSB, buy / sell") && rates.contains("2,9880 / 3,0100 · —"),
+            "{rates}"
+        );
+    }
+
+    #[test]
+    fn rub_income_shows_reference_only() {
+        use finance_storage::core::fx::RateKind;
+        let f = Fixture::new();
+        let state = f.state();
+        let (ctx, mut d) = setup(&f);
+        let byn = add_account(state, &ctx, "card", "BYN");
+        crate::fx::tests::cache(state, RateKind::BsbApp, &[("RUB", 34_753, 36_440)]);
+        d.kind = "income".into();
+        d.account = byn;
+        d.amount = 300_000;
+        d.currency = Some("RUB".into());
+        d.step = Step::ConvAmount;
+        tauri::async_runtime::block_on(prepare_fx(state, &mut d));
+        let (text, keys) = view(state, &d, &ctx).unwrap();
+        assert!(
+            text.contains("For reference") && text.contains("104,26"),
+            "{text}"
+        );
+        assert!(!keys.to_string().contains("conv:rate"));
+        assert!(fx_pick(&d, "rate").is_none());
+    }
+
+    #[test]
+    fn transfer_credited_suggestion() {
+        use finance_storage::core::fx::RateKind;
+        let f = Fixture::new();
+        let state = f.state();
+        let (ctx, mut d) = setup(&f);
+        let usd = add_account(state, &ctx, "card", "USD");
+        let byn = add_account(state, &ctx, "card", "BYN");
+        crate::fx::tests::cache(state, RateKind::BsbApp, &[("USD", 2_990_500, 3_010_000)]);
+        d.kind = "transfer".into();
+        d.category = None;
+        d.account = usd;
+        d.destination = Some(byn);
+        d.amount = 20723;
+        d.step = Step::ToAmount;
+        tauri::async_runtime::block_on(prepare_fx(state, &mut d));
+        let (_, keys) = view(state, &d, &ctx).unwrap();
+        assert!(keys.to_string().contains("credit:rate"));
+        tauri::async_runtime::block_on(action_apply(state, &ctx, 42, &mut d, "credit:rate"))
+            .unwrap();
+        assert_eq!(
+            (d.credited, d.rate_source.as_deref()),
+            (Some(61972), Some("bsb_app"))
+        );
+        assert_eq!(d.step, Step::Spender);
+    }
+
+    #[test]
+    fn typed_amount_marks_manual() {
+        let mut d = Draft {
+            step: Step::ToAmount,
+            ..Draft::default()
+        };
+        assert!(apply_text(&mut d, "29,91"));
+        assert_eq!(
+            (d.credited, d.rate_source.as_deref()),
+            (Some(2991), Some("manual"))
+        );
+    }
+
     #[test]
     fn foreign_currency_income_on_a_usd_card() {
         let f = Fixture::new();
@@ -2258,8 +2480,15 @@ mod tests {
         assert!(keys.to_string().contains("cur:BYN"));
         d.currency = Some("BYN".into());
         d.step = Step::ConvAmount;
-        assert_eq!(suggested(state, &d).unwrap(), Some(2000));
+        // No BSB quote cached in tests → NBRB fallback (3.25 on 2026-11-04).
+        tauri::async_runtime::block_on(prepare_fx(state, &mut d));
+        let fx = d.fx.clone().unwrap();
+        assert_eq!(
+            (fx.amount, fx.kind.as_str(), fx.fallback, fx.nbrb),
+            (2000, "nbrb", true, None)
+        );
         let (text, keys) = view(state, &d, &ctx).unwrap();
+        assert!(text.contains("BSB rate unavailable"));
         assert!(text.contains("USD?") && keys.to_string().contains("conv:rate"));
         assert_eq!(back_step(&d), Step::Currency);
         assert!(!apply_text(&mut d, "abc"));
@@ -2279,6 +2508,9 @@ mod tests {
                     |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
                 )?;
                 assert_eq!((amount, orig, cur.as_str()), (1990, 6500, "BYN"));
+                let src: Option<String> =
+                    c.query_row("SELECT rate_source FROM transactions", [], |r| r.get(0))?;
+                assert_eq!(src.as_deref(), Some("manual"));
                 Ok(())
             })
             .unwrap();

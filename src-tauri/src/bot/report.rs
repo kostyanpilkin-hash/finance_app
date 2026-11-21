@@ -240,12 +240,63 @@ pub(super) fn rates_text(state: &AppState, lang: &str) -> Result<String, String>
             rate4(scaled.saturating_mul(units))
         ));
     }
+    let bsb = bsb_lines(state);
     Ok(format!(
-        "{} {}\n\n{}",
+        "{} {}\n\n{}{}",
         tr(lang, "rates_on"),
         full_date(&date),
-        lines.join("\n")
+        lines.join("\n"),
+        if bsb.is_empty() {
+            String::new()
+        } else {
+            format!("\n\n{}\n{}", tr(lang, "rates_bsb"), bsb.join("\n"))
+        }
     ))
+}
+
+/// Current BSB app / card quotes from the local cache (warmed before render).
+fn bsb_lines(state: &AppState) -> Vec<String> {
+    use finance_storage::core::fx::{Quote, RateKind};
+    let now = chrono::Utc::now().timestamp_millis();
+    let pair = |q: Option<Quote>, units: i64| {
+        q.map_or("—".to_string(), |q| {
+            format!(
+                "{} / {}",
+                rate4(q.buy.saturating_mul(units)),
+                rate4(q.sell.saturating_mul(units))
+            )
+        })
+    };
+    state
+        .db
+        .with_read_conn(|c| {
+            let mut out = Vec::new();
+            for cur in ["USD", "EUR", "RUB", "PLN"] {
+                let app = repos::bank_rate_find(c, RateKind::BsbApp, cur, now, now)?;
+                let card = repos::bank_rate_find(c, RateKind::BsbCard, cur, now, now)?;
+                if app.is_none() && card.is_none() {
+                    continue;
+                }
+                let units = match cur {
+                    "RUB" => 100,
+                    "PLN" => 10,
+                    _ => 1,
+                };
+                let prefix = if units > 1 {
+                    format!("{units} ")
+                } else {
+                    String::new()
+                };
+                out.push(format!(
+                    "{} {prefix}{cur}  {} · {}",
+                    currency_flag(cur),
+                    pair(app, units),
+                    pair(card, units)
+                ));
+            }
+            Ok(out)
+        })
+        .unwrap_or_default()
 }
 
 /// HTML summary for a period, with comparison to the previous period of equal length.
