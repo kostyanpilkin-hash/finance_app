@@ -1,5 +1,6 @@
 //! Pure domain logic for Finance (no I/O). Shared by desktop, LAN host and the future server.
 
+pub mod fx;
 pub mod money;
 pub mod periods;
 
