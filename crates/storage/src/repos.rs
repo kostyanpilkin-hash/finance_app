@@ -169,6 +169,14 @@ pub fn account_upsert(
             map.insert("paymentSystem".into(), Value::Null);
         }
     }
+    if let Some(rs) = opt_str(map, "rateSource") {
+        if !rs.is_empty() && !["bsb", "nbrb"].contains(&rs.as_str()) {
+            return Err(Error::Invalid(format!("bad rate source {rs}")));
+        }
+        if rs.is_empty() {
+            map.insert("rateSource".into(), Value::Null);
+        }
+    }
     if let Some(b) = opt_str(map, "bank") {
         let b = b.trim();
         map.insert(

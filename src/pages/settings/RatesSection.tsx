@@ -5,30 +5,63 @@ import { qk } from "@/lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useLocalSettings } from "./useLocalSettings";
+import { formatRate, rateUnits } from "@/lib/fx";
+import type { RateOverview } from "@/lib/types";
 
 interface RateRow { currency: string; rateBynScaled: number; scale: number; date: string }
 
 export function RatesSection() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
   const rates = useQuery({ queryKey: qk.rates, queryFn: () => api.ratesLatest<RateRow>() });
+  const overview = useQuery({ queryKey: ["ratesOverview"], queryFn: api.ratesOverview, staleTime: 60_000 });
   const refresh = useMutation({
     mutationFn: api.ratesRefresh,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.rates }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: qk.rates });
+      void queryClient.invalidateQueries({ queryKey: ["ratesOverview"] });
+    },
   });
+  const rows: RateOverview[] = [...(overview.data ?? [])];
+  for (const r of rates.data ?? []) {
+    if (!rows.some((x) => x.currency === r.currency)) {
+      rows.push({ currency: r.currency, bsbApp: null, bsbCard: null, nbrb: Math.round(r.rateBynScaled / (r.scale || 1)) });
+    }
+  }
+  const nbrbDate = (rates.data ?? []).reduce((d, r) => (r.date > d ? r.date : d), "");
+  const bsbMissing = overview.isSuccess && rows.slice(0, 4).every((r) => !r.bsbApp && !r.bsbCard);
+  const fmt = (v: number | null | undefined, cur: string) => (v ? formatRate(v, cur, i18n.language) : "—");
+  const pair = (p: RateOverview["bsbApp"], cur: string) => (p ? `${fmt(p.buy, cur)} / ${fmt(p.sell, cur)}` : "—");
   return (
     <div className="space-y-2 text-sm">
-      <Button size="sm" onClick={() => refresh.mutate()} loading={refresh.isPending}>
+      <Button size="sm" onClick={() => refresh.mutate()} loading={refresh.isPending || overview.isFetching}>
         {t("ui.refreshRates")}
       </Button>
-      {(rates.data ?? []).map((r) => (
-        <div key={r.currency} className="flex justify-between border-b border-border/50 pb-1">
-          <span>{r.currency}</span>
-          <span className="text-muted-foreground">
-            {(r.rateBynScaled / 1e6).toFixed(4)} BYN · {r.date}
-          </span>
-        </div>
-      ))}
+      <div className="overflow-x-auto">
+        <table className="w-full text-left tabular-nums">
+          <thead className="text-xs text-muted-foreground">
+            <tr>
+              <th className="py-1 pr-3 font-medium" />
+              <th className="py-1 pr-3 font-medium">{t("ui.fx.bsbApp")} <span className="font-normal">({t("ui.fx.buy")} / {t("ui.fx.sell")})</span></th>
+              <th className="py-1 pr-3 font-medium">{t("ui.fx.bsbCard")}</th>
+              <th className="py-1 font-medium">{t("ui.fx.nbrb")}{nbrbDate && <span className="font-normal"> · {nbrbDate}</span>}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.currency} className="border-t border-border/50">
+                <td className="py-1 pr-3 font-medium">
+                  {rateUnits(r.currency) > 1 ? `${rateUnits(r.currency)} ` : ""}{r.currency}
+                </td>
+                <td className="py-1 pr-3">{pair(r.bsbApp, r.currency)}</td>
+                <td className="py-1 pr-3">{pair(r.bsbCard, r.currency)}</td>
+                <td className="py-1">{fmt(r.nbrb, r.currency)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {bsbMissing && <p className="text-xs text-muted-foreground">{t("ui.fx.fallback")}</p>}
       {refresh.data && (
         <p className="text-xs text-muted-foreground">
           {t("ui.refreshed")}: {refresh.data.updated.join(", ")}

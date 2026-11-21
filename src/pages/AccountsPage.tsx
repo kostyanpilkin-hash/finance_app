@@ -10,12 +10,13 @@ import { useUsers } from "@/lib/queries";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatMinor } from "@/lib/money";
 import { cn } from "@/lib/utils";
-import type { AccountRow, DashboardData, PaymentSystem } from "@/lib/types";
+import type { AccountRateSource, AccountRow, DashboardData, PaymentSystem } from "@/lib/types";
 import { Input } from "@/components/ui/input";
 import { RichSelect } from "@/components/ui/rich-select";
 import { Field } from "@/components/ui/field";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ColorSwatches } from "@/components/ui/color-swatches";
+import { Segmented } from "@/components/ui/segmented";
 
 const KINDS = ["card", "cash", "savings", "other"] as const;
 const CURRENCIES = ["BYN", "USD", "EUR", "RUB"];
@@ -133,6 +134,19 @@ export function AccountsPage() {
                 onChange={(v) => setEditing({ ...editing, kind: v as AccountRow["kind"] })}
                 items={KINDS.map((k) => ({ value: k, label: t(`ui.accountKind.${k}`) }))} />
             </Field>
+            <div className="sm:col-span-2">
+              <Field label={t("ui.fx.rateFor")}>
+                <Segmented<"auto" | AccountRateSource> className="w-fit"
+                  value={editing.rateSource ?? "auto"}
+                  onChange={(v) => setEditing({ ...editing, rateSource: v === "auto" ? null : v })}
+                  options={[
+                    { value: "auto", label: t("ui.fx.auto") },
+                    { value: "bsb", label: t("ui.fx.bsb") },
+                    { value: "nbrb", label: t("ui.fx.nbrb") },
+                  ]} />
+              </Field>
+              <p className="mt-1 text-xs text-muted-foreground">{t("ui.fx.autoHint")}</p>
+            </div>
             {editing.kind === "card" && (
               <>
                 <Field label={t("ui.bank")}>

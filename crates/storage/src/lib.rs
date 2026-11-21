@@ -927,6 +927,28 @@ mod tests {
         .unwrap();
     }
 
+    #[test]
+    fn account_rate_source_validated() {
+        let d = db();
+        d.with_conn(|c| {
+            let a = actor(&d);
+            let acc = repos::account_upsert(
+                c,
+                &d,
+                &a,
+                json!({"name":"Cash","kind":"cash","currency":"BYN","rateSource":"bsb"}),
+            )?;
+            assert_eq!(acc["rateSource"].as_str(), Some("bsb"));
+            let id = acc["id"].as_str().unwrap();
+            let cleared = repos::account_upsert(c, &d, &a, json!({"id": id, "rateSource": ""}))?;
+            assert!(cleared["rateSource"].is_null());
+            let bad = repos::account_upsert(c, &d, &a, json!({"id": id, "rateSource": "alfa"}));
+            assert!(matches!(bad, Err(Error::Invalid(_))));
+            Ok(())
+        })
+        .unwrap();
+    }
+
     fn snap(from: i64, next: Option<i64>, buy: i64) -> bsb::Snapshot {
         bsb::Snapshot {
             from_ms: from,
