@@ -34,7 +34,7 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
   const [toKey, setToKey] = useState(0);
   const [tried, setTried] = useState(false);
   // Last amount filled from the rate suggestion — typing over it marks the entry manual.
-  const [filled, setFilled] = useState<{ amount: number; kind: RateKind } | null>(null);
+  const [filled, setFilled] = useState<{ amount: number; kind: RateKind; ctx: string } | null>(null);
 
   const accounts = useAccounts();
   const categories = useCategories();
@@ -85,9 +85,14 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
         ? { kind: "transfer", accountId: editing.accountId, toAccountId: editing.toAccountId,
             amountMinor: editing.amountMinor ?? 0, occurredAt }
         : null;
+  // Which field/accounts/currency a filled amount belongs to — a fill is only
+  // remembered while that context is unchanged.
+  const fxCtx = (field: string) =>
+    [field, editing?.kind, editing?.accountId, editing?.toAccountId, editing?.origCurrency].join("|");
+  const filledFor = (field: string) => (filled && filled.ctx === fxCtx(field) ? filled : null);
   const fill = (field: "amountMinor" | "toAmountMinor") => (amount: number, kind: RateKind) => {
     if (!editing) return;
-    setFilled({ amount, kind });
+    setFilled({ amount, kind, ctx: fxCtx(field) });
     setEditing({ ...editing, [field]: amount, rateSource: kind });
     if (field === "amountMinor") setAccKey((k) => k + 1);
     else setToKey((k) => k + 1);
@@ -205,7 +210,7 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
                   defaultValue={editing.amountMinor ? formatMinor(editing.amountMinor).replace(/[\u00A0\u202F]/g, "") : ""}
                   onChange={(e) => {
                     const v = parseMinor(e.target.value) ?? 0;
-                    setEditing({ ...editing, amountMinor: v, rateSource: nextRateSource(filled, v) });
+                    setEditing({ ...editing, amountMinor: v, rateSource: nextRateSource(filledFor("amountMinor"), v) });
                   }} />
                 <FxHint req={fxReq} knownCurrency={editing.origCurrency ?? ""} current={editing.amountMinor || null}
                   rateSource={editing.rateSource} onFill={fill("amountMinor")} />
@@ -247,7 +252,7 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
                 defaultValue={editing?.toAmountMinor ? formatMinor(editing.toAmountMinor).replace(/[\u00A0\u202F]/g, "") : ""}
                 onChange={(e) => {
                   const v = parseMinor(e.target.value) ?? null;
-                  setEditing({ ...editing, toAmountMinor: v, rateSource: nextRateSource(filled, v) });
+                  setEditing({ ...editing, toAmountMinor: v, rateSource: nextRateSource(filledFor("toAmountMinor"), v) });
                 }} />
               <FxHint req={fxReq} knownCurrency={accCurrency ?? ""} current={editing.toAmountMinor ?? null}
                 rateSource={editing.rateSource} onFill={fill("toAmountMinor")} />

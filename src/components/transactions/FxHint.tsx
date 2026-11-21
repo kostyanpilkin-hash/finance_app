@@ -46,7 +46,7 @@ export function FxHint({ req, knownCurrency, current, rateSource, onFill }: FxHi
   return (
     <div className="flex w-full flex-col gap-1.5">
       <div className="flex flex-wrap items-center gap-2">
-        {s && s.mode === "fill" && current !== s.amountMinor && (
+        {s && s.mode === "fill" && current !== s.amountMinor && !q.isPlaceholderData && (
           <Button type="button" size="sm" variant="outline" onClick={() => onFill(s.amountMinor, s.rateKind)}>
             ≈ {formatMinor(s.amountMinor, s.currency)} · {label}{rate}
           </Button>

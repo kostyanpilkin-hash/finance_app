@@ -1245,6 +1245,7 @@ fn apply_text(d: &mut Draft, text: &str) -> bool {
                 if d.editing && d.currency.is_some() {
                     // A new entered amount needs a new account-currency amount.
                     d.converted = None;
+                    d.rate_source = None;
                     d.step = Step::ConvAmount;
                 } else {
                     advance(d, Step::Account);
@@ -1687,10 +1688,12 @@ async fn action_apply(
             if cur == account_currency(state, d)? {
                 d.currency = None;
                 d.converted = None;
+                d.rate_source = None;
                 advance(d, Step::Category);
             } else {
                 d.currency = Some(cur.into());
                 d.converted = None;
+                d.rate_source = None;
                 d.step = Step::ConvAmount;
             }
         }
@@ -1732,6 +1735,7 @@ async fn action_apply(
                     if d.kind == "transfer" {
                         d.destination = None;
                         d.credited = None;
+                        d.rate_source = None;
                         d.editing = false;
                         d.step = Step::ToAccount;
                     } else {
@@ -1754,6 +1758,7 @@ async fn action_apply(
                 Step::ToAccount => {
                     d.destination = Some(id.into());
                     d.credited = None;
+                    d.rate_source = None;
                     let different =
                         account(state, &d.account)?["currency"] != account(state, id)?["currency"];
                     if different {
