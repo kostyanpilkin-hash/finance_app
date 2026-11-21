@@ -10,6 +10,35 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: "0.3.0",
+    items: {
+      ru: [
+        "Суммы в другой валюте подсказываются по курсу БСБ Банка — как реально проводит банк",
+        "Курс можно переключить в операции: БСБ приложение, БСБ карточки или Нацбанк",
+        "При ручном вводе видно фактический курс и отклонение от курса банка",
+        "Для рублей из России курс БСБ показывается только для справки",
+        "В боте — те же подсказки по курсу БСБ и кнопка «По Нацбанку»",
+        "Обновите приложение на всех устройствах — иначе синхронизация не пройдёт",
+      ],
+      be: [
+        "Сумы ў іншай валюце падказваюцца па курсе БСБ Банка — як рэальна праводзіць банк",
+        "Курс можна пераключыць у аперацыі: БСБ праграма, БСБ карткі або Нацбанк",
+        "Пры ручным уводзе відаць фактычны курс і адхіленне ад курса банка",
+        "Для рублёў з Расіі курс БСБ паказваецца толькі для даведкі",
+        "У боце — тыя ж падказкі па курсе БСБ і кнопка «Па Нацбанку»",
+        "Абнавіце праграму на ўсіх прыладах — інакш сінхранізацыя не пройдзе",
+      ],
+      en: [
+        "Foreign-currency amounts are suggested at BSB Bank rates — the way the bank books them",
+        "Switch the rate per entry: BSB app, BSB cards or NBRB",
+        "Typing an amount by hand shows the actual rate and its gap to the bank rate",
+        "For roubles from Russia the BSB rate is shown for reference only",
+        "The bot gets the same BSB suggestions plus an “At NBRB” button",
+        "Update the app on every device — otherwise sync will stop",
+      ],
+    },
+  },
+  {
     version: "0.2.0",
     items: {
       ru: [

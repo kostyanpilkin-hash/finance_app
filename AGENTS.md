@@ -42,6 +42,14 @@
 - Новые зависимости — стабильные версии, опубликованные ≥ 7 дней назад; без `latest`/`*`.
 - **Репозиторий публичный — ноль личных данных.** В файлы, сообщения коммитов и историю не должны попадать: настоящие имена, почты, телефоны, адреса, локальные пути (`C:\Users\<имя>`, `D:\...`), токены, ключи, IP/имена устройств. В тестах, примерах и доках — нейтральные имена (Иван, Мария) и generic-пути. Коммитим под GitHub-noreply identity (настроена локально в `.git/config` — не менять на настоящую почту). Перед пушем проверять `git grep` по именам членов семьи, почте и паттернам локальных путей (`Users\`, `<диск>:\Work`) — совпадений быть не должно (кроме этого пункта).
 
+## Курсы валют
+
+- НБРБ — `api.nbrb.by` (`src-tauri/src/rates.rs`, таблица `exchange_rates`, синхронизируется): итоги, капитал, отчёты.
+- БСБ Банк — неофициальный эндпоинт сайта `POST https://mobile.bsb.by/api/v1/free-zone-management/exchange-rates/rates` `{"type":"CARD_ONLINE"|"CARD","bankDepartmentId":7,"period":<ms>}` (без ключа и SLA). `CARD_ONLINE` = курс приложения, `CARD` = по карточкам. Разбор — `crates/storage/src/bsb.rs` (из строк `scaled*Amount`, без float).
+- Котировки БСБ — локальный кэш `bank_rates` (не синхронизируется, пишется напрямую как `settings` — единственное исключение из правила `apply_change`). Текущий снимок живёт 5 минут.
+- Правило выбора курса и арифметика покупки/продажи — `finance_core::fx`; подсказка для формы и бота — `src-tauri/src/fx.rs` (`suggest`, команда `fx_suggest`). Ошибки БСБ → откат на НБРБ, лог `logs/rates.log`.
+- `accounts.rate_source` (`bsb|nbrb|NULL` = по типу счёта), `transactions.rate_source` (`bsb_app|bsb_card|nbrb|manual`).
+
 ## Telegram-бот
 
 - Модули `src-tauri/src/bot/`: `wizard.rs` (карточки и шаги, ревизия кнопок), `text.rs` (тексты ru/be/en, форматирование), `report.rs` (балансы, сводки), `chart.rs` (PNG-диаграмма), `notify.rs` (расписание, напоминания).
@@ -56,4 +64,4 @@
 - MSYS path conversion: аргументы вида `/S` превращаются в пути — запускать `MSYS_NO_PATHCONV=1 ...`.
 - Длинные логи (сборка, npm) — в файл или `| tail -N`.
 - Shell — git-bash: команды в bash-форме.
-- **SQLCipher/OpenSSL:** сборка `rusqlite` с `bundled-sqlcipher-vendored-openssl` требует полноценный Perl — git-bash perl не подходит. Нужен портативный Strawberry Perl (без установки, достаточно распаковки). Перед cargo-командами: `export PATH="/c/tools/strawberry-perl/perl/bin:$PATH"`. На GitHub runners Perl уже есть.
+- **SQLCipher/OpenSSL:** сборка `rusqlite` с `bundled-sqlcipher-vendored-openssl` требует полноценный Perl — git-bash perl не подходит. Нужен портативный Strawberry Perl (без установки, достаточно распаковки). Перед cargo-командами добавить `<strawberry-perl>/perl/bin` в начало `PATH` (`export PATH="<путь>/perl/bin:$PATH"`; путь зависит от машины). На GitHub runners Perl уже есть.
