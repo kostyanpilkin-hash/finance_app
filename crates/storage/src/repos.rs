@@ -354,7 +354,12 @@ pub struct TransactionInput {
     pub orig_amount_minor: Option<i64>,
     #[serde(default)]
     pub orig_currency: Option<String>,
+    /// Which rate filled the converted amount (`bsb_app|bsb_card|nbrb|manual`).
+    #[serde(default)]
+    pub rate_source: Option<String>,
 }
+
+pub const RATE_SOURCES: &[&str] = &["bsb_app", "bsb_card", "nbrb", "manual"];
 
 pub fn transaction_upsert(
     conn: &Connection,
@@ -413,6 +418,7 @@ pub fn transaction_upsert(
         )),
         (Some(_), _) => return Err(Error::Invalid("original amount must be > 0".into())),
     };
+    let converted = orig.is_some() || (t.kind == "transfer" && t.to_amount_minor.is_some());
     let map = row.as_object_mut().unwrap();
     match orig {
         Some((cur, amount)) => {
@@ -423,6 +429,16 @@ pub fn transaction_upsert(
             map.insert("origCurrency".into(), Value::Null);
             map.insert("origAmountMinor".into(), Value::Null);
         }
+    }
+    // Only a converted amount has a rate source; an absent key is left alone
+    // so a partial update keeps the stored value.
+    if let Some(src) = t.rate_source.as_deref() {
+        if !RATE_SOURCES.contains(&src) {
+            return Err(Error::Invalid(format!("bad rate source {src}")));
+        }
+    }
+    if !converted {
+        map.insert("rateSource".into(), Value::Null);
     }
     set_default(map, "comment", json!(""));
     set_default(map, "source", json!("desktop"));

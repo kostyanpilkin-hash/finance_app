@@ -926,6 +926,63 @@ mod tests {
         .unwrap();
     }
 
+    /// rate_source: kept on a converted entry, survives a partial row from an
+    /// old client (no `rateSource` key), cleared by explicit null, validated,
+    /// and dropped when the entry has no conversion.
+    #[test]
+    fn transaction_rate_source() {
+        let d = db();
+        d.with_conn(|c| {
+            let a = actor(&d);
+            let usd = repos::account_upsert(c, &d, &a, json!({"name":"U","kind":"card","currency":"USD"}))?;
+            let cat = repos::category_upsert(c, &d, &a, json!({"name":"K","kind":"expense"}))?;
+            let tx = repos::transaction_upsert(
+                c,
+                &d,
+                &a,
+                json!({"kind":"expense","occurredAt":"2026-11-10T10:00:00","accountId":usd["id"],
+                       "amountMinor":1673,"categoryId":cat["id"],"origAmountMinor":5000,
+                       "origCurrency":"BYN","rateSource":"bsb_app"}),
+            )?;
+            let id = tx["id"].as_str().unwrap().to_string();
+            assert_eq!(tx["rateSource"].as_str(), Some("bsb_app"));
+
+            // Old client: full row without the new key → value kept on write_row.
+            let mut old = db::row_json(c, "transactions", &id)?.unwrap();
+            old.as_object_mut().unwrap().remove("rateSource");
+            old["comment"] = json!("edited");
+            db::write_row(c, "transactions", &old)?;
+            let row = db::row_json(c, "transactions", &id)?.unwrap();
+            assert_eq!(row["rateSource"].as_str(), Some("bsb_app"));
+            assert_eq!(row["comment"].as_str(), Some("edited"));
+
+            // Partial upsert without the key keeps it too.
+            let up = repos::transaction_upsert(c, &d, &a, json!({"id": id, "comment": "x"}))?;
+            assert_eq!(up["rateSource"].as_str(), Some("bsb_app"));
+
+            // Explicit null clears.
+            let mut cleared = db::row_json(c, "transactions", &id)?.unwrap();
+            cleared["rateSource"] = serde_json::Value::Null;
+            db::write_row(c, "transactions", &cleared)?;
+            assert!(db::row_json(c, "transactions", &id)?.unwrap()["rateSource"].is_null());
+
+            let bad = repos::transaction_upsert(c, &d, &a, json!({"id": id, "rateSource": "foo"}));
+            assert!(matches!(bad, Err(Error::Invalid(_))));
+
+            // Same-currency entry: no conversion → no rate source.
+            let plain = repos::transaction_upsert(
+                c,
+                &d,
+                &a,
+                json!({"kind":"expense","occurredAt":"2026-11-10T10:00:00","accountId":usd["id"],
+                       "amountMinor":100,"categoryId":cat["id"],"rateSource":"nbrb"}),
+            )?;
+            assert!(plain["rateSource"].is_null());
+            Ok(())
+        })
+        .unwrap();
+    }
+
     /// Every kind carries "whose entry": default = author, explicit value is
     /// validated and kept for expenses, income and transfers alike.
     #[test]

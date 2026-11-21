@@ -274,6 +274,25 @@ const MIGRATIONS: &[&[&str]] = &[
     // ---- v6: the field now applies to every kind — backfill the income/transfer
     // rows v5-era code left NULL; bumps SCHEMA_VERSION so old clients must update ----
     &["UPDATE transactions SET spent_by_user_id = created_by_user_id WHERE spent_by_user_id IS NULL"],
+    // ---- v7: bank exchange rates ----
+    // accounts.rate_source: NULL = by kind (card/savings → BSB, cash/other → NBRB).
+    // transactions.rate_source: which rate filled the converted amount.
+    // bank_rates: local cache of public bank quotes — not replicated, written
+    // directly (like `settings`), BYN per 1 unit ×1e6, times in unix ms.
+    &[
+        "ALTER TABLE accounts ADD COLUMN rate_source TEXT CHECK (rate_source IS NULL OR rate_source IN ('bsb','nbrb'))",
+        "ALTER TABLE transactions ADD COLUMN rate_source TEXT CHECK (rate_source IS NULL OR rate_source IN ('bsb_app','bsb_card','nbrb','manual'))",
+        "CREATE TABLE bank_rates (
+            kind TEXT NOT NULL CHECK (kind IN ('bsb_app','bsb_card')),
+            currency TEXT NOT NULL,
+            valid_from INTEGER NOT NULL,
+            valid_to INTEGER,
+            buy_scaled INTEGER NOT NULL,
+            sell_scaled INTEGER NOT NULL,
+            fetched_at INTEGER NOT NULL,
+            PRIMARY KEY (kind, currency, valid_from)
+        )",
+    ],
 ];
 
 /// Schema version stored in `meta`, 0 for a fresh or unreadable db.
@@ -288,6 +307,10 @@ pub fn stored_version(conn: &Connection) -> i64 {
 
 /// Applies pending migrations inside a transaction.
 pub fn migrate(conn: &Connection) -> Result<(), Error> {
+    migrate_upto(conn, SCHEMA_VERSION)
+}
+
+fn migrate_upto(conn: &Connection, target: i64) -> Result<(), Error> {
     conn.execute_batch(
         "PRAGMA journal_mode = WAL;
          PRAGMA foreign_keys = ON;
@@ -305,7 +328,7 @@ pub fn migrate(conn: &Connection) -> Result<(), Error> {
     }
     for (i, stmts) in MIGRATIONS.iter().enumerate() {
         let v = (i + 1) as i64;
-        if v <= current {
+        if v <= current || v > target {
             continue;
         }
         let tx = conn.unchecked_transaction()?;
@@ -321,4 +344,52 @@ pub fn migrate(conn: &Connection) -> Result<(), Error> {
         tx.commit()?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cols(c: &Connection, table: &str) -> Vec<String> {
+        c.prepare(&format!("SELECT name FROM pragma_table_info('{table}')"))
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    }
+
+    #[test]
+    fn migration_v7_adds_rate_source_and_bank_rates() {
+        let c = Connection::open_in_memory().unwrap();
+        migrate_upto(&c, 6).unwrap();
+        assert_eq!(stored_version(&c), 6);
+        assert!(!cols(&c, "transactions").iter().any(|n| n == "rate_source"));
+        c.execute_batch(
+            "INSERT INTO accounts (id, name, currency, created_at, updated_at)
+               VALUES ('a1', 'Card', 'USD', 't', 't');
+             INSERT INTO transactions (id, kind, occurred_at, account_id, amount_minor, created_at, updated_at)
+               VALUES ('t1', 'expense', '2026-11-01T10:00:00', 'a1', 100, 't', 't');",
+        )
+        .unwrap();
+        migrate(&c).unwrap();
+        assert_eq!(stored_version(&c), 7);
+        assert!(cols(&c, "accounts").iter().any(|n| n == "rate_source"));
+        assert!(cols(&c, "transactions").iter().any(|n| n == "rate_source"));
+        let n: i64 = c
+            .query_row("SELECT COUNT(*) FROM bank_rates", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 0);
+        let (a, t): (Option<String>, Option<String>) = c
+            .query_row(
+                "SELECT a.rate_source, t.rate_source FROM transactions t JOIN accounts a ON a.id = t.account_id",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((a, t), (None, None));
+        assert!(c
+            .execute("UPDATE transactions SET rate_source = 'foo'", [])
+            .is_err());
+    }
 }
