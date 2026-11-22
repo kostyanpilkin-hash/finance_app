@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { RichSelect } from "@/components/ui/rich-select";
 import { Field } from "@/components/ui/field";
 import { ColorSwatches } from "@/components/ui/color-swatches";
+import { RefreshButton } from "@/components/RefreshButton";
 
 interface GoalRow {
   id: string; name: string; targetMinor: number; currentMinor: number;
@@ -58,7 +59,10 @@ export function GoalsPage() {
     <div className="animate-fade-up mx-auto w-full max-w-4xl space-y-5">
       <div className="flex items-center justify-between">
         <h2 className="font-display text-2xl font-semibold tracking-tight">{t("nav.goals")}</h2>
-        <Button onClick={() => open()}>+ {t("ui.add")}</Button>
+        <div className="flex items-center gap-2">
+          <RefreshButton />
+          <Button onClick={() => open()}>+ {t("ui.add")}</Button>
+        </div>
       </div>
 
       {editing && (

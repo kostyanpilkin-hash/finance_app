@@ -10,6 +10,7 @@ import { dayLabel, formatMinor } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import type { AuditRow } from "@/lib/types";
 import { Input } from "@/components/ui/input";
+import { RefreshButton } from "@/components/RefreshButton";
 
 const ENTITIES = ["transactions", "accounts", "categories", "goals", "reminders", "users"] as const;
 
@@ -107,7 +108,10 @@ export function JournalPage() {
 
   return (
     <div className="animate-fade-up mx-auto w-full max-w-4xl space-y-4">
-      <h2 className="font-display text-2xl font-semibold tracking-tight">{t("nav.journal")}</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="font-display text-2xl font-semibold tracking-tight">{t("nav.journal")}</h2>
+        <RefreshButton />
+      </div>
       <div className="flex flex-wrap items-center gap-2">
         <Input className="flex-1"
           placeholder={t("ui.searchComment")} value={search} onChange={(e) => setSearch(e.target.value)} />

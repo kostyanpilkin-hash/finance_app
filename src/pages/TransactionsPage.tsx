@@ -19,6 +19,7 @@ import { TxThumb } from "@/components/attachments/TxAttachments";
 import type { CategoryRow, TransactionRow } from "@/lib/types";
 import { Input } from "@/components/ui/input";
 import { RichSelect } from "@/components/ui/rich-select";
+import { RefreshButton } from "@/components/RefreshButton";
 
 export function TransactionsPage() {
   const { t } = useTranslation();
@@ -90,7 +91,10 @@ export function TransactionsPage() {
     <div className="animate-fade-up mx-auto w-full max-w-4xl space-y-4">
       <div className="flex items-center justify-between gap-3">
         <h2 className="font-display text-2xl font-semibold tracking-tight">{t("nav.transactions")}</h2>
-        <Button onClick={() => { setAddOpen(true); setEditingId(null); }}>+ {t("ui.add")}</Button>
+        <div className="flex items-center gap-2">
+          <RefreshButton />
+          <Button onClick={() => { setAddOpen(true); setEditingId(null); }}>+ {t("ui.add")}</Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2">

@@ -17,6 +17,7 @@ import { Field } from "@/components/ui/field";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ColorSwatches } from "@/components/ui/color-swatches";
 import { Segmented } from "@/components/ui/segmented";
+import { RefreshButton } from "@/components/RefreshButton";
 
 const KINDS = ["card", "cash", "savings", "other"] as const;
 const CURRENCIES = ["BYN", "USD", "EUR", "RUB"];
@@ -98,9 +99,12 @@ export function AccountsPage() {
     <div className="animate-fade-up mx-auto w-full max-w-4xl space-y-5">
       <div className="flex items-center justify-between">
         <h2 className="font-display text-2xl font-semibold tracking-tight">{t("nav.accounts")}</h2>
-        <Button onClick={() => setEditing({ kind: "card", currency: "BYN", color: "#059669", includeInTotal: 1 })}>
-          + {t("ui.add")}
-        </Button>
+        <div className="flex items-center gap-2">
+          <RefreshButton />
+          <Button onClick={() => setEditing({ kind: "card", currency: "BYN", color: "#059669", includeInTotal: 1 })}>
+            + {t("ui.add")}
+          </Button>
+        </div>
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-4">

@@ -18,6 +18,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
+import { RefreshButton } from "@/components/RefreshButton";
 
 type Kind = "day" | "week" | "month" | "custom";
 
@@ -191,7 +192,10 @@ export function AnalyticsPage() {
 
   return (
     <div className="animate-fade-up mx-auto w-full max-w-4xl space-y-5">
-      <h2 className="font-display text-2xl font-semibold tracking-tight">{t("nav.analytics")}</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="font-display text-2xl font-semibold tracking-tight">{t("nav.analytics")}</h2>
+        <RefreshButton />
+      </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <Segmented value={kind} onChange={setKind}

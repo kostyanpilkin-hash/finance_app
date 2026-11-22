@@ -14,6 +14,7 @@ import { AccountCard } from "@/components/accounts/AccountCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { DashboardData } from "@/lib/types";
 import { Segmented } from "@/components/ui/segmented";
+import { RefreshButton } from "@/components/RefreshButton";
 
 type DashPeriod = "week" | "month" | "days30";
 const PERIODS: DashPeriod[] = ["week", "month", "days30"];
@@ -118,8 +119,11 @@ export function DashboardPage() {
     <div className="animate-fade-up mx-auto w-full max-w-4xl space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="font-display text-2xl font-semibold tracking-tight">{t("nav.dashboard")}</h2>
-        <Segmented value={period} onChange={setPeriod}
-          options={PERIODS.map((p) => ({ value: p, label: t(`ui.period.${p}`) }))} />
+        <div className="flex items-center gap-2">
+          <RefreshButton />
+          <Segmented value={period} onChange={setPeriod}
+            options={PERIODS.map((p) => ({ value: p, label: t(`ui.period.${p}`) }))} />
+        </div>
       </div>
 
       {loading ? (
