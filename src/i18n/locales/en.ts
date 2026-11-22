@@ -148,6 +148,10 @@ const en: Locale = {
     ratesEmpty: "No rates loaded yet",
     conflictsMore: "and {{count}} more",
     refresh: "Refresh",
+    editLayout: "Edit layout", done: "Done", resetLayout: "Reset layout",
+    editHint: "Drag cards around, pull the corner to change width",
+    moveEarlier: "Move earlier", moveLater: "Move later", wider: "Wider", narrower: "Narrower",
+    widgetStats: "Summary", widgetAccounts: "Accounts",
     journal: {
       showService: "Show service entries", showMore: "Show more", allSources: "All sources",
       allUsers: "All authors",

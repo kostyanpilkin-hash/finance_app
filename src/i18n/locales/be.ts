@@ -148,6 +148,10 @@ const be: Locale = {
     ratesEmpty: "Курсы яшчэ не загружаны",
     conflictsMore: "і яшчэ {{count}}",
     refresh: "Абнавіць",
+    editLayout: "Змяніць выгляд", done: "Гатова", resetLayout: "Скінуць выгляд",
+    editHint: "Перацягвайце карткі, за вугал мяняйце шырыню",
+    moveEarlier: "Раней", moveLater: "Пазней", wider: "Шырэй", narrower: "Вужэй",
+    widgetStats: "Зводка", widgetAccounts: "Рахункі",
     journal: {
       showService: "Паказаць службовыя", showMore: "Паказаць яшчэ", allSources: "Усе крыніцы",
       allUsers: "Усе аўтары",

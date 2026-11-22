@@ -146,6 +146,10 @@ const ru = {
     ratesEmpty: "Курсы ещё не загружены",
     conflictsMore: "и ещё {{count}}",
     refresh: "Обновить",
+    editLayout: "Изменить вид", done: "Готово", resetLayout: "Сбросить вид",
+    editHint: "Перетаскивайте карточки, за уголок меняйте ширину",
+    moveEarlier: "Раньше", moveLater: "Позже", wider: "Шире", narrower: "Уже",
+    widgetStats: "Сводка", widgetAccounts: "Счета",
     journal: {
       showService: "Показать служебные", showMore: "Показать ещё", allSources: "Все источники",
       allUsers: "Все авторы",

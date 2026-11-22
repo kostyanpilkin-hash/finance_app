@@ -6,16 +6,21 @@ import { formatMinor, isoOf, todayIso } from "@/lib/money";
 import { useDisplayMoney, useEnsureRates } from "@/lib/useDisplayMoney";
 import { qk } from "@/lib/queryKeys";
 import { useCategories, useSettings, useUsers } from "@/lib/queries";
-import { PieChart } from "lucide-react";
+import { Pencil, PieChart } from "lucide-react";
 import { DonutChart, type DonutItem } from "@/components/ui/donut-chart";
 import { Empty } from "@/components/ui/empty";
 import { CategoryTxDialog, type CategoryPeek } from "@/components/transactions/CategoryTxDialog";
 import { AccountCard } from "@/components/accounts/AccountCard";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import type { DashboardData, RateOverview } from "@/lib/types";
 import { RatesTable, type NbrbRow } from "@/components/RatesTable";
 import { Segmented } from "@/components/ui/segmented";
 import { RefreshButton } from "@/components/RefreshButton";
+import { DashGrid } from "@/components/dashboard/DashGrid";
+import { defaultLayout, normalizeLayout, type WidgetId } from "@/lib/dashLayout";
+import { useMediaQuery } from "@/lib/useMediaQuery";
+import { useLocalSettings } from "@/pages/settings/useLocalSettings";
 
 type DashPeriod = "week" | "month" | "days30";
 const PERIODS: DashPeriod[] = ["week", "month", "days30"];
@@ -35,6 +40,10 @@ export function DashboardPage() {
   const { t } = useTranslation();
   const [period, setPeriod] = useState<DashPeriod>("month");
   const [peek, setPeek] = useState<CategoryPeek | null>(null);
+  const [editing, setEditing] = useState(false);
+  const isLg = useMediaQuery("(min-width: 1024px)");
+  const { set } = useLocalSettings();
+  const editMode = isLg && editing;
   const { from, to } = useMemo(() => rangeFor(period), [period]);
   const openPeek = useCallback(
     (kind: "expense" | "income") => (members: DonutItem[], label: string) =>
@@ -119,16 +128,118 @@ export function DashboardPage() {
   const sumFor = (kind: string) => totals.filter((x) => x.kind === kind);
   const loading = dash.isLoading || sum.isLoading;
 
+  const chartCards = [
+    { id: "chart_pieMonth" as WidgetId, key: "pieMonth", on: true, data: catSlices("expense"), sel: openPeek("expense") },
+    { id: "chart_incomeByCat" as WidgetId, key: "incomeByCat", on: chartOn("dash_chart_income_cat"), data: catSlices("income"), sel: openPeek("income") },
+    { id: "chart_expenseByPeople" as WidgetId, key: "expenseByPeople", on: chartOn("dash_chart_expense_people"), data: peopleSlices("expense"), sel: undefined },
+    { id: "chart_incomeByPeople" as WidgetId, key: "incomeByPeople", on: chartOn("dash_chart_income_people"), data: peopleSlices("income"), sel: undefined },
+  ];
+
+  const visible = useMemo<WidgetId[]>(() => {
+    const v: WidgetId[] = ["stats"];
+    for (const c of chartCards) if (c.on) v.push(c.id);
+    if (ratesOn) v.push("rates");
+    if (accounts.length > 0) v.push("accounts");
+    return v;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.data, ratesOn, accounts.length]);
+
+  const layout = useMemo(
+    () => normalizeLayout(settings.data?.dash_layout, visible),
+    [settings.data?.dash_layout, visible],
+  );
+
+  const renderWidget = (id: WidgetId) => {
+    if (id === "stats") {
+      return (
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
+          <div className={card}>
+            <div className="text-xs text-muted-foreground">{t("ui.totalBalance")}</div>
+            <div className="font-display text-xl font-semibold">{formatMinor(totalByn.sum, totalByn.currency)}</div>
+            {totalByn.missing && <div className="text-xs text-muted-foreground">{t("ui.ratesMissing")}</div>}
+          </div>
+          <div className={card}>
+            <div className="text-xs text-muted-foreground">{t("ui.spentMonth")}</div>
+            {sumFor("expense").map((x, i) => (
+              <div key={i} className="text-lg font-semibold text-expense">−{formatMinor(x.amount, x.currency)}</div>
+            ))}
+            {sumFor("expense").length === 0 && <div className="text-lg font-semibold">0,00</div>}
+          </div>
+          <div className={card}>
+            <div className="text-xs text-muted-foreground">{t("ui.incomeMonth")}</div>
+            {sumFor("income").map((x, i) => (
+              <div key={i} className="text-lg font-semibold text-income">+{formatMinor(x.amount, x.currency)}</div>
+            ))}
+            {sumFor("income").length === 0 && <div className="text-lg font-semibold">0,00</div>}
+          </div>
+        </div>
+      );
+    }
+    if (id === "rates") {
+      return <RatesCard t={t} overview={overview} nbrbRates={nbrbRates} card={card} />;
+    }
+    if (id === "accounts") {
+      return (
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
+          {accounts.map((a) => (
+            <AccountCard key={a.id} a={a} ownerName={a.ownerName ?? undefined} compact />
+          ))}
+        </div>
+      );
+    }
+    const c = chartCards.find((x) => x.id === id);
+    if (!c) return null;
+    return (
+      <div className={card}>
+        <div className="mb-2 text-sm font-medium">{t(`ui.${c.key}`)}</div>
+        {c.data.length > 0 ? (
+          <DonutChart data={c.data} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.rest")} onSelect={c.sel} />
+        ) : (
+          <Empty icon={PieChart} label={t("ui.emptyPeriod")} hint={t("ui.emptyDashHint")} />
+        )}
+      </div>
+    );
+  };
+
+  const widgetTitle = (id: WidgetId): string => {
+    switch (id) {
+      case "stats": return t("ui.widgetStats");
+      case "rates": return t("settings.dashRates");
+      case "accounts": return t("ui.widgetAccounts");
+      case "chart_pieMonth": return t("ui.pieMonth");
+      case "chart_incomeByCat": return t("ui.incomeByCat");
+      case "chart_expenseByPeople": return t("ui.expenseByPeople");
+      case "chart_incomeByPeople": return t("ui.incomeByPeople");
+    }
+  };
+
   return (
     <div className="animate-fade-up mx-auto w-full max-w-4xl space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="font-display text-2xl font-semibold tracking-tight">{t("nav.dashboard")}</h2>
         <div className="flex items-center gap-2">
+          {editMode ? (
+            <>
+              <Button size="sm" variant="outline"
+                onClick={() => set("dash_layout", JSON.stringify(defaultLayout(visible)))}>
+                {t("ui.resetLayout")}
+              </Button>
+              <Button size="sm" onClick={() => setEditing(false)}>{t("ui.done")}</Button>
+            </>
+          ) : (
+            isLg && (
+              <Button size="icon-sm" variant="ghost" onClick={() => setEditing(true)}
+                aria-label={t("ui.editLayout")} title={t("ui.editLayout")}>
+                <Pencil className="h-4 w-4" />
+              </Button>
+            )
+          )}
           <RefreshButton />
           <Segmented value={period} onChange={setPeriod}
             options={PERIODS.map((p) => ({ value: p, label: t(`ui.period.${p}`) }))} />
         </div>
       </div>
+      {editMode && <p className="text-xs text-muted-foreground">{t("ui.editHint")}</p>}
 
       {loading ? (
         <>
@@ -142,57 +253,24 @@ export function DashboardPage() {
             <Skeleton className="h-64" />
           </div>
         </>
+      ) : isLg ? (
+        <DashGrid
+          layout={layout}
+          editing={editMode}
+          renderWidget={renderWidget}
+          widgetTitle={widgetTitle}
+          onChange={(l) => set("dash_layout", JSON.stringify(l))}
+        />
       ) : (
         <>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className={card}>
-              <div className="text-xs text-muted-foreground">{t("ui.totalBalance")}</div>
-              <div className="font-display text-xl font-semibold">{formatMinor(totalByn.sum, totalByn.currency)}</div>
-              {totalByn.missing && <div className="text-xs text-muted-foreground">{t("ui.ratesMissing")}</div>}
-            </div>
-            <div className={card}>
-              <div className="text-xs text-muted-foreground">{t("ui.spentMonth")}</div>
-              {sumFor("expense").map((x, i) => (
-                <div key={i} className="text-lg font-semibold text-expense">−{formatMinor(x.amount, x.currency)}</div>
-              ))}
-              {sumFor("expense").length === 0 && <div className="text-lg font-semibold">0,00</div>}
-            </div>
-            <div className={card}>
-              <div className="text-xs text-muted-foreground">{t("ui.incomeMonth")}</div>
-              {sumFor("income").map((x, i) => (
-                <div key={i} className="text-lg font-semibold text-income">+{formatMinor(x.amount, x.currency)}</div>
-              ))}
-              {sumFor("income").length === 0 && <div className="text-lg font-semibold">0,00</div>}
-            </div>
-          </div>
-
-          {ratesOn && <RatesCard t={t} overview={overview} nbrbRates={nbrbRates} card={card} />}
-
-          <div className="grid items-start gap-4 lg:grid-cols-2">
-            {(
-              [
-                { key: "pieMonth", on: true, data: catSlices("expense"), sel: openPeek("expense") },
-                { key: "incomeByCat", on: chartOn("dash_chart_income_cat"), data: catSlices("income"), sel: openPeek("income") },
-                { key: "expenseByPeople", on: chartOn("dash_chart_expense_people"), data: peopleSlices("expense"), sel: undefined },
-                { key: "incomeByPeople", on: chartOn("dash_chart_income_people"), data: peopleSlices("income"), sel: undefined },
-              ] as const
-            ).filter((c) => c.on).map((c) => (
-              <div key={c.key} className={card}>
-                <div className="mb-2 text-sm font-medium">{t(`ui.${c.key}`)}</div>
-                {c.data.length > 0 ? (
-                  <DonutChart data={c.data} currency={displayCurrency} totalLabel={t("ui.total")} otherLabel={t("ui.rest")} onSelect={c.sel} />
-                ) : (
-                  <Empty icon={PieChart} label={t("ui.emptyPeriod")} hint={t("ui.emptyDashHint")} />
-                )}
-              </div>
+          {renderWidget("stats")}
+          {ratesOn && renderWidget("rates")}
+          <div className="grid items-start gap-4 sm:grid-cols-2">
+            {chartCards.filter((c) => c.on).map((c) => (
+              <div key={c.id}>{renderWidget(c.id)}</div>
             ))}
           </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {accounts.map((a) => (
-              <AccountCard key={a.id} a={a} ownerName={a.ownerName ?? undefined} compact />
-            ))}
-          </div>
+          {accounts.length > 0 && renderWidget("accounts")}
         </>
       )}
       <CategoryTxDialog peek={peek} from={from} to={to} onClose={() => setPeek(null)} />
