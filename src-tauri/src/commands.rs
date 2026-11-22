@@ -683,6 +683,19 @@ pub async fn sync_status(state: State<'_, AppState>) -> Result<Value, String> {
     run(move || Ok(crate::sync::sync_status(&db))).await
 }
 
+/// "Sync now" button — drains the exchange on a client, status-only on a host.
+#[tauri::command]
+pub async fn sync_now(state: State<'_, AppState>) -> Result<Value, String> {
+    crate::sync::sync_now(&state).await
+}
+
+/// Paired (non-revoked) devices with last-seen times — host settings page.
+#[tauri::command]
+pub async fn devices_list(state: State<'_, AppState>) -> Result<Value, String> {
+    let db = state.db.share();
+    run(move || crate::sync::devices_list(&db).map(Value::Array)).await
+}
+
 /// ~2.5 s mDNS browse — must not run on the IPC thread.
 #[tauri::command]
 pub async fn discover_hosts() -> Result<Vec<Value>, String> {

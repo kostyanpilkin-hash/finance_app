@@ -28,6 +28,15 @@ export function syncErrorText(t: TFunction, e: SyncLastError | string | null | u
     return t("ui.syncHostOutdated") + schemas;
   }
   const message = typeof e === "string" ? e : e.message;
+  if (code === "host_unreachable") {
+    return t("ui.syncUnreachable");
+  }
+  if (code === "unauthorized") {
+    return t("ui.syncUnauthorized");
+  }
+  if (code === "host_error") {
+    return t("ui.syncHostError", { message: message ?? "" });
+  }
   return t("ui.syncError", { message: message ?? code });
 }
 

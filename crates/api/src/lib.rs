@@ -515,7 +515,18 @@ async fn push(
             // Delete wins over edit; otherwise a stale base_version is a conflict.
             let deleted_remotely = before.as_ref().and_then(|r| r["deletedAt"].as_str()).is_some();
             let is_delete = op.op == "delete";
-            if !is_delete && base < cur_version && !deleted_remotely {
+            // Idempotent replay: identical data needs neither a conflict nor a new version.
+            if !is_delete && !deleted_remotely {
+                if let (Some(b), Some(p)) = (before.as_ref(), op.payload.as_ref()) {
+                    if dbm::same_content(p, b) {
+                        results.push(json!({"id": op.id, "status": "ok"}));
+                        continue;
+                    }
+                }
+            }
+            // Exchange rates are public reference data: last writer wins, never a conflict.
+            let never_conflicts = entity == models::Entity::ExchangeRates;
+            if !is_delete && !never_conflicts && base < cur_version && !deleted_remotely {
                 // Conflict: stash for client-side resolution, at most one
                 // unresolved row per (entity_id, device).
                 let local = json!({"entity": op.entity, "id": op.id, "op": op.op, "payload": op.payload, "deviceId": device_id});
@@ -598,6 +609,11 @@ async fn resolve(
         c.execute(
             "UPDATE conflicts SET resolved_at=?1 WHERE id=?2",
             finance_storage::rusqlite::params![dbm::now_iso(), req.conflict_id],
+        )?;
+        // Duplicates of the resolved row are moot once a winner is applied.
+        c.execute(
+            "UPDATE conflicts SET resolved_at=?1 WHERE entity_id=?2 AND resolved_at IS NULL",
+            finance_storage::rusqlite::params![dbm::now_iso(), entity_id],
         )?;
         let _ = server;
         Ok(Json(json!({"ok": true})))

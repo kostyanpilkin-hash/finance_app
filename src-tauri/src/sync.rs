@@ -207,7 +207,41 @@ fn clone_db(db: &dbm::Db) -> dbm::Db {
     db.share()
 }
 
-/// Client loop: push outbox → pull changes → apply, every 20s.
+/// Normal poll interval between sync attempts.
+const IDLE: Duration = Duration::from_secs(20);
+/// Error backoff ceiling.
+const MAX_BACKOFF: Duration = Duration::from_secs(120);
+
+/// Only one sync exchange may run at a time — the periodic loop and the
+/// manual "Sync now" button both take this lock.
+fn sync_lock() -> &'static tokio::sync::Mutex<()> {
+    static L: std::sync::OnceLock<tokio::sync::Mutex<()>> = std::sync::OnceLock::new();
+    L.get_or_init(|| tokio::sync::Mutex::new(()))
+}
+
+/// Outcome of one push+pull exchange.
+#[derive(Debug, Default)]
+pub struct SyncReport {
+    /// Ops the host accepted (conflicts included — they left the outbox).
+    pub pushed: usize,
+    /// Changes applied from the pull response.
+    pub pulled: usize,
+    /// Host says another page is waiting — sync again immediately.
+    pub has_more: bool,
+}
+
+/// (sleep before the next attempt, remembered backoff). Pure, testable.
+fn next_delay(r: &Result<SyncReport, String>, backoff: Duration) -> (Duration, Duration) {
+    match r {
+        Ok(rep) if rep.has_more || rep.pulled > 0 || rep.pushed > 0 => (Duration::ZERO, IDLE),
+        Ok(_) => (IDLE, IDLE),
+        Err(_) => (backoff, (backoff * 2).min(MAX_BACKOFF)),
+    }
+}
+
+/// Client loop: push outbox → pull changes → apply. Any successful exchange
+/// (even an empty one) returns to the normal interval; failures back off to
+/// MAX_BACKOFF. A busy page loops with no delay until drained.
 pub fn start_client(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut backoff = Duration::from_secs(5);
@@ -216,14 +250,11 @@ pub fn start_client(app: AppHandle) {
             if !state.db.is_client() {
                 return;
             }
-            match sync_once(&state).await {
-                Ok(true) => backoff = Duration::from_secs(20),
-                Ok(false) => tokio::time::sleep(backoff).await,
-                Err(_) => {
-                    tokio::time::sleep(backoff).await;
-                    backoff = (backoff * 2).min(Duration::from_secs(120));
-                    continue;
-                }
+            let r = sync_once(&state).await;
+            let (sleep, nb) = next_delay(&r, backoff);
+            backoff = nb;
+            if !sleep.is_zero() {
+                tokio::time::sleep(sleep).await;
             }
         }
     });
@@ -245,24 +276,112 @@ fn client_cfg(state: &AppState) -> Result<(String, String), Error> {
     })
 }
 
-pub(crate) async fn sync_once(state: &AppState) -> Result<bool, String> {
+/// What went wrong, in a shape the UI can translate.
+enum SyncError {
+    /// Connect / timeout / DNS — host likely off, asleep or VPN/firewall-blocked.
+    Unreachable(String),
+    /// 401 — device revoked or token stale; needs re-pairing.
+    Unauthorized,
+    /// 409 client_outdated / host_outdated, carrying both schema versions.
+    Schema {
+        code: String,
+        host: Value,
+        client: Value,
+    },
+    /// Other non-2xx from the host.
+    Http(u16),
+    /// Db, parse or join errors.
+    Other(String),
+}
+
+impl SyncError {
+    fn code(&self) -> String {
+        match self {
+            SyncError::Unreachable(_) => "host_unreachable".into(),
+            SyncError::Unauthorized => "unauthorized".into(),
+            SyncError::Schema { code, .. } => code.clone(),
+            SyncError::Http(_) => "host_error".into(),
+            SyncError::Other(_) => "error".into(),
+        }
+    }
+
+    fn message(&self) -> String {
+        match self {
+            SyncError::Unreachable(m) | SyncError::Other(m) => m.clone(),
+            SyncError::Unauthorized => "401".into(),
+            SyncError::Schema { code, .. } => code.clone(),
+            SyncError::Http(s) => format!("HTTP {s}"),
+        }
+    }
+
+    fn to_json(&self) -> Value {
+        let mut v = json!({"code": self.code(), "message": self.message(), "at": dbm::now_iso()});
+        if let SyncError::Schema { host, client, .. } = self {
+            v["hostSchema"] = host.clone();
+            v["clientSchema"] = client.clone();
+        }
+        v
+    }
+}
+
+/// Transport errors never expose the URL or token; connect/timeout get their
+/// own code so the UI can explain "check VPN / same network".
+fn net_err(e: reqwest::Error) -> SyncError {
+    if e.is_connect() || e.is_timeout() {
+        SyncError::Unreachable(e.without_url().to_string())
+    } else {
+        SyncError::Other(e.without_url().to_string())
+    }
+}
+
+/// One failed sync is logged once; repeats stay silent until the error
+/// changes or sync recovers — the log stays readable.
+static LAST_LOGGED: Mutex<Option<String>> = Mutex::new(None);
+
+/// Plain fns so the std MutexGuard never crosses an .await.
+fn log_sync_error(line: &str) {
+    let mut last = LAST_LOGGED.lock().unwrap_or_else(|x| x.into_inner());
+    if last.as_deref() != Some(line) {
+        crate::applog::append("sync.log", line);
+        *last = Some(line.to_string());
+    }
+}
+
+fn log_recovered() {
+    let mut last = LAST_LOGGED.lock().unwrap_or_else(|x| x.into_inner());
+    if last.is_some() {
+        crate::applog::append("sync.log", "sync recovered");
+        *last = None;
+    }
+}
+
+/// One push+pull exchange with the host. Holds the sync lock so a manual
+/// sync and the periodic loop cannot interleave. On success stamps
+/// `last_sync_at` (even when nothing changed) and clears the error state.
+pub(crate) async fn sync_once(state: &AppState) -> Result<SyncReport, String> {
+    let _guard = sync_lock().lock().await;
     match sync_once_inner(state).await {
         Err(e) => {
-            // Schema errors already stored their structured payload above.
-            if e != "client_outdated" && e != "host_outdated" {
-                last_error_set(Some(json!({"code": "error", "message": e})));
-            }
-            Err(e)
+            last_error_set(Some(e.to_json()));
+            log_sync_error(&format!("sync failed: {}: {}", e.code(), e.message()));
+            Err(e.code())
         }
-        ok => {
+        Ok(rep) => {
             last_error_set(None);
-            ok
+            log_recovered();
+            let db = state.db.share();
+            let _ = crate::blocking::run(move || {
+                db.write(|c| repos::setting_set(c, "last_sync_at", &dbm::now_iso()))
+                    .map_err(|e| e.to_string())
+            })
+            .await;
+            Ok(rep)
         }
     }
 }
 
-async fn sync_once_inner(state: &AppState) -> Result<bool, String> {
-    let (host, token) = client_cfg(state).map_err(|e| e.to_string())?;
+async fn sync_once_inner(state: &AppState) -> Result<SyncReport, SyncError> {
+    let (host, token) = client_cfg(state).map_err(|e| SyncError::Other(e.to_string()))?;
     let http = crate::net::client();
 
     // 1. Push outbox.
@@ -283,7 +402,8 @@ async fn sync_once_inner(state: &AppState) -> Result<bool, String> {
         })
         .map_err(|e| e.to_string())
     })
-    .await?;
+    .await
+    .map_err(SyncError::Other)?;
 
     if !ops.is_empty() {
         let resp = http
@@ -294,25 +414,31 @@ async fn sync_once_inner(state: &AppState) -> Result<bool, String> {
             )
             .send()
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(net_err)?;
         if resp.status().as_u16() == 409 {
-            // Schema mismatch — parse the code so the UI can explain it.
+            // Schema mismatch — keep both versions so the UI can explain it.
+            let status = resp.status().as_u16();
             let body: Value = resp.json().await.unwrap_or(json!({}));
             let code = body["error"].as_str().unwrap_or("").to_string();
             if code == "client_outdated" || code == "host_outdated" {
-                last_error_set(Some(json!({
-                    "code": code,
-                    "hostSchema": body["hostSchema"],
-                    "clientSchema": body["clientSchema"],
-                })));
-                return Err(code);
+                return Err(SyncError::Schema {
+                    code,
+                    host: body["hostSchema"].clone(),
+                    client: body["clientSchema"].clone(),
+                });
             }
-            return Err("push 409".to_string());
+            return Err(SyncError::Http(status));
+        }
+        if resp.status().as_u16() == 401 {
+            return Err(SyncError::Unauthorized);
         }
         if !resp.status().is_success() {
-            return Err(format!("push {}", resp.status()));
+            return Err(SyncError::Http(resp.status().as_u16()));
         }
-        let body: Value = resp.json().await.map_err(|e| e.to_string())?;
+        let body: Value = resp
+            .json()
+            .await
+            .map_err(|e| SyncError::Other(e.to_string()))?;
         let ok_ids: Vec<String> = body["results"]
             .as_array()
             .map(|r| {
@@ -373,7 +499,8 @@ async fn sync_once_inner(state: &AppState) -> Result<bool, String> {
             })
             .map_err(|e| e.to_string())
         })
-        .await?;
+        .await
+        .map_err(SyncError::Other)?;
     }
 
     // 2. Pull changes.
@@ -386,17 +513,26 @@ async fn sync_once_inner(state: &AppState) -> Result<bool, String> {
         })
         .map_err(|e| e.to_string())
     })
-    .await?;
+    .await
+    .map_err(SyncError::Other)?;
     let resp = http
         .get(format!("{host}/api/v1/pull?since={last}&limit=2000"))
         .bearer_auth(&token)
         .send()
         .await
-        .map_err(|e| e.to_string())?;
-    if !resp.status().is_success() {
-        return Err(format!("pull {}", resp.status()));
+        .map_err(net_err)?;
+    if resp.status().as_u16() == 401 {
+        return Err(SyncError::Unauthorized);
     }
-    let body: Value = resp.json().await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(SyncError::Http(resp.status().as_u16()));
+    }
+    let body: Value = resp
+        .json()
+        .await
+        .map_err(|e| SyncError::Other(e.to_string()))?;
+    let pulled = body["changes"].as_array().map(|a| a.len()).unwrap_or(0);
+    let has_more = body["hasMore"].as_bool().unwrap_or(false);
 
     let db = state.db.share();
     let body_c = body.clone();
@@ -426,27 +562,71 @@ async fn sync_once_inner(state: &AppState) -> Result<bool, String> {
             }
             let max_seq = body_c["maxSeq"].as_i64().unwrap_or(last);
             repos::setting_set(c, "last_seq", &max_seq.to_string())?;
-            // Persist unresolved conflicts the host reported.
-            for cf in body_c["conflicts"].as_array().unwrap_or(&vec![]) {
-                c.execute(
-                    "INSERT OR REPLACE INTO conflicts (id, entity, entity_id, local_payload, server_payload, created_at)
-                     VALUES (?1,?2,?3,?4,?5,?6)",
-                    finance_storage::rusqlite::params![
-                        cf["id"].as_str().unwrap_or(""), cf["entity"].as_str().unwrap_or(""),
-                        cf["entityId"].as_str().unwrap_or(""), cf["local"].as_str().unwrap_or(""),
-                        cf["server"].as_str().unwrap_or(""), dbm::now_iso()
-                    ],
-                )?;
-            }
+            // The host's unresolved list is authoritative.
+            mirror_conflicts(c, &body_c["conflicts"])?;
             Ok(())
         })
         .map_err(|e| e.to_string())
     })
-    .await?;
+    .await
+    .map_err(SyncError::Other)?;
 
     sync_attachments(state, http, &host, &token).await;
 
-    Ok(!ops.is_empty() || !body["changes"].as_array().unwrap_or(&vec![]).is_empty())
+    Ok(SyncReport {
+        pushed: ops.len(),
+        pulled,
+        has_more,
+    })
+}
+
+/// The host's unresolved list is authoritative: upsert what it reports,
+/// mark resolved what it no longer lists, and release the rows those stale
+/// conflicts kept dirty (unless the outbox still holds an op for them).
+fn mirror_conflicts(
+    c: &finance_storage::rusqlite::Connection,
+    host: &Value,
+) -> Result<(), finance_storage::rusqlite::Error> {
+    let arr: Vec<Value> = host.as_array().cloned().unwrap_or_default();
+    for cf in &arr {
+        c.execute(
+            "INSERT OR REPLACE INTO conflicts (id, entity, entity_id, local_payload, server_payload, created_at)
+             VALUES (?1,?2,?3,?4,?5,?6)",
+            finance_storage::rusqlite::params![
+                cf["id"].as_str().unwrap_or(""), cf["entity"].as_str().unwrap_or(""),
+                cf["entityId"].as_str().unwrap_or(""), cf["local"].as_str().unwrap_or(""),
+                cf["server"].as_str().unwrap_or(""), dbm::now_iso()
+            ],
+        )?;
+    }
+    let ids = Value::Array(
+        arr.iter()
+            .filter_map(|cf| cf["id"].as_str().map(|s| Value::String(s.to_string())))
+            .collect(),
+    );
+    let stale: Vec<(String, String, String)> = c
+        .prepare(
+            "SELECT id, entity, entity_id FROM conflicts WHERE resolved_at IS NULL
+             AND id NOT IN (SELECT value FROM json_each(?1))",
+        )?
+        .query_map([ids.to_string()], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+        .collect::<Result<_, _>>()?;
+    for (id, entity, entity_id) in stale {
+        c.execute(
+            "UPDATE conflicts SET resolved_at=?1 WHERE id=?2",
+            finance_storage::rusqlite::params![dbm::now_iso(), id],
+        )?;
+        if let Some(e) = finance_storage::Entity::parse(&entity) {
+            c.execute(
+                &format!(
+                    "UPDATE {} SET local_dirty=0 WHERE id=?1 AND NOT EXISTS (SELECT 1 FROM outbox WHERE entity_id=?1)",
+                    e.table()
+                ),
+                [&entity_id],
+            )?;
+        }
+    }
+    Ok(())
 }
 
 /// Files for the `attachments` rows ride beside the journal sync: whatever
@@ -711,8 +891,8 @@ pub async fn join_host(state: &AppState, host: &str, code: &str, name: &str) -> 
     pair_client(state, host, code, name).await?;
     for _ in 0..50 {
         match sync_once(state).await {
-            Ok(true) => continue,
-            Ok(false) => break,
+            Ok(rep) if rep.has_more || rep.pulled > 0 || rep.pushed > 0 => continue,
+            Ok(_) => break,
             Err(e) => return Err(format!("sync failed: {e}")),
         }
     }
@@ -797,9 +977,81 @@ pub fn sync_status(db: &dbm::Db) -> Value {
         let unresolved: i64 = c.query_row("SELECT COUNT(*) FROM conflicts WHERE resolved_at IS NULL", [], |r| r.get(0)).unwrap_or(0);
         let pending: i64 = c.query_row("SELECT COUNT(*) FROM outbox", [], |r| r.get(0))?;
         let devices: i64 = c.query_row("SELECT COUNT(*) FROM devices WHERE revoked_at IS NULL", [], |r| r.get(0)).unwrap_or(0);
+        let last_sync_at = repos::setting_get(c, "last_sync_at")?;
         let last_error = LAST_ERROR.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        Ok(json!({"mode": db.mode().as_str(), "hostUrl": host, "lastSeq": seq, "pendingOps": pending, "pairedDevices": devices, "conflicts": unresolved, "lastError": last_error}))
+        Ok(json!({"mode": db.mode().as_str(), "hostUrl": host, "lastSeq": seq, "pendingOps": pending, "pairedDevices": devices, "conflicts": unresolved, "lastError": last_error, "deviceId": db.device_id.as_str(), "lastSyncAt": last_sync_at}))
     }).unwrap_or(json!({}))
+}
+
+/// Where this device syncs to. Today only the LAN host; a remote/cloud
+/// server would become another variant with its own transport — that is the
+/// seam reserved for "sync from server" later.
+enum SyncTarget {
+    LanHost,
+}
+
+fn sync_target(db: &dbm::Db) -> Option<SyncTarget> {
+    db.is_client().then_some(SyncTarget::LanHost)
+}
+
+/// Manual "Sync now". On a host there is nothing to exchange (clients pull
+/// from us) — returns {"mode":"host"} so the UI just refetches status. On a
+/// client it drains push+pull until the host reports no more pages
+/// (max 20 rounds ≈ 40k changes as a runaway guard).
+pub async fn sync_now(state: &AppState) -> Result<Value, String> {
+    match sync_target(&state.db) {
+        None => Ok(json!({"mode": "host"})),
+        Some(SyncTarget::LanHost) => {
+            let mut total = SyncReport::default();
+            for _ in 0..20 {
+                let r = sync_once(state).await?;
+                total.pushed += r.pushed;
+                total.pulled += r.pulled;
+                if !r.has_more {
+                    break;
+                }
+            }
+            Ok(json!({
+                "mode": "client",
+                "pushed": total.pushed,
+                "pulled": total.pulled,
+                "at": dbm::now_iso(),
+            }))
+        }
+    }
+}
+
+/// Non-revoked paired devices, newest last — for the host settings page.
+pub fn devices_list(db: &dbm::Db) -> Result<Vec<Value>, String> {
+    db.with_read_conn(|c| {
+        let mut st = c.prepare(
+            "SELECT id, name, platform, paired_at, last_seen_at FROM devices WHERE revoked_at IS NULL ORDER BY paired_at",
+        )?;
+        let v = st
+            .query_map([], |r| {
+                Ok(json!({
+                    "id": r.get::<_, String>(0)?, "name": r.get::<_, String>(1)?,
+                    "platform": r.get::<_, String>(2)?, "pairedAt": r.get::<_, String>(3)?,
+                    "lastSeenAt": r.get::<_, Option<String>>(4)?,
+                }))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(v)
+    })
+    .map_err(|e| e.to_string())
+}
+
+/// Startup cleanup: resolves conflicts that carry no real change (mostly
+/// stale exchange-rate noise from before idempotent push). Runs on every
+/// device — clients keep their own copies of conflict rows from pulls.
+/// Idempotent; failures are logged, never fatal.
+pub fn prune_conflicts(state: &AppState) {
+    let r = state.db.write(|c| dbm::prune_noop_conflicts(c));
+    match r {
+        Ok(0) => {}
+        Ok(n) => crate::applog::append("sync.log", &format!("pruned {n} no-op conflicts")),
+        Err(e) => crate::applog::append("sync.log", &format!("conflict prune failed: {e}")),
+    }
 }
 
 #[cfg(test)]
@@ -1026,5 +1278,109 @@ mod tests {
             .unwrap_err();
             assert!(err.starts_with("bad_code:"), "{err}");
         });
+    }
+
+    fn conflict_conn() -> finance_storage::rusqlite::Connection {
+        let c = finance_storage::rusqlite::Connection::open_in_memory().unwrap();
+        c.execute_batch(
+            "CREATE TABLE conflicts (id TEXT PRIMARY KEY, entity TEXT, entity_id TEXT,
+              local_payload TEXT, server_payload TEXT, created_at TEXT, resolved_at TEXT);
+             CREATE TABLE outbox (op_id TEXT PRIMARY KEY, entity_id TEXT);
+             CREATE TABLE accounts (id TEXT PRIMARY KEY, local_dirty INTEGER DEFAULT 0);",
+        )
+        .unwrap();
+        c
+    }
+
+    /// Stale host-side cleanup reaches the client: a conflict the host no
+    /// longer reports is resolved, and the row it kept dirty is released so
+    /// the next pull can overwrite it. An outbox op protects the row.
+    #[test]
+    fn mirror_resolves_missing_and_clears_dirty() {
+        let c = conflict_conn();
+        let ins = |id: &str, eid: &str| {
+            c.execute(
+                "INSERT INTO conflicts (id, entity, entity_id, local_payload, server_payload, created_at)
+                 VALUES (?1,'accounts',?2,'{}','{}','t')",
+                finance_storage::rusqlite::params![id, eid],
+            )
+            .unwrap();
+        };
+        ins("c-kept", "a1");
+        ins("c-gone", "a2");
+        ins("c-dirty", "a3");
+        c.execute(
+            "INSERT INTO accounts (id, local_dirty) VALUES ('a1',1),('a2',1),('a3',1)",
+            [],
+        )
+        .unwrap();
+        c.execute(
+            "INSERT INTO outbox (op_id, entity_id) VALUES ('o1','a3')",
+            [],
+        )
+        .unwrap();
+        mirror_conflicts(
+            &c,
+            &json!([{"id":"c-kept","entity":"accounts","entityId":"a1","local":"{}","server":"{}"}]),
+        )
+        .unwrap();
+        let resolved = |cid: &str| -> bool {
+            c.query_row::<Option<String>, _, _>(
+                "SELECT resolved_at FROM conflicts WHERE id=?1",
+                [cid],
+                |r| r.get(0),
+            )
+            .unwrap()
+            .is_some()
+        };
+        let dirty = |aid: &str| -> i64 {
+            c.query_row("SELECT local_dirty FROM accounts WHERE id=?1", [aid], |r| {
+                r.get(0)
+            })
+            .unwrap_or(0)
+        };
+        assert!(!resolved("c-kept") && dirty("a1") == 1); // open, dirty untouched
+        assert!(resolved("c-gone") && dirty("a2") == 0); // resolved, dirty released
+        assert!(resolved("c-dirty") && dirty("a3") == 1); // resolved, outbox keeps dirty
+    }
+
+    #[test]
+    fn next_delay_ok_resets_err_grows() {
+        let ok = Ok(SyncReport::default());
+        assert_eq!(next_delay(&ok, Duration::from_secs(60)), (IDLE, IDLE));
+        let busy = Ok(SyncReport {
+            has_more: true,
+            ..SyncReport::default()
+        });
+        assert_eq!(
+            next_delay(&busy, Duration::from_secs(60)),
+            (Duration::ZERO, IDLE)
+        );
+        let err: Result<SyncReport, String> = Err("x".into());
+        assert_eq!(
+            next_delay(&err, Duration::from_secs(60)),
+            (Duration::from_secs(60), MAX_BACKOFF)
+        );
+        assert_eq!(next_delay(&err, MAX_BACKOFF), (MAX_BACKOFF, MAX_BACKOFF));
+    }
+
+    #[test]
+    fn sync_error_to_json() {
+        let v = SyncError::Unreachable("timed out".into()).to_json();
+        assert_eq!(v["code"], "host_unreachable");
+        assert_eq!(v["message"], "timed out");
+        assert!(v["at"].is_string());
+        let v = SyncError::Schema {
+            code: "client_outdated".into(),
+            host: json!(7),
+            client: json!(6),
+        }
+        .to_json();
+        assert_eq!(v["code"], "client_outdated");
+        assert_eq!(v["hostSchema"], 7);
+        assert_eq!(v["clientSchema"], 6);
+        assert_eq!(SyncError::Http(502).code(), "host_error");
+        assert_eq!(SyncError::Unauthorized.code(), "unauthorized");
+        assert_eq!(SyncError::Other("x".into()).code(), "error");
     }
 }

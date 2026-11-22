@@ -223,3 +223,67 @@ async fn hello_reports_schema_version() {
     let body: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(body["schemaVersion"], SCHEMA_VERSION);
 }
+
+#[tokio::test]
+async fn push_same_content_is_ok_not_conflict() {
+    let (app, db) = app();
+    seed_device(&db);
+    let acc = seed_account(&db);
+    // A replayed op carries the same data but stale base_version — must be
+    // idempotent, not a conflict.
+    let body = json!({"ops": [{
+        "entity": "accounts", "id": acc["id"], "op": "upsert",
+        "baseVersion": 0, "payload": acc,
+    }]});
+    let (status, resp) = post_push(app, body).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(resp["results"][0]["status"], "ok");
+    let n: i64 = db
+        .with_conn(|c| {
+            Ok(c.query_row(
+                "SELECT COUNT(*) FROM conflicts WHERE resolved_at IS NULL",
+                [],
+                |r| r.get(0),
+            )?)
+        })
+        .unwrap();
+    assert_eq!(n, 0);
+}
+
+#[tokio::test]
+async fn push_different_content_still_conflicts() {
+    let (app, db) = app();
+    seed_device(&db);
+    let acc = seed_account(&db);
+    let body = json!({"ops": [{
+        "entity": "accounts", "id": acc["id"], "op": "upsert",
+        "baseVersion": 0, "payload": {"id": acc["id"], "name": "Иное имя"},
+    }]});
+    let (status, resp) = post_push(app, body).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(resp["results"][0]["status"], "conflict");
+}
+
+#[tokio::test]
+async fn exchange_rates_last_write_wins() {
+    let (app, db) = app();
+    seed_device(&db);
+    // Seed one rate on the host, then push an upsert for the same date+pair
+    // with a stale base_version — public data never conflicts.
+    db.with_conn(|c| repos::rate_upsert(c, &db, "2030-01-01", "USD", 3000000, 1000000))
+        .unwrap();
+    let id = "2030-01-01|USD";
+    let body = json!({"ops": [{
+        "entity": "exchange_rates", "id": id, "op": "upsert",
+        "baseVersion": 0,
+        "payload": {"id": id, "date": "2030-01-01", "currency": "USD", "rateBynScaled": 3100000, "scale": 1000000},
+    }]});
+    let (status, resp) = post_push(app, body).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(resp["results"][0]["status"], "ok");
+    let row = db
+        .with_conn(|c| dbm::row_json(c, "exchange_rates", id))
+        .unwrap()
+        .unwrap();
+    assert_eq!(row["rateBynScaled"], 3100000);
+}

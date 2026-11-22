@@ -84,6 +84,27 @@ pub fn snake_to_camel(s: &str) -> String {
     out
 }
 
+/// Sync/stamp columns that never carry user meaning.
+pub const SYNC_META_KEYS: &[&str] = &[
+    "version",
+    "updatedAt",
+    "updatedByDevice",
+    "seq",
+    "localDirty",
+    "createdAt",
+];
+
+/// True when every non-meta field the payload carries equals the row's value.
+/// Fields absent from the payload are ignored (old clients send partial rows).
+pub fn same_content(payload: &Value, row: &Value) -> bool {
+    let (Some(p), Some(_)) = (payload.as_object(), row.as_object()) else {
+        return false;
+    };
+    p.iter()
+        .filter(|(k, _)| !SYNC_META_KEYS.contains(&k.as_str()))
+        .all(|(k, v)| &row[k.as_str()] == v)
+}
+
 /// Field-level diff between two JSON snapshots.
 pub fn diff_json(before: &Value, after: &Value) -> Value {
     let mut changes = Vec::new();
@@ -96,10 +117,7 @@ pub fn diff_json(before: &Value, after: &Value) -> Value {
     }
     for k in keys {
         // Sync internals are noise for the user-facing journal.
-        if matches!(
-            k.as_str(),
-            "version" | "updatedAt" | "updatedByDevice" | "seq" | "localDirty" | "createdAt"
-        ) {
+        if SYNC_META_KEYS.contains(&k.as_str()) {
             continue;
         }
         let b = &before[k.as_str()];
@@ -502,4 +520,122 @@ fn record_sync_side(
         )?;
     }
     Ok(())
+}
+
+/// Marks resolved every open conflict whose local payload carries no real
+/// change (same_content) or that targets exchange_rates. Returns the count.
+/// Rows are stamped resolved, not deleted, so the journal stays truthful.
+pub fn prune_noop_conflicts(conn: &Connection) -> Result<usize, Error> {
+    let rows: Vec<(String, String, String, String)> = conn
+        .prepare(
+            "SELECT id, entity, local_payload, server_payload FROM conflicts WHERE resolved_at IS NULL",
+        )?
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        })?
+        .collect::<Result<_, _>>()?;
+    let mut ids = Vec::new();
+    for (id, entity, local, server) in rows {
+        let Ok(local) = serde_json::from_str::<Value>(&local) else {
+            continue;
+        };
+        let Ok(server) = serde_json::from_str::<Value>(&server) else {
+            continue;
+        };
+        if entity == "exchange_rates" || same_content(&local["payload"], &server) {
+            ids.push(id);
+        }
+    }
+    let n = ids.len();
+    if n > 0 {
+        let mut st = conn.prepare("UPDATE conflicts SET resolved_at=?1 WHERE id=?2")?;
+        for id in ids {
+            st.execute(rusqlite::params![now_iso(), id])?;
+        }
+    }
+    Ok(n)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn same_content_ignores_meta() {
+        let p = json!({"id": "a", "rate": 1, "version": 1, "seq": 5});
+        let row = json!({"id": "a", "rate": 1, "version": 3, "seq": 9});
+        assert!(same_content(&p, &row));
+    }
+
+    #[test]
+    fn same_content_detects_change() {
+        let p = json!({"id": "a", "rate": 1});
+        let row = json!({"id": "a", "rate": 2});
+        assert!(!same_content(&p, &row));
+    }
+
+    #[test]
+    fn same_content_partial_payload() {
+        let p = json!({"id": "a", "rate": 1});
+        let row = json!({"id": "a", "rate": 1, "extra": "x"});
+        assert!(same_content(&p, &row));
+    }
+
+    #[test]
+    fn prune_resolves_noop_keeps_real() {
+        let c = Connection::open_in_memory().unwrap();
+        c.execute(
+            "CREATE TABLE conflicts (id TEXT PRIMARY KEY, entity TEXT NOT NULL, entity_id TEXT NOT NULL,
+             local_payload TEXT NOT NULL, server_payload TEXT NOT NULL, created_at TEXT NOT NULL, resolved_at TEXT)",
+            [],
+        )
+        .unwrap();
+        let ins = |id: &str, entity: &str, local: Value, server: Value| {
+            c.execute(
+                "INSERT INTO conflicts (id, entity, entity_id, local_payload, server_payload, created_at)
+                 VALUES (?1,?2,'e1',?3,?4,'t')",
+                rusqlite::params![id, entity, local.to_string(), server.to_string()],
+            )
+            .unwrap();
+        };
+        ins(
+            "a",
+            "exchange_rates",
+            json!({"payload": {"rate": 1}}),
+            json!({"rate": 2}),
+        );
+        ins(
+            "b",
+            "accounts",
+            json!({"payload": {"name": "x"}}),
+            json!({"name": "x", "version": 3}),
+        );
+        ins(
+            "c",
+            "accounts",
+            json!({"payload": {"name": "x"}}),
+            json!({"name": "y"}),
+        );
+        assert_eq!(prune_noop_conflicts(&c).unwrap(), 2);
+        let open: Vec<String> = c
+            .prepare("SELECT id FROM conflicts WHERE resolved_at IS NULL")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(open, vec!["c".to_string()]);
+    }
+
+    #[test]
+    fn same_content_non_object() {
+        assert!(!same_content(&Value::Null, &json!({"id": "a"})));
+        assert!(!same_content(&json!({"id": "a"}), &Value::Null));
+    }
 }

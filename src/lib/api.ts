@@ -135,7 +135,14 @@ export const api = {
     invoke<{
       mode: string; hostUrl?: string; lastSeq?: string; pendingOps: number; pairedDevices: number;
       lastError?: { code: string; hostSchema?: number; clientSchema?: number; message?: string } | null;
+      deviceId?: string; lastSyncAt?: string | null;
     }>("sync_status"),
+  /** "Sync now": drains push+pull on a client; {mode:"host"} on a host. */
+  syncNow: () =>
+    invoke<{ mode: "host" | "client"; pushed?: number; pulled?: number; at?: string }>("sync_now"),
+  /** Paired, non-revoked devices (host only — empty elsewhere). */
+  devicesList: () =>
+    invoke<{ id: string; name: string; platform: string; pairedAt: string; lastSeenAt: string | null }[]>("devices_list"),
   joinHost: (hostUrl: string, code: string, name: string) =>
     invoke<void>("join_host", { hostUrl, code, name }),
   dbStatus: () => invoke<"ready" | "locked" | "error">("db_status"),

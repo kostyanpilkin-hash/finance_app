@@ -86,6 +86,8 @@ pub fn run() {
             commands::pairing_decide,
             commands::pair_to_host,
             commands::sync_status,
+            commands::sync_now,
+            commands::devices_list,
             commands::discover_hosts,
             commands::host_addresses,
             commands::conflict_list,
@@ -120,6 +122,7 @@ pub fn run() {
             };
             app.manage(state);
             sync::migrate_device_token(app.state::<state::AppState>().inner());
+            sync::prune_conflicts(app.state::<state::AppState>().inner());
             tray::create(app.handle())?;
             scheduler::start(app.handle().clone());
             scheduler::start_notifications(app.handle().clone());

@@ -20,6 +20,7 @@ export const qk = {
   syncStatus: ["sync-status"] as const,
   pairingRequests: ["pairing-requests"] as const,
   conflicts: ["conflicts"] as const,
+  devices: ["devices"] as const,
   tgStatus: ["tg-status"] as const,
   attachmentPath: (sha: string | undefined) => ["attachment-path", sha] as const,
 };
