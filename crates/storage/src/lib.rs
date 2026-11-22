@@ -1369,10 +1369,8 @@ mod tests {
             Ok(())
         })?;
         let all = |echo: Option<&str>| {
-            d.with_conn(|c| {
-                repos::journal(c, &repos::JournalFilter::default(), "self-dev", echo)
-            })
-            .unwrap()
+            d.with_conn(|c| repos::journal(c, &repos::JournalFilter::default(), "self-dev", echo))
+                .unwrap()
         };
         let ids: Vec<String> = all(Some("self-dev"))
             .iter()
@@ -1382,10 +1380,17 @@ mod tests {
         // is_self marks the device that wrote the row.
         let own = all(None).iter().find(|r| r["id"] == "own").unwrap().clone();
         assert_eq!(own["isSelf"], 1);
-        let other = all(None).iter().find(|r| r["id"] == "other").unwrap().clone();
+        let other = all(None)
+            .iter()
+            .find(|r| r["id"] == "other")
+            .unwrap()
+            .clone();
         assert_eq!(other["isSelf"], 0);
         // Without echo filter the echo row appears; service rows stay hidden.
-        let ids: Vec<String> = all(None).iter().map(|r| r["id"].as_str().unwrap().to_string()).collect();
+        let ids: Vec<String> = all(None)
+            .iter()
+            .map(|r| r["id"].as_str().unwrap().to_string())
+            .collect();
         assert!(!ids.contains(&"rate".to_string()));
         // hideSystem=false brings service rows back.
         let v = d

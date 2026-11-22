@@ -1244,10 +1244,16 @@ pub fn journal(
         );
     }
     if let Some(o) = &f.origin {
-        sql.push_str(&format!(" AND (l.device_id = {0} OR l.source = {0})", push(o.clone().into())));
+        sql.push_str(&format!(
+            " AND (l.device_id = {0} OR l.source = {0})",
+            push(o.clone().into())
+        ));
     }
     if let Some(e) = echo_of {
-        sql.push_str(&format!(" AND NOT (l.device_id = {} AND l.seq > 0)", push(e.to_string().into())));
+        sql.push_str(&format!(
+            " AND NOT (l.device_id = {} AND l.seq > 0)",
+            push(e.to_string().into())
+        ));
     }
     sql.push_str(" ORDER BY l.rowid DESC");
     sql.push_str(&format!(" LIMIT {}", push(f.limit.unwrap_or(200).into())));

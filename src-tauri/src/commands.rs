@@ -308,7 +308,12 @@ pub async fn analytics_monthly(
 #[tauri::command]
 pub async fn journal(state: State<'_, AppState>, filter: Value) -> Result<Vec<Value>, String> {
     let f: repos::JournalFilter = serde_json::from_value(filter).map_err(|e| e.to_string())?;
-    state.read(move |c| repos::journal(c, &f)).await
+    let self_id = state.db.device_id.clone();
+    // On a client, host echoes of this device's own writes would double the rows.
+    let echo = state.db.is_client().then(|| self_id.clone());
+    state
+        .read(move |c| repos::journal(c, &f, &self_id, echo.as_deref()))
+        .await
 }
 
 #[tauri::command]
