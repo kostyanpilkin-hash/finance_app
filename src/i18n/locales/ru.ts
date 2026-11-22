@@ -143,6 +143,7 @@ const ru = {
     syncUnreachable: "Хост недоступен — проверьте, что устройства в одной сети и VPN не блокирует локальную сеть.",
     syncUnauthorized: "Хост больше не принимает это устройство — подключите его заново.",
     syncHostError: "Хост ответил ошибкой: {{message}}",
+    ratesEmpty: "Курсы ещё не загружены",
     conflictsMore: "и ещё {{count}}",
     refresh: "Обновить",
     hostMode: "Это устройство — хост", joinHost: "Подключить это устройство к хосту",
@@ -300,6 +301,7 @@ const ru = {
     dashChartIncomeCat: "Доходы по категориям",
     dashChartExpensePeople: "Расходы по людям",
     dashChartIncomePeople: "Доходы по людям",
+    dashRates: "Курсы валют",
     bot: {
       status: { ok: "Бот работает", offline: "Нет связи с Telegram", stopped: "Бот остановлен" },
       lastMessage: "Последнее сообщение",

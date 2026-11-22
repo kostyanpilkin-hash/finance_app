@@ -5,15 +5,13 @@ import { qk } from "@/lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useLocalSettings } from "./useLocalSettings";
-import { formatRate, rateUnits } from "@/lib/fx";
+import { RatesTable, type NbrbRow } from "@/components/RatesTable";
 import type { RateOverview } from "@/lib/types";
 
-interface RateRow { currency: string; rateBynScaled: number; scale: number; date: string }
-
 export function RatesSection() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const rates = useQuery({ queryKey: qk.rates, queryFn: () => api.ratesLatest<RateRow>() });
+  const rates = useQuery({ queryKey: qk.rates, queryFn: () => api.ratesLatest<NbrbRow>() });
   const overview = useQuery({ queryKey: ["ratesOverview"], queryFn: api.ratesOverview, staleTime: 60_000 });
   const refresh = useMutation({
     mutationFn: api.ratesRefresh,
@@ -30,36 +28,13 @@ export function RatesSection() {
   }
   const nbrbDate = (rates.data ?? []).reduce((d, r) => (r.date > d ? r.date : d), "");
   const bsbMissing = overview.isSuccess && rows.slice(0, 4).every((r) => !r.bsbApp && !r.bsbCard);
-  const fmt = (v: number | null | undefined, cur: string) => (v ? formatRate(v, cur, i18n.language) : "—");
-  const pair = (p: RateOverview["bsbApp"], cur: string) => (p ? `${fmt(p.buy, cur)} / ${fmt(p.sell, cur)}` : "—");
   return (
     <div className="space-y-2 text-sm">
       <Button size="sm" onClick={() => refresh.mutate()} loading={refresh.isPending || overview.isFetching}>
         {t("ui.refreshRates")}
       </Button>
       <div className="overflow-x-auto">
-        <table className="w-full text-left tabular-nums">
-          <thead className="text-xs text-muted-foreground">
-            <tr>
-              <th className="py-1 pr-3 font-medium" />
-              <th className="py-1 pr-3 font-medium">{t("ui.fx.bsbApp")} <span className="font-normal">({t("ui.fx.buy")} / {t("ui.fx.sell")})</span></th>
-              <th className="py-1 pr-3 font-medium">{t("ui.fx.bsbCard")}</th>
-              <th className="py-1 font-medium">{t("ui.fx.nbrb")}{nbrbDate && <span className="font-normal"> · {nbrbDate}</span>}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.currency} className="border-t border-border/50">
-                <td className="py-1 pr-3 font-medium">
-                  {rateUnits(r.currency) > 1 ? `${rateUnits(r.currency)} ` : ""}{r.currency}
-                </td>
-                <td className="py-1 pr-3">{pair(r.bsbApp, r.currency)}</td>
-                <td className="py-1 pr-3">{pair(r.bsbCard, r.currency)}</td>
-                <td className="py-1">{fmt(r.nbrb, r.currency)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <RatesTable rows={rows} nbrbDate={nbrbDate} />
       </div>
       {bsbMissing && <p className="text-xs text-muted-foreground">{t("ui.fx.fallback")}</p>}
       {refresh.data && (
@@ -95,6 +70,7 @@ const DASH_CHARTS: { key: string; label: string }[] = [
   { key: "dash_chart_income_cat", label: "settings.dashChartIncomeCat" },
   { key: "dash_chart_expense_people", label: "settings.dashChartExpensePeople" },
   { key: "dash_chart_income_people", label: "settings.dashChartIncomePeople" },
+  { key: "dash_rates", label: "settings.dashRates" },
 ];
 
 export function DashboardCharts() {

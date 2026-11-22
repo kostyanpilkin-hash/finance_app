@@ -145,6 +145,7 @@ const be: Locale = {
     syncUnreachable: "Хост недаступны — праверце, што прылады ў адной сетцы і VPN не блакуе лакальную сетку.",
     syncUnauthorized: "Хост больш не прымае гэтую прыладу — падключыце яе нанова.",
     syncHostError: "Хост адказаў памылкай: {{message}}",
+    ratesEmpty: "Курсы яшчэ не загружаны",
     conflictsMore: "і яшчэ {{count}}",
     refresh: "Абнавіць",
     hostMode: "Гэтая прылада — хост", joinHost: "Падключыць гэтую прыладу да хаста",
@@ -302,6 +303,7 @@ const be: Locale = {
     dashChartIncomeCat: "Даходы па катэгорыях",
     dashChartExpensePeople: "Расходы па людзях",
     dashChartIncomePeople: "Даходы па людзях",
+    dashRates: "Курсы валют",
     bot: {
       status: { ok: "Бот працуе", offline: "Няма сувязі з Telegram", stopped: "Бот спынены" },
       lastMessage: "Апошняе паведамленне",

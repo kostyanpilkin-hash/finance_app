@@ -145,6 +145,7 @@ const en: Locale = {
     syncUnreachable: "Host unreachable — check that the devices are on the same network and no VPN blocks the LAN.",
     syncUnauthorized: "The host no longer accepts this device — pair it again.",
     syncHostError: "The host returned an error: {{message}}",
+    ratesEmpty: "No rates loaded yet",
     conflictsMore: "and {{count}} more",
     refresh: "Refresh",
     hostMode: "This device is the host", joinHost: "Pair this device to a host",
@@ -302,6 +303,7 @@ const en: Locale = {
     dashChartIncomeCat: "Income by category",
     dashChartExpensePeople: "Expenses by person",
     dashChartIncomePeople: "Income by person",
+    dashRates: "Currency rates",
     bot: {
       status: { ok: "Bot is running", offline: "No connection to Telegram", stopped: "Bot is stopped" },
       lastMessage: "Last message",
