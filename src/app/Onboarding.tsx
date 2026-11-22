@@ -70,7 +70,7 @@ export function Onboarding() {
     setStarter((s) => (s.includes(kind) ? s.filter((k) => k !== kind) : [...s, kind]));
 
   return (
-    <div className="grid min-h-screen place-items-center bg-[var(--bg)] p-6">
+    <div className="grid app-frame-min place-items-center bg-[var(--bg)] p-6">
       <div className="animate-fade-up w-full max-w-lg rounded-2xl border border-border bg-card p-8 shadow-[var(--card-shadow)]">
         <h1 className="font-display mb-1 text-3xl font-semibold text-primary">{t("app.title")}</h1>
         <p className="mb-6 text-sm text-muted-foreground">{t("onboarding.subtitle")}</p>

@@ -45,7 +45,7 @@ export class ErrorBoundary extends Component<Props, State> {
 export function AppCrash({ error }: { error: Error }) {
   const { t } = useTranslation();
   return (
-    <div className="grid min-h-screen place-items-center bg-[var(--bg)] p-6">
+    <div className="grid app-frame-min place-items-center bg-[var(--bg)] p-6">
       <div className="animate-fade-up w-full max-w-lg rounded-2xl border border-border bg-card p-8 shadow-[var(--card-shadow)]">
         <h1 className="font-display mb-1 text-3xl font-semibold text-primary">{t("app.title")}</h1>
         <h2 className="mb-1 font-medium">{t("crash.title")}</h2>

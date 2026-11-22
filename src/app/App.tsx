@@ -45,6 +45,30 @@ export default function App() {
 
   useEffect(() => void init(), [init]);
 
+  // macOS WKWebView keeps a stale viewport height after fullscreen or when
+  // the window moves to a display with another scale — mirror the real
+  // innerHeight into --app-height so .app-frame repaints on every resize.
+  useEffect(() => {
+    const apply = () =>
+      document.documentElement.style.setProperty("--app-height", `${window.innerHeight}px`);
+    apply();
+    window.addEventListener("resize", apply);
+    window.visualViewport?.addEventListener("resize", apply);
+    let unlisten: (() => void) | undefined;
+    import("@tauri-apps/api/window").then(({ getCurrentWindow }) =>
+      getCurrentWindow()
+        .onResized(() => apply())
+        .then((f) => {
+          unlisten = f;
+        }),
+    );
+    return () => {
+      window.removeEventListener("resize", apply);
+      window.visualViewport?.removeEventListener("resize", apply);
+      unlisten?.();
+    };
+  }, []);
+
   // Auto-lock after 10 minutes of inactivity.
   useEffect(() => {
     if (!pinEnabled.data) return;
@@ -98,14 +122,14 @@ export default function App() {
 
   if (locked) {
     return (
-      <div className="h-screen">
+      <div className="app-frame">
         <PinLock onUnlock={() => setUnlockedOnce(true)} />
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen text-foreground" data-page={page}>
+    <div className="app-frame flex text-foreground" data-page={page}>
       <aside className="flex w-14 shrink-0 flex-col border-r border-border/80 bg-[var(--sidebar-bg)] p-2 backdrop-blur lg:w-56 lg:p-4">
         <h1 className="font-display mb-6 hidden text-2xl font-semibold tracking-tight text-primary lg:block">{t("app.title")}</h1>
         <div className="font-display mb-6 grid h-10 place-items-center text-xl font-semibold text-primary lg:hidden">Ф</div>
