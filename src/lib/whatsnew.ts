@@ -10,6 +10,29 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: "0.3.2",
+    items: {
+      ru: [
+        "Журнал снова показывает понятные сводки вместо служебных ключей",
+        "Записи журнала сворачиваются: клик раскрывает все детали изменения",
+        "Курсы валют на дашборде — аккуратной полосой на всю ширину",
+        "Карточки диаграмм больше не растягиваются с пустым местом внутри",
+      ],
+      be: [
+        "Журнал зноў паказвае зразумелыя зводкі замест службовых ключоў",
+        "Запісы журнала згортваюцца: клік раскрывае ўсе дэталі змены",
+        "Курсы валют на дашбордзе — акуратнай паласой на ўсю шырыню",
+        "Карткі дыяграм больш не расцягваюцца з пустым месцам унутры",
+      ],
+      en: [
+        "The journal shows readable summaries again instead of raw keys",
+        "Journal entries collapse: click to reveal every detail of the change",
+        "Dashboard exchange rates now sit in a tidy full-width strip",
+        "Chart cards no longer stretch with dead space inside",
+      ],
+    },
+  },
+  {
     version: "0.3.1",
     items: {
       ru: [
