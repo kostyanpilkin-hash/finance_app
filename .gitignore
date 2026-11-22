@@ -27,3 +27,8 @@ installers
 
 # graphify knowledge-graph output
 graphify-out/
+
+# Impeccable design hook (local wiring and cache)
+.codex/
+.impeccable/config.local.json
+.impeccable/hook.cache.json
