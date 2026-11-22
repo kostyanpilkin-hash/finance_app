@@ -150,6 +150,7 @@ const be: Locale = {
     refresh: "Абнавіць",
     journal: {
       showService: "Паказаць службовыя", showMore: "Паказаць яшчэ", allSources: "Усе крыніцы",
+      allUsers: "Усе аўтары",
       host: "хост", sourceDesktop: "Прыкладанне", sourceBot: "Telegram-бот",
       sourceReminder: "Напамінанне", sourceSystem: "Сістэма",
       txSummary: "{{kind}} {{amount}} · {{category}} · {{account}}",

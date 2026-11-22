@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Bell, GitMerge, Monitor, Pencil, Plus, RotateCcw, Server, Trash2, type LucideIcon } from "lucide-react";
+import { Bot, Bell, ChevronDown, GitMerge, Monitor, Pencil, Plus, RotateCcw, Server, Trash2, type LucideIcon } from "lucide-react";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queryKeys";
 import { useAccounts, useCategories, useUsers } from "@/lib/queries";
@@ -60,6 +60,13 @@ function localTime(iso: string): string {
   return Number.isNaN(d.getTime()) ? iso.slice(11, 16) : d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
+function fullTime(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? iso
+    : d.toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
 export function JournalPage() {
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -69,6 +76,14 @@ export function JournalPage() {
   const [origin, setOrigin] = useState("");
   const [showService, setShowService] = useState(false);
   const [pages, setPages] = useState(1);
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const toggleRow = (id: string) =>
+    setOpen((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
   const status = useQuery({ queryKey: qk.syncStatus, queryFn: api.syncStatus, staleTime: 60_000 });
   const log = useQuery({
     queryKey: qk.journal(search, entity, user, origin, showService, pages),
@@ -135,7 +150,7 @@ export function JournalPage() {
         const toCur = to?.currency ?? cur;
         const toAmt = typeof v.toAmountMinor === "number" ? v.toAmountMinor : v.amountMinor;
         return (
-          t("journal.txTransfer", {
+          t("ui.journal.txTransfer", {
             amount: formatMinor(Number(v.amountMinor ?? 0), cur),
             account: from?.name ?? (v.accountId ? refName("accounts", String(v.accountId)) : "—"),
             toAmount: formatMinor(Number(toAmt ?? 0), toCur),
@@ -144,7 +159,7 @@ export function JournalPage() {
         );
       }
       return (
-        t("journal.txSummary", {
+        t("ui.journal.txSummary", {
           kind: t(`ui.txKind.${kind}`, kind),
           amount: formatMinor(Number(v.amountMinor ?? 0), cur),
           category: v.categoryId ? catLabel(String(v.categoryId)) : "—",
@@ -154,7 +169,7 @@ export function JournalPage() {
     }
     const name = v.name ?? v.title;
     if (name == null) return null;
-    return t("journal.entityAction", {
+    return t("ui.journal.entityAction", {
       entity: t(`ui.entity.${e.entity}`, e.entity),
       name: String(name),
       action: t(`ui.action.${e.action}`, e.action).toLowerCase(),
@@ -189,14 +204,14 @@ export function JournalPage() {
     const src = SOURCE_META[e.source];
     if (src) return { icon: src.icon, label: t(src.key) };
     if (e.dName) return { icon: Monitor, label: e.dName };
-    return { icon: Server, label: t("journal.host") };
+    return { icon: Server, label: t("ui.journal.host") };
   };
 
   // Origin filter options: this device + known sources. Remote devices are
   // reachable through the combined device/source match on the backend only
   // when their id is known — pairing gives the host every client's name/id.
   const originOptions = useMemo(() => {
-    const opts: { value: string; label: string }[] = [{ value: "", label: t("journal.allSources") }];
+    const opts: { value: string; label: string }[] = [{ value: "", label: t("ui.journal.allSources") }];
     const selfId = status.data?.deviceId;
     if (selfId) opts.push({ value: selfId, label: t("ui.thisDevice") });
     for (const [src, meta] of Object.entries(SOURCE_META)) {
@@ -217,12 +232,12 @@ export function JournalPage() {
         <Input className="flex-1"
           placeholder={t("ui.searchComment")} value={search} onChange={(e) => setSearch(e.target.value)} />
         <select className={selectCls} value={user} onChange={(e) => setUser(e.target.value)} aria-label={t("ui.entered")}>
-          <option value="">{t("ui.all")} · {t("ui.entered")}</option>
+          <option value="">{t("ui.journal.allUsers")}</option>
           {(users.data ?? []).map((u) => (
             <option key={u.id} value={u.id}>{u.name}</option>
           ))}
         </select>
-        <select className={selectCls} value={origin} onChange={(e) => setOrigin(e.target.value)} aria-label={t("journal.allSources")}>
+        <select className={selectCls} value={origin} onChange={(e) => setOrigin(e.target.value)} aria-label={t("ui.journal.allSources")}>
           {originOptions.map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
@@ -230,7 +245,7 @@ export function JournalPage() {
         <Checkbox
           className="text-xs font-medium"
           checked={showService}
-          label={t("journal.showService")}
+          label={t("ui.journal.showService")}
           onCheckedChange={(v) => setShowService(v)}
         />
       </div>
@@ -280,39 +295,58 @@ export function JournalPage() {
                 const meta = ACTION_META[e.action] ?? { icon: Pencil, cls: "text-muted-foreground" };
                 const AIcon = meta.icon;
                 const A = actor(e);
-                const title = headline(e, before, after);
+                const title = headline(e, before, after)
+                  ?? `${t(`ui.entity.${e.entity}`, e.entity)} · ${t(`ui.action.${e.action}`, e.action).toLowerCase()}`;
+                const isOpen = open.has(e.id);
                 return (
-                  <div key={e.id} className="flex items-start gap-2.5 px-4 py-2.5 text-sm">
-                    <span className={cn("mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-muted", meta.cls)}>
-                      <AIcon className="h-3.5 w-3.5" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-baseline gap-2">
-                        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{localTime(e.ts)}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {e.uName && `${e.uName} · `}
-                          <A.icon className="inline h-3 w-3 align-text-bottom" /> {A.label}
-                        </span>
+                  <div key={e.id}>
+                    <button
+                      type="button"
+                      onClick={() => toggleRow(e.id)}
+                      className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm transition-colors hover:bg-muted/40"
+                    >
+                      <span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-full bg-muted", meta.cls)}>
+                        <AIcon className="h-3.5 w-3.5" />
+                      </span>
+                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{localTime(e.ts)}</span>
+                      <span className="min-w-0 flex-1 truncate font-medium">{title}</span>
+                      <span className="hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground sm:flex">
+                        {e.uName && <>{e.uName} · </>}
+                        <A.icon className="h-3 w-3" /> {A.label}
+                      </span>
+                      <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", isOpen && "rotate-180")} />
+                    </button>
+                    {isOpen && (
+                      <div className="space-y-2.5 border-t border-border/50 bg-muted/20 px-4 py-3 text-sm sm:pl-[3.75rem]">
+                        <div className="font-medium">{title}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {t(`ui.entity.${e.entity}`, e.entity)} · {t(`ui.action.${e.action}`, e.action).toLowerCase()} · {fullTime(e.ts)}
+                        </div>
+                        {changes.length > 0 ? (
+                          <div className="space-y-1">
+                            {changes.map((c, i) => (
+                              <div key={i} className="text-xs">
+                                <span className="text-muted-foreground">{t(`ui.field.${c.field}`, c.field)}:</span>{" "}
+                                <s className="text-muted-foreground/80">{fmt(c.field, c.before, after)}</s> →{" "}
+                                <b>{fmt(c.field, c.after, after)}</b>
+                              </div>
+                            ))}
+                          </div>
+                        ) : e.action !== "delete" ? (
+                          <div className="text-xs text-muted-foreground">{t("ui.noChanges")}</div>
+                        ) : null}
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                          {e.uName && <span>{t("ui.entered")}: {e.uName}</span>}
+                          <span className="inline-flex items-center gap-1"><A.icon className="h-3 w-3" /> {A.label}</span>
+                        </div>
                         {e.action === "delete" && (
-                          <Button size="sm" variant="ghost" className="ml-auto -my-1"
+                          <Button size="sm" variant="outline"
                             onClick={() => restore.mutate({ entity: e.entity, id: e.entityId })}>
                             {t("ui.restore")}
                           </Button>
                         )}
                       </div>
-                      {title && <div className="truncate font-medium">{title}</div>}
-                      {!title && changes.length === 0 && e.action !== "delete" && (
-                        <div className="text-xs text-muted-foreground">{t("ui.noChanges")}</div>
-                      )}
-                      {changes.slice(0, 6).map((c, i) => (
-                        <div key={i} className="text-xs">
-                          <span className="text-muted-foreground">{t(`ui.field.${c.field}`, c.field)}:</span>{" "}
-                          <s className="text-muted-foreground/80">{fmt(c.field, c.before, after)}</s> →{" "}
-                          <b>{fmt(c.field, c.after, after)}</b>
-                        </div>
-                      ))}
-                      {changes.length > 6 && <div className="text-xs text-muted-foreground">+{changes.length - 6}…</div>}
-                    </div>
+                    )}
                   </div>
                 );
               })}
@@ -323,7 +357,7 @@ export function JournalPage() {
         {(log.data?.length ?? 0) >= PAGE * pages && (
           <div className="flex justify-center pb-2">
             <Button size="sm" variant="outline" onClick={() => setPages((p) => p + 1)}>
-              {t("journal.showMore")}
+              {t("ui.journal.showMore")}
             </Button>
           </div>
         )}

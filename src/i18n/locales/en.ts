@@ -150,6 +150,7 @@ const en: Locale = {
     refresh: "Refresh",
     journal: {
       showService: "Show service entries", showMore: "Show more", allSources: "All sources",
+      allUsers: "All authors",
       host: "host", sourceDesktop: "App", sourceBot: "Telegram bot",
       sourceReminder: "Reminder", sourceSystem: "System",
       txSummary: "{{kind}} {{amount}} · {{category}} · {{account}}",

@@ -12,17 +12,15 @@ export interface NbrbRow {
 
 /**
  * BSB app / BSB card / NBRB rates side by side. Shared between
- * Settings → Rates (all currencies) and the optional dashboard card
- * (USD/EUR/RUB, compact).
+ * Settings → Rates (all currencies) and the optional dashboard strip
+ * (USD/EUR/RUB).
  */
 export function RatesTable({
   rows,
   nbrbDate,
-  compact,
 }: {
   rows: RateOverview[];
   nbrbDate?: string;
-  compact?: boolean;
 }) {
   const { t, i18n } = useTranslation();
   const fmt = (v: number | null | undefined, cur: string) =>
@@ -30,14 +28,16 @@ export function RatesTable({
   const pair = (p: RateOverview["bsbApp"], cur: string) =>
     p ? `${fmt(p.buy, cur)} / ${fmt(p.sell, cur)}` : "—";
   return (
-    <table className={`w-full text-left tabular-nums ${compact ? "text-xs" : ""}`}>
+    <table className="w-full text-left tabular-nums">
       <thead className="text-xs text-muted-foreground">
         <tr>
-          <th className="py-1 pr-3 font-medium" />
-          <th className="py-1 pr-3 font-medium">
+          <th className="py-1 pr-4 font-medium" />
+          <th className="py-1 pr-4 font-medium">
             {t("ui.fx.bsbApp")} <span className="font-normal">({t("ui.fx.buy")} / {t("ui.fx.sell")})</span>
           </th>
-          <th className="py-1 pr-3 font-medium">{t("ui.fx.bsbCard")}</th>
+          <th className="py-1 pr-4 font-medium">
+            {t("ui.fx.bsbCard")} <span className="font-normal">({t("ui.fx.buy")} / {t("ui.fx.sell")})</span>
+          </th>
           <th className="py-1 font-medium">
             {t("ui.fx.nbrb")}
             {nbrbDate && <span className="font-normal"> · {nbrbDate}</span>}
@@ -47,13 +47,13 @@ export function RatesTable({
       <tbody>
         {rows.map((r) => (
           <tr key={r.currency} className="border-t border-border/50">
-            <td className="py-1 pr-3 font-medium">
+            <td className="py-1.5 pr-4 font-medium">
               {rateUnits(r.currency) > 1 ? `${rateUnits(r.currency)} ` : ""}
               {r.currency}
             </td>
-            <td className="py-1 pr-3">{pair(r.bsbApp, r.currency)}</td>
-            <td className="py-1 pr-3">{pair(r.bsbCard, r.currency)}</td>
-            <td className="py-1">{fmt(r.nbrb, r.currency)}</td>
+            <td className="py-1.5 pr-4">{pair(r.bsbApp, r.currency)}</td>
+            <td className="py-1.5 pr-4">{pair(r.bsbCard, r.currency)}</td>
+            <td className="py-1.5">{fmt(r.nbrb, r.currency)}</td>
           </tr>
         ))}
       </tbody>

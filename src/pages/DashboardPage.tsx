@@ -144,7 +144,7 @@ export function DashboardPage() {
         </>
       ) : (
         <>
-          <div className={`grid gap-3 ${ratesOn ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"}`}>
+          <div className="grid gap-3 sm:grid-cols-3">
             <div className={card}>
               <div className="text-xs text-muted-foreground">{t("ui.totalBalance")}</div>
               <div className="font-display text-xl font-semibold">{formatMinor(totalByn.sum, totalByn.currency)}</div>
@@ -164,10 +164,11 @@ export function DashboardPage() {
               ))}
               {sumFor("income").length === 0 && <div className="text-lg font-semibold">0,00</div>}
             </div>
-            {ratesOn && <RatesCard t={t} overview={overview} nbrbRates={nbrbRates} card={card} />}
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-2">
+          {ratesOn && <RatesCard t={t} overview={overview} nbrbRates={nbrbRates} card={card} />}
+
+          <div className="grid items-start gap-4 lg:grid-cols-2">
             {(
               [
                 { key: "pieMonth", on: true, data: catSlices("expense"), sel: openPeek("expense") },
@@ -226,16 +227,16 @@ function RatesCard({
   const nbrbDate = (nbrbRates.data ?? []).reduce((d, r) => (r.date > d ? r.date : d), "");
   return (
     <div className={`${card} min-w-0`}>
-      <div className="mb-1 flex items-baseline justify-between gap-2">
-        <div className="text-xs text-muted-foreground">{t("settings.dashRates")}</div>
-        {nbrbDate && <div className="text-[10px] text-muted-foreground">{nbrbDate}</div>}
+      <div className="mb-2 flex items-baseline justify-between gap-2">
+        <div className="text-sm font-medium">{t("settings.dashRates")}</div>
+        {nbrbDate && <div className="text-xs text-muted-foreground">{nbrbDate}</div>}
       </div>
       {overview.isLoading ? (
         <Skeleton className="h-16" />
       ) : rows.length === 0 ? (
         <div className="text-xs text-muted-foreground">{t("ui.ratesEmpty")}</div>
       ) : (
-        <RatesTable rows={rows} compact />
+        <RatesTable rows={rows} />
       )}
     </div>
   );

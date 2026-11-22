@@ -148,6 +148,7 @@ const ru = {
     refresh: "Обновить",
     journal: {
       showService: "Показать служебные", showMore: "Показать ещё", allSources: "Все источники",
+      allUsers: "Все авторы",
       host: "хост", sourceDesktop: "Приложение", sourceBot: "Telegram-бот",
       sourceReminder: "Напоминание", sourceSystem: "Система",
       txSummary: "{{kind}} {{amount}} · {{category}} · {{account}}",
