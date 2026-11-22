@@ -365,6 +365,8 @@ mod tests {
                     entity_id: Some(acc["id"].as_str().unwrap().into()),
                     ..Default::default()
                 },
+                "self-dev",
+                None,
             )?;
             assert_eq!(log.len(), 2);
             let changes = log[0]["changesJson"].as_str().unwrap();
@@ -1344,5 +1346,79 @@ mod tests {
             Ok(())
         })
         .unwrap();
+    }
+
+    /// Journal filtering: service rows (rates/system) hidden by default,
+    /// host echoes of a client's own writes hidden via echo_of, is_self flag.
+    #[test]
+    fn journal_hides_service_and_echoes() -> Result<(), Error> {
+        let d = db();
+        d.with_conn(|c| {
+            let ins = |id: &str, dev: &str, src: &str, entity: &str, seq: i64| {
+                c.execute(
+                    "INSERT INTO audit_log (id, ts, user_id, device_id, source, entity, entity_id, action, created_at, updated_at, seq, local_dirty)
+                     VALUES (?1,'2026-01-01T00:00:00Z',NULL,?2,?3,?4,'e1','create','t','t',?5,0)",
+                    rusqlite::params![id, dev, src, entity, seq],
+                )
+                .unwrap();
+            };
+            ins("own", "self-dev", "desktop", "accounts", 0); // my write, unpushed
+            ins("own-echo", "self-dev", "desktop", "accounts", 10); // host echo of it
+            ins("other", "other-dev", "desktop", "accounts", 10); // remote write
+            ins("rate", "self-dev", "system", "exchange_rates", 0); // service
+            Ok(())
+        })?;
+        let all = |echo: Option<&str>| {
+            d.with_conn(|c| {
+                repos::journal(c, &repos::JournalFilter::default(), "self-dev", echo)
+            })
+            .unwrap()
+        };
+        let ids: Vec<String> = all(Some("self-dev"))
+            .iter()
+            .map(|r| r["id"].as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(ids, ["other".to_string(), "own".to_string()]);
+        // is_self marks the device that wrote the row.
+        let own = all(None).iter().find(|r| r["id"] == "own").unwrap().clone();
+        assert_eq!(own["isSelf"], 1);
+        let other = all(None).iter().find(|r| r["id"] == "other").unwrap().clone();
+        assert_eq!(other["isSelf"], 0);
+        // Without echo filter the echo row appears; service rows stay hidden.
+        let ids: Vec<String> = all(None).iter().map(|r| r["id"].as_str().unwrap().to_string()).collect();
+        assert!(!ids.contains(&"rate".to_string()));
+        // hideSystem=false brings service rows back.
+        let v = d
+            .with_conn(|c| {
+                repos::journal(
+                    c,
+                    &repos::JournalFilter {
+                        hide_system: Some(false),
+                        ..Default::default()
+                    },
+                    "self-dev",
+                    None,
+                )
+            })
+            .unwrap();
+        assert!(v.iter().any(|r| r["id"] == "rate"));
+        // origin matches device_id or source.
+        let v = d
+            .with_conn(|c| {
+                repos::journal(
+                    c,
+                    &repos::JournalFilter {
+                        hide_system: Some(false),
+                        origin: Some("system".into()),
+                        ..Default::default()
+                    },
+                    "self-dev",
+                    None,
+                )
+            })
+            .unwrap();
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0]["id"], "rate");
+        Ok(())
     }
 }

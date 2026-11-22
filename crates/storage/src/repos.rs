@@ -1181,11 +1181,25 @@ pub struct JournalFilter {
     pub search: Option<String>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
+    /// Service rows (exchange rates, shared settings, reminder/system
+    /// bookkeeping) are hidden unless this is `Some(false)`.
+    pub hide_system: Option<bool>,
+    /// Combined device/source filter: matches `l.device_id` or `l.source`.
+    pub origin: Option<String>,
 }
 
-pub fn journal(conn: &Connection, f: &JournalFilter) -> Result<Vec<Value>, Error> {
+/// `self_id` flags rows made by this device (`is_self`). `echo_of` hides
+/// pulled host copies of a client's own writes — the local original keeps
+/// `seq = 0` while the host echo carries `seq > 0` for the same device, so
+/// `device_id = self AND seq > 0` only ever matches echoes on a client.
+pub fn journal(
+    conn: &Connection,
+    f: &JournalFilter,
+    self_id: &str,
+    echo_of: Option<&str>,
+) -> Result<Vec<Value>, Error> {
     let mut sql = String::from(
-        "SELECT l.*, u.name AS u_name, d.name AS d_name
+        "SELECT l.*, u.name AS u_name, d.name AS d_name, (l.device_id = ?SELFDEV) AS is_self
          FROM audit_log l
          LEFT JOIN users u ON u.id = l.user_id
          LEFT JOIN devices d ON d.id = l.device_id
@@ -1223,11 +1237,24 @@ pub fn journal(conn: &Connection, f: &JournalFilter) -> Result<Vec<Value>, Error
                 push(s.clone().into()), push(s.clone().into()), push(s.clone().into())));
         }
     }
+    if f.hide_system != Some(false) {
+        sql.push_str(
+            " AND l.entity NOT IN ('exchange_rates','shared_settings','reminder_events','audit_log','devices')
+             AND l.source <> 'system'",
+        );
+    }
+    if let Some(o) = &f.origin {
+        sql.push_str(&format!(" AND (l.device_id = {0} OR l.source = {0})", push(o.clone().into())));
+    }
+    if let Some(e) = echo_of {
+        sql.push_str(&format!(" AND NOT (l.device_id = {} AND l.seq > 0)", push(e.to_string().into())));
+    }
     sql.push_str(" ORDER BY l.rowid DESC");
     sql.push_str(&format!(" LIMIT {}", push(f.limit.unwrap_or(200).into())));
     if let Some(o) = f.offset {
         sql.push_str(&format!(" OFFSET {}", push(o.into())));
     }
+    sql = sql.replace("?SELFDEV", &push(self_id.to_string().into()));
     let mut stmt = conn.prepare_cached(&sql)?;
     let cols: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
     let out = stmt

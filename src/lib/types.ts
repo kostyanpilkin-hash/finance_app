@@ -87,6 +87,9 @@ export interface AuditRow {
   afterJson?: string | null;
   changesJson?: string | null;
   uName?: string;
+  dName?: string | null;
+  deviceId?: string | null;
+  isSelf?: number;
 }
 
 export interface DashboardData {

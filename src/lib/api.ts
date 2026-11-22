@@ -43,6 +43,8 @@ export interface JournalFilter {
   search?: string;
   limit?: number;
   offset?: number;
+  hideSystem?: boolean;
+  origin?: string;
 }
 
 export interface CompleteOnboardingInput {
