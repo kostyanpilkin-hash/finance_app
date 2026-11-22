@@ -10,6 +10,39 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: "0.3.1",
+    items: {
+      ru: [
+        "Настройки → «Устройства» теперь показывают, хост это устройство или клиент, и список подключённых",
+        "Кнопка «Синхронизировать» и понятные ошибки синхронизации вместо сырого текста сети",
+        "Тысячи ложных конфликтов курсов закрыты — настоящие остаются и группируются",
+        "Кнопка «Обновить» на всех главных страницах подтягивает данные с хоста",
+        "На дашборде — карточка курсов валют (БСБ приложение, карточки, Нацбанк), отключается в настройках",
+        "Журнал: понятные сводки, автор и устройство, фильтры и местное время",
+        "На Mac больше нет чёрной полосы снизу в полноэкранном режиме",
+      ],
+      be: [
+        "Налады → «Прылады» паказваюць, хост гэтая прылада ці кліент, і спіс падключаных",
+        "Кнопка «Сінхранізаваць» і зразумелыя памылкі сінхранізацыі замест сырога тэксту сеткі",
+        "Тысячы ілжывых канфліктаў курсаў закрыты — сапраўдныя застаюцца і групуюцца",
+        "Кнопка «Абнавіць» на ўсіх галоўных старонках падцягвае даныя з хаста",
+        "На дашбордзе — картка курсаў валют (БСБ праграма, карткі, Нацбанк), адключаецца ў наладах",
+        "Журнал: зразумелыя зводкі, аўтар і прылада, фільтры і мясцовы час",
+        "На Mac больш няма чорнай паласы ўнізе ў поўнаэкранным рэжыме",
+      ],
+      en: [
+        "Settings → Devices now shows whether this device is the host or a client, plus paired devices",
+        "A Sync now button and human-readable sync errors instead of raw network text",
+        "Thousands of false rate conflicts are closed — real ones remain and are grouped",
+        "A Refresh button on every main page pulls changes from the host",
+        "Dashboard gets a currency-rates card (BSB app, BSB cards, NBRB), toggleable in settings",
+        "Journal: readable summaries, author and device, filters, local time",
+        "No more black strip at the bottom of the window on macOS fullscreen",
+      ],
+    },
+  },
+
+  {
     version: "0.3.0",
     items: {
       ru: [
