@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import { formatMinor } from "@/lib/money";
 import { shade, textOn } from "@/lib/color";
 import { CategoryIcon } from "@/components/ui/category-icon";
@@ -13,6 +13,8 @@ export interface DonutItem {
   iconId?: string;
   /** Single letter shown on a colour circle (e.g. a person's initial). */
   initial?: string;
+  /** Change vs the previous period, percent; null/undefined = nothing to compare. */
+  delta?: number | null;
 }
 
 const CX = 110;
@@ -25,11 +27,8 @@ const LABEL_MIN_FRAC = 0.07;
 const OTHER_FILL = "#9ca3af";
 const MIN_SHARE = 0.02;
 
-/** Fallback hues when several slices share the same fill. */
-const PALETTE = [
-  "#10b981", "#f59e0b", "#3b82f6", "#ec4899", "#8b5cf6", "#14b8a6",
-  "#f97316", "#84cc16", "#06b6d4", "#ef4444", "#eab308", "#a855f7",
-];
+/** Lighter/darker steps tried when several slices share one colour. */
+const SHADE_STEPS = [-18, 18, -32, 32, -44, 44];
 
 interface DonutChartProps {
   data: DonutItem[];
@@ -41,6 +40,8 @@ interface DonutChartProps {
   otherLabel?: string;
   /** Called with the slice's source items and its display name on click. */
   onSelect?: (members: DonutItem[], label: string) => void;
+  /** Which direction of `delta` is good news: "down" for expenses, "up" for income. */
+  goodDelta?: "up" | "down";
 }
 
 interface Slice extends DonutItem {
@@ -81,6 +82,7 @@ function useSlices(data: DonutItem[]) {
       const g = byName.get(d.name);
       if (g) {
         g.item.value += d.value;
+        g.item.delta = undefined;
         g.members.push(d);
       } else {
         byName.set(d.name, { item: { ...d }, members: [d] });
@@ -109,12 +111,14 @@ function useSlices(data: DonutItem[]) {
         members: small.flatMap((g) => g.members),
       });
     }
+    // A repeated colour becomes a lighter/darker shade of itself, so a
+    // category stays recognisable by hue instead of getting a random colour.
     const used = new Set<string>();
     for (const s of fracs) {
-      const key = s.fill.toLowerCase();
-      if (used.has(key)) {
-        const free = PALETTE.find((p) => !used.has(p));
-        s.fill = free ?? s.fill;
+      if (used.has(s.fill.toLowerCase())) {
+        const base = s.fill;
+        const alt = SHADE_STEPS.map((k) => shade(base, k)).find((c) => !used.has(c.toLowerCase()));
+        s.fill = alt ?? base;
       }
       used.add(s.fill.toLowerCase());
     }
@@ -128,9 +132,15 @@ function useSlices(data: DonutItem[]) {
   }, [data]);
 }
 
-export function DonutChart({ data, currency, totalLabel, emptyLabel = "—", otherLabel, onSelect }: DonutChartProps) {
+/** Steps the centre amount down so long sums fit inside the hole. */
+const centerSize = (text: string) => (text.length <= 10 ? "text-lg" : text.length <= 13 ? "text-base" : "text-sm");
+
+export function DonutChart({ data, currency, totalLabel, emptyLabel = "—", otherLabel, onSelect, goodDelta = "down" }: DonutChartProps) {
   const { slices, total } = useSlices(data);
   const [active, setActive] = useState<number | null>(null);
+  // Roving tabindex: the ring is one Tab stop, arrows walk the slices.
+  const [focusIdx, setFocusIdx] = useState(0);
+  const segRefs = useRef<(SVGGElement | null)[]>([]);
   const gid = useId().replace(/[^a-zA-Z0-9]/g, "");
 
   if (slices.length === 0) {
@@ -157,11 +167,29 @@ export function DonutChart({ data, currency, totalLabel, emptyLabel = "—", oth
   });
 
   const center = active !== null ? segs[active] : null;
+  const centerText = formatMinor(center ? center.value : total, currency);
   const pct = (v: number) => `${Math.round((v / total) * 100)}%`;
   const labelOf = (s: (typeof segs)[number]) => (s.other && otherLabel ? otherLabel : s.name);
+  const ariaOf = (s: (typeof segs)[number]) => `${labelOf(s)}: ${formatMinor(s.value, currency)}, ${pct(s.value)}`;
+  const tabIdx = Math.min(focusIdx, segs.length - 1);
+  const moveFocus = (i: number) => {
+    const n = (i + segs.length) % segs.length;
+    setFocusIdx(n);
+    segRefs.current[n]?.focus();
+  };
+  const onSegKey = (e: React.KeyboardEvent, i: number) => {
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") moveFocus(i + 1);
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") moveFocus(i - 1);
+    else if (e.key === "Home") moveFocus(0);
+    else if (e.key === "End") moveFocus(segs.length - 1);
+    else if ((e.key === "Enter" || e.key === " ") && onSelect) onSelect(segs[i].members, labelOf(segs[i]));
+    else return;
+    e.preventDefault();
+  };
 
   return (
-    <div className="flex flex-col items-center gap-4 sm:flex-row">
+    <div className="@container">
+    <div className="flex flex-col items-center gap-4 @md:flex-row">
       <div className="relative h-52 w-52 shrink-0">
         <svg viewBox="0 0 220 220" className="h-full w-full overflow-visible">
           <defs>
@@ -182,7 +210,14 @@ export function DonutChart({ data, currency, totalLabel, emptyLabel = "—", oth
             {segs.map((s, i) => (
               <g
                 key={i}
-                className="cursor-pointer"
+                ref={(el) => { segRefs.current[i] = el; }}
+                tabIndex={i === tabIdx ? 0 : -1}
+                role={onSelect ? "button" : "img"}
+                aria-label={ariaOf(s)}
+                className={onSelect ? "cursor-pointer outline-none" : "outline-none"}
+                onFocus={() => { setActive(i); setFocusIdx(i); }}
+                onBlur={() => setActive(null)}
+                onKeyDown={(e) => onSegKey(e, i)}
                 style={{
                   transform: `translate(${s.dx}px, ${s.dy}px)`,
                   transition: "transform .25s ease, opacity .25s ease",
@@ -192,7 +227,11 @@ export function DonutChart({ data, currency, totalLabel, emptyLabel = "—", oth
                 onMouseLeave={() => setActive(null)}
                 onClick={() => onSelect?.(s.members, labelOf(s))}
               >
-                <path d={sectorPath(s.rOut, R_IN, s.a0, s.a1)} fill={`url(#${gid}${i})`} />
+                <path
+                  d={sectorPath(s.rOut, R_IN, s.a0, s.a1)}
+                  fill={`url(#${gid}${i})`}
+                  className="[g:focus-visible>&]:stroke-[var(--ring)] [g:focus-visible>&]:[stroke-width:2.5]"
+                />
                 {s.frac >= LABEL_MIN_FRAC && (
                   <text
                     x={polar((s.rOut + R_IN) / 2, s.mid)[0]}
@@ -213,12 +252,10 @@ export function DonutChart({ data, currency, totalLabel, emptyLabel = "—", oth
         </svg>
         <style>{`@keyframes donutIn { from { transform: rotate(-70deg) scale(.55); opacity: 0; } }`}</style>
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-          <div className="max-w-[90px] truncate text-xs font-medium text-muted-foreground">
+          <div className="line-clamp-2 max-w-[100px] break-words text-xs font-medium leading-tight text-muted-foreground">
             {center ? labelOf(center) : totalLabel ?? ""}
           </div>
-          <div className="font-display text-lg font-semibold leading-tight">
-            {formatMinor(center ? center.value : total, currency)}
-          </div>
+          <div className={`font-display font-semibold leading-tight ${centerSize(centerText)}`}>{centerText}</div>
           {center && <div className="text-xs text-muted-foreground">{pct(center.value)}</div>}
         </div>
       </div>
@@ -249,10 +286,20 @@ export function DonutChart({ data, currency, totalLabel, emptyLabel = "—", oth
               />
             )}
             <span className="min-w-0 flex-1 truncate text-muted-foreground">{labelOf(s)}</span>
+            {s.delta != null && s.delta !== 0 && !s.other && (
+              <span
+                className={`shrink-0 text-xs font-medium tabular-nums ${
+                  (s.delta < 0) === (goodDelta === "down") ? "text-income" : "text-expense"
+                }`}
+              >
+                {s.delta > 0 ? "↑" : "↓"}{Math.abs(s.delta)}%
+              </span>
+            )}
             <span className="shrink-0 font-medium">{formatMinor(s.value, currency)}</span>
           </button>
         ))}
       </div>
+    </div>
     </div>
   );
 }

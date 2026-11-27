@@ -1146,6 +1146,71 @@ mod tests {
         .unwrap();
     }
 
+    /// The `ownerIds` list filter picks exactly the rows behind each
+    /// analytics `by_owner` slice: spender wins over author, "" = neither.
+    #[test]
+    fn transaction_filter_owner_ids_match_analytics() {
+        let d = db();
+        d.with_conn(|c| {
+            let a = actor(&d);
+            let u1 = repos::user_upsert(c, &d, &a, json!({"name":"Иван"}))?;
+            let u2 = repos::user_upsert(c, &d, &a, json!({"name":"Мария"}))?;
+            let acc = repos::account_upsert(
+                c,
+                &d,
+                &a,
+                json!({"name":"A","kind":"cash","currency":"BYN"}),
+            )?;
+            let ecat = repos::category_upsert(c, &d, &a, json!({"name":"E","kind":"expense"}))?;
+            let icat = repos::category_upsert(c, &d, &a, json!({"name":"I","kind":"income"}))?;
+            let mk = |kind: &str, amount: i64, extra: serde_json::Value| {
+                let cat = if kind == "income" { &icat } else { &ecat };
+                let mut p = json!({"kind":kind,"occurredAt":"2026-11-10T10:00:00",
+                                   "accountId":acc["id"],"amountMinor":amount,"categoryId":cat["id"]});
+                p.as_object_mut()
+                    .unwrap()
+                    .extend(extra.as_object().unwrap().clone());
+                repos::transaction_upsert(c, &d, &a, p)
+            };
+            // Entered by u1 but spent by u2 → belongs to u2.
+            mk("expense", 700, json!({"createdByUserId":u1["id"],"spentByUserId":u2["id"]}))?;
+            mk("expense", 300, json!({"createdByUserId":u1["id"]}))?;
+            mk("income", 5000, json!({"createdByUserId":u2["id"]}))?;
+            mk("income", 1200, json!({"createdByUserId":u1["id"]}))?;
+            // No author, no spender → the "no author" slice.
+            mk("expense", 40, json!({}))?;
+
+            let s = analytics::summary(c, "2026-11-10", "2026-11-10", "BYN")?;
+            let listed = |kind: &str, ids: Vec<String>| -> Result<i64, Error> {
+                let rows = repos::transaction_list(
+                    c,
+                    &repos::TransactionFilter {
+                        from: Some("2026-11-10".into()),
+                        to: Some("2026-11-10".into()),
+                        kind: Some(kind.into()),
+                        owner_ids: Some(ids),
+                        ..Default::default()
+                    },
+                )?;
+                Ok(rows.iter().map(|r| r["amountMinor"].as_i64().unwrap()).sum())
+            };
+            for b in &s.by_owner {
+                let id = b.key.clone().unwrap_or_default();
+                assert_eq!(listed("expense", vec![id.clone()])?, b.expense, "expense {id}");
+                assert_eq!(listed("income", vec![id.clone()])?, b.income, "income {id}");
+            }
+            let uid = |u: &serde_json::Value| u["id"].as_str().unwrap().to_string();
+            assert_eq!(listed("expense", vec![uid(&u2)])?, 700);
+            assert_eq!(listed("expense", vec![uid(&u1)])?, 300);
+            assert_eq!(listed("expense", vec![String::new()])?, 40);
+            assert_eq!(listed("expense", vec![uid(&u1), String::new()])?, 340);
+            assert_eq!(listed("income", vec![uid(&u2)])?, 5000);
+            assert_eq!(listed("income", vec![uid(&u1)])?, 1200);
+            Ok(())
+        })
+        .unwrap();
+    }
+
     /// Every kind carries "whose entry": default = author, explicit value is
     /// validated and kept for expenses, income and transfers alike.
     #[test]

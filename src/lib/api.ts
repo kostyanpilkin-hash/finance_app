@@ -25,6 +25,8 @@ export interface TransactionFilter {
   categoryId?: string;
   /** Multi-category filter; an empty string member matches entries without a category. */
   categoryIds?: string[];
+  /** "Whose entry" (spender, else author) — same rule as analytics byOwner; "" matches neither. */
+  ownerIds?: string[];
   kind?: string;
   search?: string;
   limit?: number;

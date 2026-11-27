@@ -511,6 +511,9 @@ pub struct TransactionFilter {
     pub category_id: Option<String>,
     /// Multi-category filter (chart tail etc.); "" in the list matches NULL.
     pub category_ids: Option<Vec<String>>,
+    /// "Whose entry" filter, same rule as analytics `by_owner`
+    /// (spender, else author); "" in the list matches entries with neither.
+    pub owner_ids: Option<Vec<String>>,
     pub kind: Option<String>,
     pub search: Option<String>,
     pub limit: Option<i64>,
@@ -564,26 +567,30 @@ pub fn transaction_list(conn: &Connection, f: &TransactionFilter) -> Result<Vec<
     if let Some(c) = &f.category_id {
         sql.push_str(&format!(" AND t.category_id = {}", push(c.clone().into())));
     }
-    if let Some(ids) = &f.category_ids {
-        if !ids.is_empty() {
-            let marks = ids
-                .iter()
-                .filter(|i| !i.is_empty())
-                .map(|i| push(i.clone().into()))
-                .collect::<Vec<_>>()
-                .join(",");
-            let mut cond = String::new();
-            if !marks.is_empty() {
-                cond.push_str(&format!("t.category_id IN ({marks})"));
-            }
-            if ids.iter().any(|i| i.is_empty()) {
-                if !cond.is_empty() {
-                    cond.push_str(" OR ");
-                }
-                cond.push_str("t.category_id IS NULL");
-            }
-            sql.push_str(&format!(" AND ({cond})"));
+    for (col, ids) in [
+        ("t.category_id", &f.category_ids),
+        (
+            "COALESCE(t.spent_by_user_id, t.created_by_user_id)",
+            &f.owner_ids,
+        ),
+    ] {
+        let Some(ids) = ids.as_ref().filter(|v| !v.is_empty()) else {
+            continue;
+        };
+        let marks = ids
+            .iter()
+            .filter(|i| !i.is_empty())
+            .map(|i| push(i.clone().into()))
+            .collect::<Vec<_>>()
+            .join(",");
+        let mut cond = Vec::new();
+        if !marks.is_empty() {
+            cond.push(format!("{col} IN ({marks})"));
         }
+        if ids.iter().any(|i| i.is_empty()) {
+            cond.push(format!("{col} IS NULL"));
+        }
+        sql.push_str(&format!(" AND ({})", cond.join(" OR ")));
     }
     if let Some(k) = &f.kind {
         sql.push_str(&format!(" AND t.kind = {}", push(k.clone().into())));

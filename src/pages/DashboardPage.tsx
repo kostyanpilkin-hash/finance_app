@@ -20,6 +20,7 @@ import { RefreshButton } from "@/components/RefreshButton";
 import { DashGrid } from "@/components/dashboard/DashGrid";
 import { parseLayout, serializeGrid, accountWidgetId, ACCOUNT_PREFIX, STAT_IDS, type WidgetId } from "@/lib/dashLayout";
 import { useMediaQuery } from "@/lib/useMediaQuery";
+import { slicePeek } from "@/lib/chartPeek";
 import { toast } from "@/stores/toast";
 
 type DashPeriod = "week" | "month" | "days30";
@@ -66,13 +67,12 @@ export function DashboardPage() {
     onSettled: () => qc.invalidateQueries({ queryKey: qk.settings }),
   });
   const { from, to } = useMemo(() => rangeFor(period), [period]);
-  const openPeek = useCallback(
-    (kind: "expense" | "income") => (members: DonutItem[], label: string) =>
-      setPeek({ title: label, kind, categoryIds: members.map((m) => m.id ?? "") }),
-    [],
-  );
-
   const { displayCurrency, toDisplay } = useDisplayMoney();
+  const openPeek = useCallback(
+    (kind: "expense" | "income", by: "category" | "owner") => (members: DonutItem[], label: string) =>
+      setPeek(slicePeek(kind, by, members, label, displayCurrency)),
+    [displayCurrency],
+  );
   const dash = useQuery({ queryKey: qk.dashboard(from, to), queryFn: () => api.dashboard<DashboardData>(from, to) });
   const sum = useQuery({
     queryKey: qk.analytics("summary", from, to, displayCurrency),
@@ -136,6 +136,7 @@ export function DashboardPage() {
         const id = b.key;
         const name = (id ? userName.get(id) : undefined) ?? (id ? "?" : t("ui.noAuthor"));
         return {
+          id: id ?? null,
           name,
           value: v,
           fill: id ? userColor.get(id) ?? FALLBACK_COLOR : FALLBACK_COLOR,
@@ -150,10 +151,10 @@ export function DashboardPage() {
   const loading = dash.isLoading || sum.isLoading;
 
   const chartCards = [
-    { id: "chart_pieMonth", key: "pieMonth", on: true, data: catSlices("expense"), sel: openPeek("expense") },
-    { id: "chart_incomeByCat", key: "incomeByCat", on: chartOn("dash_chart_income_cat"), data: catSlices("income"), sel: openPeek("income") },
-    { id: "chart_expenseByPeople", key: "expenseByPeople", on: chartOn("dash_chart_expense_people"), data: peopleSlices("expense"), sel: undefined },
-    { id: "chart_incomeByPeople", key: "incomeByPeople", on: chartOn("dash_chart_income_people"), data: peopleSlices("income"), sel: undefined },
+    { id: "chart_pieMonth", key: "pieMonth", on: true, data: catSlices("expense"), sel: openPeek("expense", "category") },
+    { id: "chart_incomeByCat", key: "incomeByCat", on: chartOn("dash_chart_income_cat"), data: catSlices("income"), sel: openPeek("income", "category") },
+    { id: "chart_expenseByPeople", key: "expenseByPeople", on: chartOn("dash_chart_expense_people"), data: peopleSlices("expense"), sel: openPeek("expense", "owner") },
+    { id: "chart_incomeByPeople", key: "incomeByPeople", on: chartOn("dash_chart_income_people"), data: peopleSlices("income"), sel: openPeek("income", "owner") },
   ];
 
   const accountKey = accounts.map((a) => a.id).join(",");
