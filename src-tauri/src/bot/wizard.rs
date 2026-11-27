@@ -1044,10 +1044,7 @@ fn view(state: &AppState, d: &Draft, ctx: &Ctx) -> Result<(String, Value), Strin
                         b("today", "date:today"),
                         b("yesterday", "date:yesterday"),
                     ]);
-                    keys.push(vec![
-                        b("tomorrow", "date:tomorrow"),
-                        b("other", "date:other"),
-                    ]);
+                    keys.push(vec![b("other", "date:other")]);
                 }
                 Time => {
                     keys.push(vec![(
@@ -1234,7 +1231,7 @@ fn command(text: &str) -> Option<&'static str> {
     Some(action)
 }
 
-fn apply_text(d: &mut Draft, text: &str) -> bool {
+fn apply_text(d: &mut Draft, lang: &str, text: &str) -> bool {
     match d.step {
         Step::Amount | Step::ToAmount | Step::ConvAmount => {
             let Some(n) = super::parse_minor(text).filter(|n| *n > 0) else {
@@ -1264,6 +1261,11 @@ fn apply_text(d: &mut Draft, text: &str) -> bool {
             let Some(date) = date_input(text) else {
                 return false;
             };
+            // Operations may not be dated in the future (calendar day).
+            if date > report::today().to_string() {
+                d.notice = tr(lang, "date_future");
+                return true;
+            }
             d.date = date;
             d.dated = true;
             advance(d, Step::Time);
@@ -1332,10 +1334,7 @@ fn accepts(d: &Draft, action: &str) -> bool {
             Currency => action.starts_with("cur:"),
             ConvAmount => matches!(action, "conv:rate" | "conv:nbrb"),
             ToAmount => matches!(action, "credit:rate" | "credit:nbrb"),
-            Date => matches!(
-                action,
-                "date:today" | "date:yesterday" | "date:tomorrow" | "date:other"
-            ),
+            Date => matches!(action, "date:today" | "date:yesterday" | "date:other"),
             Time => action == "time:now" || (action == "save_now" && !d.editing),
             Comment | Photo => action == "skip" || (action == "save_now" && !d.editing),
             Review => matches!(action, "save" | "edit"),
@@ -1951,7 +1950,7 @@ pub(super) async fn message(state: &AppState, tg: &Tg, m: &TgMessage) -> Result<
                 },
             );
         }
-    } else if !apply_text(&mut d, text) {
+    } else if !apply_text(&mut d, &ctx.lang, text) {
         d.notice = tr(
             &ctx.lang,
             match d.step {
@@ -1976,21 +1975,21 @@ mod tests {
             step: Step::Amount,
             ..Draft::default()
         };
-        assert!(!apply_text(&mut d, "0"));
-        assert!(!apply_text(&mut d, "-2"));
-        assert!(apply_text(&mut d, "12,50"));
+        assert!(!apply_text(&mut d, "ru", "0"));
+        assert!(!apply_text(&mut d, "ru", "-2"));
+        assert!(apply_text(&mut d, "ru", "12,50"));
         assert_eq!(d.amount, 1250);
         assert_eq!(d.step, Step::Account);
         assert_eq!(back_step(&d), Step::Amount);
         d.step = Step::Time;
-        assert!(!apply_text(&mut d, "25:00"));
-        assert!(apply_text(&mut d, "9:05"));
+        assert!(!apply_text(&mut d, "ru", "25:00"));
+        assert!(apply_text(&mut d, "ru", "9:05"));
         assert_eq!((d.time.as_str(), d.step), ("09:05", Step::Comment));
         assert_eq!(back_step(&d), Step::Time);
-        assert!(apply_text(&mut d, "-"));
+        assert!(apply_text(&mut d, "ru", "-"));
         assert_eq!(d.step, Step::Photo);
         assert!(accepts(&d, "save_now"));
-        assert!(apply_text(&mut d, "-"));
+        assert!(apply_text(&mut d, "ru", "-"));
         assert_eq!(d.step, Step::Review);
         assert!(accepts(&d, "save"));
         assert!(!accepts(&d, "date:today"));
@@ -2003,25 +2002,33 @@ mod tests {
             step: Step::Date,
             ..Draft::default()
         };
-        for a in [
-            "date:today",
-            "date:yesterday",
-            "date:tomorrow",
-            "date:other",
-        ] {
+        for a in ["date:today", "date:yesterday", "date:other"] {
             assert!(accepts(&d, a));
         }
-        assert!(!accepts(&d, "date:unknown"));
+        // Future dates are rejected: no "tomorrow" button or crafted callback.
+        assert!(!accepts(&d, "date:tomorrow") && !accepts(&d, "date:unknown"));
         for kind in ["expense", "income"] {
             d = Draft {
                 kind: kind.into(),
                 step: Step::CustomDate,
                 ..Draft::default()
             };
-            assert!(apply_text(&mut d, "04.11"));
+            assert!(apply_text(&mut d, "ru", "04.11"));
             assert_eq!(d.step, Step::Time);
             assert!(d.dated && d.date.ends_with("-11-04"));
         }
+        // A typed future date is consumed with a notice, staying on the step.
+        d = Draft {
+            step: Step::CustomDate,
+            ..Draft::default()
+        };
+        let tomorrow = report::today() + chrono::Duration::days(1);
+        let input = tomorrow.format("%d.%m.%Y").to_string();
+        assert!(apply_text(&mut d, "ru", &input));
+        assert_eq!(d.step, Step::CustomDate);
+        assert!(!d.dated && !d.notice.is_empty());
+        assert!(apply_text(&mut d, "ru", "04.11"));
+        assert_eq!(d.step, Step::Time);
         d.step = Step::Time;
         assert!(accepts(&d, "time:now") && accepts(&d, "save_now"));
         d.editing = true;
@@ -2048,14 +2055,14 @@ mod tests {
         }
         assert!(!accepts(&d, "hdate:unknown") && !accepts(&d, "tx:x"));
         assert!(accepts(&d, "menu"));
-        assert!(apply_text(&mut d, "05.11"));
+        assert!(apply_text(&mut d, "ru", "05.11"));
         assert_eq!(d.step, Step::History);
         assert!(d.filter_date.ends_with("-11-05"));
         assert!(accepts(&d, "hist:clear") && accepts(&d, "menu"));
         d.step = Step::HistCustom;
         assert_eq!(back_step(&d), Step::HistDate);
-        assert!(!apply_text(&mut d, "32.13"));
-        assert!(apply_text(&mut d, "01.02.2025"));
+        assert!(!apply_text(&mut d, "ru", "32.13"));
+        assert!(apply_text(&mut d, "ru", "01.02.2025"));
         assert_eq!(
             (d.step, d.filter_date.as_str()),
             (Step::History, "2025-02-01")
@@ -2154,7 +2161,7 @@ mod tests {
         assert_eq!(back_step(&d), Step::ToAmount);
         d.editing = true;
         d.step = Step::Amount;
-        assert!(apply_text(&mut d, "4"));
+        assert!(apply_text(&mut d, "ru", "4"));
         assert_eq!(d.step, Step::Review);
         assert!(!d.editing);
         d.step = Step::Done;
@@ -2447,7 +2454,7 @@ mod tests {
             step: Step::ToAmount,
             ..Draft::default()
         };
-        assert!(apply_text(&mut d, "29,91"));
+        assert!(apply_text(&mut d, "ru", "29,91"));
         assert_eq!(
             (d.credited, d.rate_source.as_deref()),
             (Some(2991), Some("manual"))
@@ -2496,8 +2503,8 @@ mod tests {
         assert!(text.contains("BSB rate unavailable"));
         assert!(text.contains("USD?") && keys.to_string().contains("conv:rate"));
         assert_eq!(back_step(&d), Step::Currency);
-        assert!(!apply_text(&mut d, "abc"));
-        assert!(apply_text(&mut d, "19,90"));
+        assert!(!apply_text(&mut d, "ru", "abc"));
+        assert!(apply_text(&mut d, "ru", "19,90"));
         assert_eq!((d.converted, d.step), (Some(1990), Step::Category));
         assert_eq!(back_step(&d), Step::ConvAmount);
         d.step = Step::Review;
@@ -2532,7 +2539,7 @@ mod tests {
         // Editing the amount asks for the account amount again.
         edit.editing = true;
         edit.step = Step::Amount;
-        assert!(apply_text(&mut edit, "70"));
+        assert!(apply_text(&mut edit, "ru", "70"));
         assert_eq!((edit.step, edit.converted), (Step::ConvAmount, None));
         edit.step = Step::Review;
         assert!(persist_entry(state, &ctx, 42, &mut edit, None).is_err());

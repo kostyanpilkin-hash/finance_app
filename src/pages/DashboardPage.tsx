@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { formatMinor, isoOf, todayIso } from "@/lib/money";
 import { useDisplayMoney, useEnsureRates } from "@/lib/useDisplayMoney";
@@ -18,9 +18,9 @@ import { RatesTable, type NbrbRow } from "@/components/RatesTable";
 import { Segmented } from "@/components/ui/segmented";
 import { RefreshButton } from "@/components/RefreshButton";
 import { DashGrid } from "@/components/dashboard/DashGrid";
-import { defaultLayout, normalizeLayout, type WidgetId } from "@/lib/dashLayout";
+import { parseLayout, serializeGrid, accountWidgetId, ACCOUNT_PREFIX, STAT_IDS, type WidgetId } from "@/lib/dashLayout";
 import { useMediaQuery } from "@/lib/useMediaQuery";
-import { useLocalSettings } from "@/pages/settings/useLocalSettings";
+import { toast } from "@/stores/toast";
 
 type DashPeriod = "week" | "month" | "days30";
 const PERIODS: DashPeriod[] = ["week", "month", "days30"];
@@ -42,8 +42,29 @@ export function DashboardPage() {
   const [peek, setPeek] = useState<CategoryPeek | null>(null);
   const [editing, setEditing] = useState(false);
   const isLg = useMediaQuery("(min-width: 1024px)");
-  const { set } = useLocalSettings();
+  const qc = useQueryClient();
   const editMode = isLg && editing;
+  const layoutSave = useMutation({
+    mutationKey: ["dashboard-layout"],
+    mutationFn: ({ raw }: { raw: string; notifyReset?: boolean }) => api.setSetting("dash_layout", raw),
+    onMutate: async ({ raw }) => {
+      await qc.cancelQueries({ queryKey: qk.settings });
+      const previous = qc.getQueryData<Record<string, string>>(qk.settings);
+      qc.setQueryData<Record<string, string>>(qk.settings, (current) => ({
+        ...(current ?? {}),
+        dash_layout: raw,
+      }));
+      return { previous };
+    },
+    onError: (_error, _variables, context) => {
+      if (context?.previous) qc.setQueryData(qk.settings, context.previous);
+      toast(t("ui.layoutSaveError"));
+    },
+    onSuccess: (_data, variables) => {
+      if (variables.notifyReset) toast(t("ui.layoutResetDone"));
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: qk.settings }),
+  });
   const { from, to } = useMemo(() => rangeFor(period), [period]);
   const openPeek = useCallback(
     (kind: "expense" | "income") => (members: DonutItem[], label: string) =>
@@ -129,63 +150,65 @@ export function DashboardPage() {
   const loading = dash.isLoading || sum.isLoading;
 
   const chartCards = [
-    { id: "chart_pieMonth" as WidgetId, key: "pieMonth", on: true, data: catSlices("expense"), sel: openPeek("expense") },
-    { id: "chart_incomeByCat" as WidgetId, key: "incomeByCat", on: chartOn("dash_chart_income_cat"), data: catSlices("income"), sel: openPeek("income") },
-    { id: "chart_expenseByPeople" as WidgetId, key: "expenseByPeople", on: chartOn("dash_chart_expense_people"), data: peopleSlices("expense"), sel: undefined },
-    { id: "chart_incomeByPeople" as WidgetId, key: "incomeByPeople", on: chartOn("dash_chart_income_people"), data: peopleSlices("income"), sel: undefined },
+    { id: "chart_pieMonth", key: "pieMonth", on: true, data: catSlices("expense"), sel: openPeek("expense") },
+    { id: "chart_incomeByCat", key: "incomeByCat", on: chartOn("dash_chart_income_cat"), data: catSlices("income"), sel: openPeek("income") },
+    { id: "chart_expenseByPeople", key: "expenseByPeople", on: chartOn("dash_chart_expense_people"), data: peopleSlices("expense"), sel: undefined },
+    { id: "chart_incomeByPeople", key: "incomeByPeople", on: chartOn("dash_chart_income_people"), data: peopleSlices("income"), sel: undefined },
   ];
 
+  const accountKey = accounts.map((a) => a.id).join(",");
   const visible = useMemo<WidgetId[]>(() => {
-    const v: WidgetId[] = ["stats"];
+    const v: WidgetId[] = [...STAT_IDS];
     for (const c of chartCards) if (c.on) v.push(c.id);
     if (ratesOn) v.push("rates");
-    if (accounts.length > 0) v.push("accounts");
+    for (const a of accounts) v.push(accountWidgetId(a.id));
     return v;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.data, ratesOn, accounts.length]);
+  }, [settings.data, ratesOn, accountKey]);
 
   const layout = useMemo(
-    () => normalizeLayout(settings.data?.dash_layout, visible),
+    () => parseLayout(settings.data?.dash_layout, visible),
     [settings.data?.dash_layout, visible],
   );
 
   const renderWidget = (id: WidgetId) => {
-    if (id === "stats") {
+    if (id === "stat_balance") {
       return (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
-          <div className={card}>
-            <div className="text-xs text-muted-foreground">{t("ui.totalBalance")}</div>
-            <div className="font-display text-xl font-semibold">{formatMinor(totalByn.sum, totalByn.currency)}</div>
-            {totalByn.missing && <div className="text-xs text-muted-foreground">{t("ui.ratesMissing")}</div>}
-          </div>
-          <div className={card}>
-            <div className="text-xs text-muted-foreground">{t("ui.spentMonth")}</div>
-            {sumFor("expense").map((x, i) => (
-              <div key={i} className="text-lg font-semibold text-expense">−{formatMinor(x.amount, x.currency)}</div>
-            ))}
-            {sumFor("expense").length === 0 && <div className="text-lg font-semibold">0,00</div>}
-          </div>
-          <div className={card}>
-            <div className="text-xs text-muted-foreground">{t("ui.incomeMonth")}</div>
-            {sumFor("income").map((x, i) => (
-              <div key={i} className="text-lg font-semibold text-income">+{formatMinor(x.amount, x.currency)}</div>
-            ))}
-            {sumFor("income").length === 0 && <div className="text-lg font-semibold">0,00</div>}
-          </div>
+        <div className={card}>
+          <div className="text-xs text-muted-foreground">{t("ui.totalBalance")}</div>
+          <div className="font-display text-xl font-semibold">{formatMinor(totalByn.sum, totalByn.currency)}</div>
+          {totalByn.missing && <div className="text-xs text-muted-foreground">{t("ui.ratesMissing")}</div>}
+        </div>
+      );
+    }
+    if (id === "stat_expense") {
+      return (
+        <div className={card}>
+          <div className="text-xs text-muted-foreground">{t("ui.spentMonth")}</div>
+          {sumFor("expense").map((x, i) => (
+            <div key={i} className="text-lg font-semibold text-expense">−{formatMinor(x.amount, x.currency)}</div>
+          ))}
+          {sumFor("expense").length === 0 && <div className="text-lg font-semibold">0,00</div>}
+        </div>
+      );
+    }
+    if (id === "stat_income") {
+      return (
+        <div className={card}>
+          <div className="text-xs text-muted-foreground">{t("ui.incomeMonth")}</div>
+          {sumFor("income").map((x, i) => (
+            <div key={i} className="text-lg font-semibold text-income">+{formatMinor(x.amount, x.currency)}</div>
+          ))}
+          {sumFor("income").length === 0 && <div className="text-lg font-semibold">0,00</div>}
         </div>
       );
     }
     if (id === "rates") {
       return <RatesCard t={t} overview={overview} nbrbRates={nbrbRates} card={card} />;
     }
-    if (id === "accounts") {
-      return (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
-          {accounts.map((a) => (
-            <AccountCard key={a.id} a={a} ownerName={a.ownerName ?? undefined} compact />
-          ))}
-        </div>
-      );
+    if (id.startsWith(ACCOUNT_PREFIX)) {
+      const acc = accounts.find((a) => a.id === id.slice(ACCOUNT_PREFIX.length));
+      return acc ? <AccountCard a={acc} ownerName={acc.ownerName ?? undefined} compact /> : null;
     }
     const c = chartCards.find((x) => x.id === id);
     if (!c) return null;
@@ -202,14 +225,20 @@ export function DashboardPage() {
   };
 
   const widgetTitle = (id: WidgetId): string => {
+    if (id.startsWith(ACCOUNT_PREFIX)) {
+      const a = accounts.find((x) => x.id === id.slice(ACCOUNT_PREFIX.length));
+      return a ? `${a.name} (${a.currency})` : t("ui.widgetAccounts");
+    }
     switch (id) {
-      case "stats": return t("ui.widgetStats");
+      case "stat_balance": return t("ui.totalBalance");
+      case "stat_expense": return t("ui.spentMonth");
+      case "stat_income": return t("ui.incomeMonth");
       case "rates": return t("settings.dashRates");
-      case "accounts": return t("ui.widgetAccounts");
       case "chart_pieMonth": return t("ui.pieMonth");
       case "chart_incomeByCat": return t("ui.incomeByCat");
       case "chart_expenseByPeople": return t("ui.expenseByPeople");
       case "chart_incomeByPeople": return t("ui.incomeByPeople");
+      default: return id;
     }
   };
 
@@ -220,9 +249,9 @@ export function DashboardPage() {
         <div className="flex items-center gap-2">
           {editMode ? (
             <>
-              <Button size="sm" variant="outline"
-                onClick={() => set("dash_layout", JSON.stringify(defaultLayout(visible)))}>
-                {t("ui.resetLayout")}
+              <Button size="sm" variant="outline" disabled={layoutSave.isPending} aria-busy={layoutSave.isPending}
+                onClick={() => layoutSave.mutate({ raw: "", notifyReset: true })}>
+                {layoutSave.isPending ? t("ui.layoutSaving") : t("ui.resetLayout")}
               </Button>
               <Button size="sm" onClick={() => setEditing(false)}>{t("ui.done")}</Button>
             </>
@@ -259,18 +288,28 @@ export function DashboardPage() {
           editing={editMode}
           renderWidget={renderWidget}
           widgetTitle={widgetTitle}
-          onChange={(l) => set("dash_layout", JSON.stringify(l))}
+          onCommit={(items) => layoutSave.mutate({ raw: serializeGrid(items) })}
         />
       ) : (
         <>
-          {renderWidget("stats")}
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
+            {renderWidget("stat_balance")}
+            {renderWidget("stat_expense")}
+            {renderWidget("stat_income")}
+          </div>
           {ratesOn && renderWidget("rates")}
           <div className="grid items-start gap-4 sm:grid-cols-2">
             {chartCards.filter((c) => c.on).map((c) => (
               <div key={c.id}>{renderWidget(c.id)}</div>
             ))}
           </div>
-          {accounts.length > 0 && renderWidget("accounts")}
+          {accounts.length > 0 && (
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
+              {accounts.map((a) => (
+                <AccountCard key={a.id} a={a} ownerName={a.ownerName ?? undefined} compact />
+              ))}
+            </div>
+          )}
         </>
       )}
       <CategoryTxDialog peek={peek} from={from} to={to} onClose={() => setPeek(null)} />

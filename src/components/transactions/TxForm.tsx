@@ -115,11 +115,14 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
       missing.add("category");
     }
   }
-  const show = tried && missing.size > 0;
-  const firstMissing: Missing | undefined = show ? (["amount", "account", "category", "toAccount", "toAmount"] as const).find((k) => missing.has(k)) : undefined;
+  // Operations may not be dated after today (calendar day); time is free.
+  const futureDate = opDate > todayIso();
+  const show = tried && (missing.size > 0 || futureDate);
+  const firstMissing: Missing | undefined = show && !futureDate ? (["amount", "account", "category", "toAccount", "toAmount"] as const).find((k) => missing.has(k)) : undefined;
 
   const backendErr = (e: unknown): string => {
     const m = String(e instanceof Error ? e.message : e);
+    if (/future/i.test(m)) return t("ui.err.futureDate");
     if (/same account/i.test(m)) return t("ui.err.sameAccount");
     if (/category/i.test(m)) return t("ui.err.category");
     if (/account/i.test(m)) return t("ui.err.account");
@@ -131,7 +134,7 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
   const submit = () => {
     if (!editing) return;
     setTried(true);
-    if (missing.size > 0) return;
+    if (missing.size > 0 || futureDate) return;
     const amount = effectiveAmount;
     void save.mutateAsync({
       ...editing,
@@ -182,7 +185,8 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
           </div>
         </Field>
         <Field label={t("ui.date")} htmlFor="tx-date">
-          <Input id="tx-date" type="date" defaultValue={opDate}
+          <Input id="tx-date" type="date" defaultValue={opDate} max={todayIso()}
+            invalid={show && futureDate}
             onChange={(e) => setEditing({ ...editing, occurredAt: `${e.target.value}T${editing.occurredAt?.slice(11, 19) || nowLocalIso().slice(11)}` })} />
         </Field>
         <Field label={t("ui.time")} htmlFor="tx-time">
@@ -292,6 +296,7 @@ export function TxForm({ initial, onDone }: { initial: Partial<TransactionRow>; 
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" type="submit" loading={save.isPending}>{t("ui.save")}</Button>
         <Button size="sm" type="button" variant="outline" onClick={() => onDone(false)}>{t("ui.cancel")}</Button>
+        {show && futureDate && <span className="text-sm text-destructive">{t("ui.err.futureDate")}</span>}
         {firstMissing && (
           <span className="text-sm text-destructive">
             {t(`ui.err.${firstMissing === "toAccount" && editing.toAccountId === editing.accountId && editing.accountId ? "sameAccount" : firstMissing}`)}

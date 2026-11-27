@@ -385,6 +385,11 @@ pub fn transaction_upsert(
     if !["expense", "income", "transfer"].contains(&t.kind.as_str()) {
         return Err(Error::Invalid(format!("bad kind {}", t.kind)));
     }
+    // Operations may not be dated in the future (calendar day, local time).
+    let today = chrono::Local::now().date_naive().to_string();
+    if t.occurred_at.get(..10).unwrap_or("") > today.as_str() {
+        return Err(Error::Invalid("future date".into()));
+    }
     ensure_exists(conn, Entity::Accounts, &t.account_id, "account")?;
     match t.kind.as_str() {
         "expense" | "income" => {

@@ -1100,6 +1100,52 @@ mod tests {
         .unwrap();
     }
 
+    /// occurred_at may not be in the future (calendar day): rejected on create,
+    /// and an update of a row that already holds a future date is rejected too.
+    #[test]
+    fn transaction_rejects_future_date() {
+        let d = db();
+        d.with_conn(|c| {
+            let a = actor(&d);
+            let acc = repos::account_upsert(
+                c,
+                &d,
+                &a,
+                json!({"name":"A","kind":"cash","currency":"BYN"}),
+            )?;
+            let cat = repos::category_upsert(c, &d, &a, json!({"name":"K","kind":"expense"}))?;
+            let today = chrono::Local::now().date_naive().to_string();
+            let tomorrow =
+                (chrono::Local::now().date_naive() + chrono::Duration::days(1)).to_string();
+
+            let mk = |day: &str| {
+                json!({"kind":"expense","occurredAt":format!("{day}T10:00:00"),
+                       "accountId":acc["id"],"amountMinor":100,"categoryId":cat["id"]})
+            };
+            let bad = repos::transaction_upsert(c, &d, &a, mk(&tomorrow));
+            assert!(matches!(bad, Err(Error::Invalid(_))));
+            repos::transaction_upsert(c, &d, &a, mk(&today))?;
+
+            // A future-dated row planted behind the validator (legacy data or
+            // sync) cannot be saved until its date is fixed.
+            let tx = repos::transaction_upsert(c, &d, &a, mk(&today))?;
+            let mut row = db::row_json(c, "transactions", tx["id"].as_str().unwrap())?.unwrap();
+            row["occurredAt"] = json!(format!("{tomorrow}T10:00:00"));
+            db::write_row(c, "transactions", &row)?;
+            let up = repos::transaction_upsert(c, &d, &a, json!({"id": tx["id"], "comment": "x"}));
+            assert!(matches!(up, Err(Error::Invalid(_))));
+            let fix = repos::transaction_upsert(
+                c,
+                &d,
+                &a,
+                json!({"id": tx["id"], "occurredAt": format!("{today}T10:00:00")}),
+            )?;
+            assert!(fix["occurredAt"].as_str().unwrap().starts_with(&today));
+            Ok(())
+        })
+        .unwrap();
+    }
+
     /// Every kind carries "whose entry": default = author, explicit value is
     /// validated and kept for expenses, income and transfers alike.
     #[test]
