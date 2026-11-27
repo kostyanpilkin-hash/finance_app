@@ -10,6 +10,35 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: "0.4.0",
+    items: {
+      ru: [
+        "Дашборд настраивается: карандаш в заголовке — карточки перетаскиваются и растягиваются, каждый счёт отдельно",
+        "Клик по диаграммам «по людям» открывает операции этого человека",
+        "В окне операций с диаграммы — итог, иконки категорий, «Показать ещё»; операцию можно сразу отредактировать",
+        "Аналитика: понятные подсказки и оси, доходы по категориям, изменение к прошлому периоду",
+        "Клик по дню, месяцу или счёту на графиках открывает нужные операции",
+        "Операцию больше нельзя провести будущей датой — ни в приложении, ни в боте",
+      ],
+      be: [
+        "Дашборд наладжваецца: аловак у загалоўку — карткі перацягваюцца і расцягваюцца, кожны рахунак асобна",
+        "Клік па дыяграмах «па людзях» адкрывае аперацыі гэтага чалавека",
+        "У акне аперацый з дыяграмы — вынік, іконкі катэгорый, «Паказаць яшчэ»; аперацыю можна адразу адрэдагаваць",
+        "Аналітыка: зразумелыя падказкі і восі, даходы па катэгорыях, змяненне да мінулага перыяду",
+        "Клік па дні, месяцы ці рахунку на графіках адкрывае патрэбныя аперацыі",
+        "Аперацыю больш нельга правесці будучай датай — ні ў праграме, ні ў боце",
+      ],
+      en: [
+        "Customisable dashboard: the pencil in the header lets you drag and resize cards, each account on its own",
+        "Clicking the \"by people\" charts opens that person's operations",
+        "The chart operations popup shows the total, category icons and \"Show more\"; edit an operation right there",
+        "Analytics: clearer tooltips and axes, income by category, change vs the previous period",
+        "Click a day, month or account on the charts to see its operations",
+        "Operations can no longer be dated in the future — in the app or the bot",
+      ],
+    },
+  },
+  {
     version: "0.3.2",
     items: {
       ru: [
